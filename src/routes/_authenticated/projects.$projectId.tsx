@@ -17,6 +17,7 @@ import {
   duplicateClip,
   startBrowserRender,
   finishBrowserRender,
+  getSignedClipUploadUrl,
 } from "@/lib/projects.functions";
 import { renderProjectInBrowser, aspectDims } from "@/lib/client-render";
 
@@ -154,9 +155,14 @@ function EditorPage() {
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
+  const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["project", projectId],
     queryFn: () => fetchProject({ data: { id: projectId } }),
+    // Never run this server-side — it requires an auth session that isn't
+    // available during SSR, which throws and crashes the page.
+    ssr: false,
   });
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -499,8 +505,6 @@ function EditorPage() {
     const hasAnyARoll = data.clips.some((c) => c.role === "aroll" || c.role === "auto");
     const summary = { aroll: 0, broll: 0, music: 0, sfx: 0 };
     try {
-      const { data: userRes } = await supabase.auth.getUser();
-      const uid = userRes.user?.id || data?.project?.user_id || "623eb6d8-49c5-4f69-8abe-779d3b71811e";
       const startOrdinal = data.clips.length;
       let videoSeen = 0;
       for (let i = 0; i < arr.length; i++) {
@@ -508,16 +512,17 @@ function EditorPage() {
         const role = classifyFile(f, videoSeen, hasAnyARoll);
         if (!role) continue;
         if (f.type.startsWith("video/")) videoSeen++;
-        const safe = f.name.replace(/[^\w.\-]+/g, "_");
-        const path = `${uid}/${projectId}/${Date.now()}_${i}_${safe}`;
+        const signed = await getSignedClipUploadFn({
+          data: { project_id: projectId, filename: f.name, ordinal: startOrdinal + i },
+        });
         const { error: upErr } = await supabase.storage
           .from("raw-clips")
-          .upload(path, f, { cacheControl: "3600", upsert: false, contentType: f.type });
+          .uploadToSignedUrl(signed.path, signed.token, f, { contentType: f.type, upsert: true });
         if (upErr) throw new Error(`${f.name}: ${upErr.message}`);
         await attachFn({
           data: {
             project_id: projectId,
-            storage_path: path,
+            storage_path: signed.path,
             filename: f.name,
             size_bytes: f.size,
             role,
