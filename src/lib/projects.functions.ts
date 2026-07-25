@@ -419,18 +419,18 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
         aspect_ratio: z.enum(["9:16", "16:9", "1:1"]).optional(),
         style_preset: z.string().max(64).optional(),
         title: z.string().trim().min(1).max(120).optional(),
+        script: z.string().max(20000).nullable().optional(),
+        brief: z.string().max(4000).nullable().optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const patch: {
-      aspect_ratio?: "9:16" | "16:9" | "1:1";
-      style_preset?: string;
-      title?: string;
-    } = {};
-    if (data.aspect_ratio) patch.aspect_ratio = data.aspect_ratio;
-    if (data.style_preset) patch.style_preset = data.style_preset;
-    if (data.title) patch.title = data.title;
+    const patch: Record<string, any> = {};
+    if (data.aspect_ratio !== undefined) patch.aspect_ratio = data.aspect_ratio;
+    if (data.style_preset !== undefined) patch.style_preset = data.style_preset;
+    if (data.title !== undefined) patch.title = data.title;
+    if (data.script !== undefined) patch.script = data.script;
+    if (data.brief !== undefined) patch.brief = data.brief;
     const { data: row, error } = await context.supabase
       .from("projects")
       .update(patch)

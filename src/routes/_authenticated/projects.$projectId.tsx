@@ -176,7 +176,7 @@ function EditorPage() {
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [musicVolume, setMusicVolume] = useState(60);
   const [captionsEnabled, setCaptionsEnabled] = useState(true);
-  const [captionsText, setCaptionsText] = useState("");
+  const [captionsText, setCaptionsText] = useState<string | null>(null);
   const [activePool, setActivePool] = useState<"clips" | "audio" | "assets" | "effects">("clips");
   const [inspectorTab, setInspectorTab] = useState<"ai" | "notes">("ai");
   const [mobileView, setMobileView] = useState<"edit" | "media">("edit");
@@ -1176,8 +1176,13 @@ function EditorPage() {
                       <span className="text-[11px] text-neutral-400">Burn word-by-word</span>
                     </div>
                     <Textarea
-                      value={captionsText || (project.script ?? "")}
+                      value={captionsText ?? (project.script ?? "")}
                       onChange={(e) => setCaptionsText(e.target.value)}
+                      onBlur={() => {
+                        if (captionsText !== null && captionsText !== project.script) {
+                          updateSettings({ data: { id: projectId, script: captionsText } });
+                        }
+                      }}
                       placeholder="AI captions will be generated from audio. Override here…"
                       className="min-h-24 bg-black/40 border-white/10 text-neutral-200 text-[11px] font-mono resize-none"
                     />
