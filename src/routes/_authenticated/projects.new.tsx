@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { createProject, attachClip } from "@/lib/projects.functions";
+import { createProject, attachClip, getSignedClipUploadUrl } from "@/lib/projects.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ function NewProject() {
   const search = Route.useSearch();
   const createFn = useServerFn(createProject);
   const attachFn = useServerFn(attachClip);
+  const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
   
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -100,21 +101,18 @@ function NewProject() {
         },
       });
 
-      const { data: userRes } = await supabase.auth.getUser();
-      const uid = userRes.user?.id || project?.user_id || "623eb6d8-49c5-4f69-8abe-779d3b71811e";
-
-      // Upload each file to storage, then attach to project
+      // Upload each file to storage via signed upload URL, then attach to project
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-        const safeName = f.file.name.replace(/[^\w.\-]+/g, "_");
-        const path = `${uid}/${project.id}/${Date.now()}_${i}_${safeName}`;
+        const signed = await getSignedClipUploadFn({
+          data: { project_id: project.id, filename: f.file.name, ordinal: i },
+        });
 
         const { error: upErr } = await supabase.storage
           .from("raw-clips")
-          .upload(path, f.file, {
-            cacheControl: "3600",
-            upsert: false,
+          .uploadToSignedUrl(signed.path, signed.token, f.file, {
             contentType: f.file.type,
+            upsert: true,
           });
 
         if (upErr) {
@@ -126,14 +124,14 @@ function NewProject() {
 
         setFiles((prev) =>
           prev.map((x) =>
-            x.id === f.id ? { ...x, uploaded: true, progress: 100, storagePath: path } : x,
+            x.id === f.id ? { ...x, uploaded: true, progress: 100, storagePath: signed.path } : x,
           ),
         );
 
         await attachFn({
           data: {
             project_id: project.id,
-            storage_path: path,
+            storage_path: signed.path,
             filename: f.file.name,
             size_bytes: f.file.size,
             role: f.role,

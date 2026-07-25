@@ -452,6 +452,25 @@ export const getClipSignedUrl = createServerFn({ method: "POST" })
     return { url: signed.signedUrl };
   });
 
+export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      project_id: z.string().uuid(),
+      filename: z.string().min(1),
+      ordinal: z.number().int().nonnegative().default(0),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const safeName = data.filename.replace(/[^\w.\-]+/g, "_");
+    const path = `${context.userId}/${data.project_id}/${Date.now()}_${data.ordinal}_${safeName}`;
+    const { data: signed, error } = await context.supabase.storage
+      .from("raw-clips")
+      .createSignedUploadUrl(path);
+    if (error || !signed) throw new Error(error?.message ?? "Failed to create signed upload URL");
+    return { path, token: signed.token, signedUrl: signed.signedUrl };
+  });
+
 export const getRenderSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ path: z.string() }).parse(d))
