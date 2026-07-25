@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { listProjects, deleteProject } from "@/lib/projects.functions";
@@ -75,6 +75,7 @@ function ProjectThumb({ ratio, title }: { ratio: string; title: string }) {
 function ProjectsPage() {
   const navigate = useNavigate();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const fetchProjects = useServerFn(listProjects);
   const removeProject = useServerFn(deleteProject);
   const { data, isLoading } = useQuery({ queryKey: ["projects"], queryFn: () => fetchProjects() });
@@ -85,8 +86,26 @@ function ProjectsPage() {
 
   const del = useMutation({
     mutationFn: (id: string) => removeProject({ data: { id } }),
-    onSuccess: () => { toast.success("Project deleted"); router.invalidate(); },
-    onError: (e: Error) => toast.error(e.message),
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ["projects"] });
+      const previous = queryClient.getQueryData<any[]>(["projects"]);
+      queryClient.setQueryData(["projects"], (old: any[] | undefined) =>
+        (old ?? []).filter((p) => p.id !== id)
+      );
+      return { previous };
+    },
+    onError: (e: Error, _id, context) => {
+      toast.error(e.message);
+      if (context?.previous) {
+        queryClient.setQueryData(["projects"], context.previous);
+      }
+    },
+    onSuccess: () => {
+      toast.success("Project deleted");
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["usage-stats"] });
+      router.invalidate();
+    },
   });
 
   const filtered = useMemo(() => {
