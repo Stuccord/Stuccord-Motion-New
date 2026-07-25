@@ -162,7 +162,7 @@ function EditorPage() {
     queryFn: () => fetchProject({ data: { id: projectId } }),
     // Never run this server-side — it requires an auth session that isn't
     // available during SSR, which throws and crashes the page.
-    ssr: false,
+    enabled: typeof window !== "undefined",
   });
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
