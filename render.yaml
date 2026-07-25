@@ -4,3 +4,6 @@ services:
     runtime: node
     buildCommand: npm install && npm run build
     startCommand: npm start
+    envVars:
+      - key: NITRO_PRESET
+        value: node-server
