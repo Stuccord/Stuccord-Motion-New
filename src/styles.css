@@ -1,0 +1,229 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Inter", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Motion */
+  --ease-cinema: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-frame: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Shadows tuned for light background */
+  --shadow-frame: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 4px 16px -4px rgb(0 0 0 / 0.08);
+  --shadow-lift:  0 2px 8px -2px rgb(0 0 0 / 0.08), 0 1px 3px 0 rgb(0 0 0 / 0.05);
+  --shadow-card:  0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-glow:  0 0 40px -10px color-mix(in oklab, var(--primary) 40%, transparent);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-glow: var(--primary-glow);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-hairline: var(--hairline);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+}
+
+/* ── Design tokens ── */
+:root {
+  --radius: 0.625rem;   /* 10px — feels clean, not round, not sharp */
+
+  --background: oklch(0.99 0.002 240);        /* Near-white, neutral tint */
+  --surface:    oklch(0.965 0.004 240);       /* Subtle gray for panels */
+  --surface-2:  oklch(0.94  0.006 240);       /* Elevated state */
+  --foreground: oklch(0.18  0.012 240);       /* Near-black text */
+  --ink: var(--foreground);
+  --ink-soft:   oklch(0.46  0.012 240);       /* Secondary text */
+
+  --card:                oklch(1.0 0 0);      /* Pure white cards */
+  --card-foreground:     var(--foreground);
+  --popover:             oklch(1.0 0 0);
+  --popover-foreground:  var(--foreground);
+
+  /* Indigo primary */
+  --primary:             oklch(0.53 0.20 262);
+  --primary-foreground:  oklch(0.99 0 0);
+  --primary-glow:        oklch(0.82 0.10 262);
+
+  --secondary:           oklch(0.96 0.004 240);
+  --secondary-foreground: var(--foreground);
+  --muted:               oklch(0.96 0.004 240);
+  --muted-foreground:    oklch(0.52 0.010 240);
+  --accent:              oklch(0.95 0.025 262);
+  --accent-foreground:   oklch(0.44 0.18  262);
+
+  --destructive:            oklch(0.54 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  --hairline: oklch(0.18 0.012 240 / 0.09);
+  --border:   oklch(0.18 0.012 240 / 0.10);
+  --input:    oklch(0.18 0.012 240 / 0.07);
+  --ring:     oklch(0.53 0.20 262 / 0.40);
+}
+
+.dark { color-scheme: dark; }
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-feature-settings: "cv02", "cv03", "cv11", "ss01";
+    /* Clean background — just a very subtle top accent glow */
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%,
+        color-mix(in oklab, var(--color-primary) 6%, transparent),
+        transparent 60%);
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-primary) 18%, transparent);
+    color: var(--color-foreground);
+  }
+}
+
+/* ── Keyframes ── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scan-sweep {
+  0%   { left: 18%; }
+  50%  { left: 82%; }
+  100% { left: 18%; }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+@keyframes scroll-up {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+@keyframes scroll-down {
+  from { transform: translateY(-50%); }
+  to   { transform: translateY(0); }
+}
+@keyframes cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@keyframes waveform {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
+@keyframes aurora {
+  0%, 100% { transform: translate3d(0,0,0) rotate(0deg); }
+  50%      { transform: translate3d(-4%, 2%, 0) rotate(4deg); }
+}
+@keyframes pulse-ring {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+/* ── Animation utilities ── */
+@utility animate-fade-up   { animation: fade-up 0.6s var(--ease-cinema) both; }
+@utility animate-fade-in   { animation: fade-in 0.5s var(--ease-cinema) both; }
+@utility animate-scan      { animation: scan-sweep 5.5s var(--ease-cinema) infinite; }
+@utility animate-marquee   { animation: marquee 40s linear infinite; }
+@utility animate-marquee-left  { animation: marquee 60s linear infinite; }
+@utility animate-marquee-right { animation: marquee 60s linear infinite reverse; }
+@utility animate-scroll-up   { animation: scroll-up 40s linear infinite; }
+@utility animate-scroll-down { animation: scroll-down 40s linear infinite; }
+@utility animate-blink     { animation: cursor-blink 1s steps(2, end) infinite; }
+@utility animate-waveform  { animation: waveform 1.1s ease-in-out infinite; }
+@utility animate-aurora    { animation: aurora 18s var(--ease-cinema) infinite; }
+
+/* ── Design utilities ── */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right,  color-mix(in oklab, var(--color-foreground) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-foreground) 5%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+@utility bg-aurora {
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 10%,  color-mix(in oklab, var(--color-primary) 35%, transparent), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 30%,  color-mix(in oklab, var(--color-primary-glow) 25%, transparent), transparent 65%),
+    radial-gradient(ellipse 70% 60% at 50% 100%, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 70%);
+}
+
+@utility hairline {
+  border: 1px solid var(--color-hairline);
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+@utility text-gradient-indigo {
+  background: linear-gradient(135deg,
+    var(--color-foreground) 0%,
+    var(--color-primary-glow) 55%,
+    var(--color-primary) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Legacy alias */
+@utility text-gradient-violet {
+  background: linear-gradient(135deg,
+    var(--color-foreground) 0%,
+    var(--color-primary-glow) 55%,
+    var(--color-primary) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility glass-panel {
+  background: color-mix(in oklab, var(--color-card) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--color-hairline);
+}

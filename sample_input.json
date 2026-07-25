@@ -1,0 +1,68 @@
+{
+  "transcript_with_timestamps": [
+    {
+      "start_time": "00:00:00",
+      "end_time": "00:00:04",
+      "speaker": "speaker_1",
+      "text": "Welcome to Stuccord Motion Studio, the AI-powered video editing workspace."
+    },
+    {
+      "start_time": "00:00:04",
+      "end_time": "00:00:08",
+      "speaker": "speaker_1",
+      "text": "Automatically generate animated captions, scene transitions, and brand styling."
+    },
+    {
+      "start_time": "00:00:08",
+      "end_time": "00:00:12",
+      "speaker": "speaker_2",
+      "text": "Render high-quality short form videos ready for YouTube Shorts and TikTok."
+    }
+  ],
+  "scene_cuts": [
+    {
+      "start_time": "00:00:00",
+      "end_time": "00:00:04"
+    },
+    {
+      "start_time": "00:00:04",
+      "end_time": "00:00:08"
+    },
+    {
+      "start_time": "00:00:08",
+      "end_time": "00:00:12"
+    }
+  ],
+  "speaker_turns": [
+    {
+      "speaker": "speaker_1",
+      "start_time": "00:00:00",
+      "end_time": "00:00:08"
+    },
+    {
+      "speaker": "speaker_2",
+      "start_time": "00:00:08",
+      "end_time": "00:00:12"
+    }
+  ],
+  "brand_kit": {
+    "colors": {
+      "primary": "#0F172A",
+      "secondary": "#F8FAFC",
+      "accent": "#6366F1"
+    },
+    "typography": {
+      "font_family": "Inter",
+      "title_weight": "700",
+      "body_weight": "400"
+    },
+    "logo_policy": "use_logo_in_intro_and_outro_only"
+  },
+  "target_platform": "youtube_shorts",
+  "reference_style_examples": [
+    {
+      "name": "premium_minimal_motion",
+      "notes": "Clean typography, smooth motion, subtle glow, and polished pacing."
+    }
+  ]
+}
