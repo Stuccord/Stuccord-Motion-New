@@ -425,7 +425,13 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const patch: Record<string, any> = {};
+    const patch: {
+      aspect_ratio?: "9:16" | "16:9" | "1:1";
+      style_preset?: string;
+      title?: string;
+      script?: string | null;
+      brief?: string | null;
+    } = {};
     if (data.aspect_ratio !== undefined) patch.aspect_ratio = data.aspect_ratio;
     if (data.style_preset !== undefined) patch.style_preset = data.style_preset;
     if (data.title !== undefined) patch.title = data.title;
