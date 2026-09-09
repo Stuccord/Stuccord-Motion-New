@@ -25,10 +25,12 @@ import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } fr
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects.index'
 import { Route as ApiPublicRenderWebhookRouteImport } from './routes/api/public/render-webhook'
+import { Route as ApiAuthenticatedPresignRouteImport } from './routes/api/authenticated/presign'
 import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects.new'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects.$projectId'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
+import { Route as ApiAuthenticatedUploadsPresignRouteImport } from './routes/api/authenticated/uploads/presign'
 
 const SsoCallbackRoute = SsoCallbackRouteImport.update({
   id: '/sso-callback',
@@ -112,6 +114,11 @@ const ApiPublicRenderWebhookRoute = ApiPublicRenderWebhookRouteImport.update({
   path: '/api/public/render-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthenticatedPresignRoute = ApiAuthenticatedPresignRouteImport.update({
+  id: '/api/authenticated/presign',
+  path: '/api/authenticated/presign',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedProjectsNewRoute =
   AuthenticatedProjectsNewRouteImport.update({
     id: '/projects/new',
@@ -135,6 +142,12 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthenticatedUploadsPresignRoute =
+  ApiAuthenticatedUploadsPresignRouteImport.update({
+    id: '/api/authenticated/uploads/presign',
+    path: '/api/authenticated/uploads/presign',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -154,8 +167,10 @@ export interface FileRoutesByFullPath {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/api/authenticated/presign': typeof ApiAuthenticatedPresignRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -175,8 +190,10 @@ export interface FileRoutesByTo {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/api/authenticated/presign': typeof ApiAuthenticatedPresignRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -198,8 +215,10 @@ export interface FileRoutesById {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/api/authenticated/presign': typeof ApiAuthenticatedPresignRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -221,8 +240,10 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/api/authenticated/presign'
     | '/api/public/render-webhook'
     | '/projects/'
+    | '/api/authenticated/uploads/presign'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -242,8 +263,10 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/api/authenticated/presign'
     | '/api/public/render-webhook'
     | '/projects'
+    | '/api/authenticated/uploads/presign'
   id:
     | '__root__'
     | '/'
@@ -264,8 +287,10 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/_authenticated/projects/$projectId'
     | '/_authenticated/projects/new'
+    | '/api/authenticated/presign'
     | '/api/public/render-webhook'
     | '/_authenticated/projects/'
+    | '/api/authenticated/uploads/presign'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -278,7 +303,9 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
+  ApiAuthenticatedPresignRoute: typeof ApiAuthenticatedPresignRoute
   ApiPublicRenderWebhookRoute: typeof ApiPublicRenderWebhookRoute
+  ApiAuthenticatedUploadsPresignRoute: typeof ApiAuthenticatedUploadsPresignRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -395,6 +422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRenderWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/authenticated/presign': {
+      id: '/api/authenticated/presign'
+      path: '/api/authenticated/presign'
+      fullPath: '/api/authenticated/presign'
+      preLoaderRoute: typeof ApiAuthenticatedPresignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/projects/new': {
       id: '/_authenticated/projects/new'
       path: '/projects/new'
@@ -421,6 +455,13 @@ declare module '@tanstack/react-router' {
       path: '/.lovable/oauth/consent'
       fullPath: '/.lovable/oauth/consent'
       preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/authenticated/uploads/presign': {
+      id: '/api/authenticated/uploads/presign'
+      path: '/api/authenticated/uploads/presign'
+      fullPath: '/api/authenticated/uploads/presign'
+      preLoaderRoute: typeof ApiAuthenticatedUploadsPresignRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -466,7 +507,9 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
+  ApiAuthenticatedPresignRoute: ApiAuthenticatedPresignRoute,
   ApiPublicRenderWebhookRoute: ApiPublicRenderWebhookRoute,
+  ApiAuthenticatedUploadsPresignRoute: ApiAuthenticatedUploadsPresignRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

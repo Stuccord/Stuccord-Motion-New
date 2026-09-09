@@ -104,14 +104,45 @@ function NewProject() {
       // Upload each file to storage via signed upload URL, then attach to project
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-        const signed = await getSignedClipUploadFn({
-          data: { project_id: project.id, filename: f.file.name, ordinal: i },
+
+        const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
+        if (f.file.size > MAX_FILE_SIZE) {
+          throw new Error(`${f.file.name} exceeds 500 MB limit`);
+        }
+
+        const contentType = f.file.type || "video/mp4";
+        const { data: authData } = await supabase.auth.getSession();
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        if (authData?.session?.access_token) {
+          headers["Authorization"] = `Bearer ${authData.session.access_token}`;
+        }
+
+        const presignRes = await fetch("/api/authenticated/uploads/presign", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            projectId: project.id,
+            filename: f.file.name,
+            contentType,
+            size: f.file.size,
+          }),
         });
 
+        if (!presignRes.ok) {
+          const errText = await presignRes.text().catch(() => "Upload presign failed");
+          throw new Error(`${f.file.name}: ${errText}`);
+        }
+
+        const { bucket, path, token } = (await presignRes.json()) as {
+          bucket: string;
+          path: string;
+          token: string;
+        };
+
         const { error: upErr } = await supabase.storage
-          .from("raw-clips")
-          .uploadToSignedUrl(signed.path, signed.token, f.file, {
-            contentType: f.file.type,
+          .from(bucket)
+          .uploadToSignedUrl(path, token, f.file, {
+            contentType,
             upsert: true,
           });
 
@@ -124,14 +155,14 @@ function NewProject() {
 
         setFiles((prev) =>
           prev.map((x) =>
-            x.id === f.id ? { ...x, uploaded: true, progress: 100, storagePath: signed.path } : x,
+            x.id === f.id ? { ...x, uploaded: true, progress: 100, storagePath: path } : x,
           ),
         );
 
         await attachFn({
           data: {
             project_id: project.id,
-            storage_path: signed.path,
+            storage_path: path,
             filename: f.file.name,
             size_bytes: f.file.size,
             role: f.role,
