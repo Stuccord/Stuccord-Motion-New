@@ -727,58 +727,160 @@ export const finishBrowserRender = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z
       .object({
-        job_id: z.string().uuid(),
-        project_id: z.string().uuid(),
-        output_path: z.string().min(1),
+        job_id: z.string().uuid("Invalid job ID format"),
+        project_id: z.string().uuid("Invalid project ID format"),
+        output_path: z.string().min(1).max(500),
         duration_ms: z.number().int().nonnegative().optional(),
-        status: z.enum(["completed", "failed"]).default("completed"),
-        error: z.string().max(1000).optional(),
+        status: z.enum(["completed", "failed"]),
+        error: z.string().max(2000).optional(),
       })
+      .strict()
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    // 1. Validate & sanitize payload based on status
+    let sanitizedOutputPath: string | null = null;
+    let sanitizedError: string | null = null;
+
     if (data.status === "completed") {
-      await context.supabase
+      const rawPath = data.output_path.trim();
+      const expectedPrefix = `${context.userId}/${data.project_id}/`;
+
+      if (
+        !rawPath.startsWith(expectedPrefix) ||
+        rawPath.includes("..") ||
+        rawPath.includes("//") ||
+        rawPath.startsWith("/") ||
+        rawPath.startsWith("\\") ||
+        /https?:\/\//i.test(rawPath)
+      ) {
+        throw new Error("Invalid output path format or unauthorized path prefix");
+      }
+
+      const filename = rawPath.slice(expectedPrefix.length);
+      if (!/^[a-zA-Z0-9_.-]+$/.test(filename) || filename.includes("/") || filename.includes("\\")) {
+        throw new Error("Invalid output path filename");
+      }
+
+      sanitizedOutputPath = rawPath;
+    } else {
+      const rawError = (data.error ?? "Render failed in browser").trim();
+      // Strip control characters and multi-line traces; enforce max 500 characters
+      sanitizedError = rawError
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .slice(0, 500);
+    }
+
+    // 2. Load trusted server admin client inside handler (never exposed to client bundle)
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 3. Verify job ownership before performing any update
+    const { data: existingJob, error: jobFetchErr } = await supabaseAdmin
+      .from("render_jobs")
+      .select("id, project_id, user_id, status, output_path")
+      .eq("id", data.job_id)
+      .eq("project_id", data.project_id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+
+    if (jobFetchErr || !existingJob) {
+      throw new Error("Render job not found or unauthorized");
+    }
+
+    // Defense in depth: verify matching project ownership
+    const { data: existingProject, error: projectFetchErr } = await supabaseAdmin
+      .from("projects")
+      .select("id, user_id")
+      .eq("id", data.project_id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+
+    if (projectFetchErr || !existingProject) {
+      throw new Error("Project not found or unauthorized");
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // 4. Perform trusted admin update on render_jobs and verify exactly one row affected
+    if (data.status === "completed") {
+      const { data: updatedJobs, error: jErr } = await supabaseAdmin
         .from("render_jobs")
         .update({
           status: "completed",
           progress: 100,
           stage_message: "Ready",
-          output_path: data.output_path,
+          output_path: sanitizedOutputPath,
+          error: null,
+          updated_at: nowIso,
         })
         .eq("id", data.job_id)
-        .eq("user_id", context.userId);
+        .eq("project_id", data.project_id)
+        .eq("user_id", context.userId)
+        .select("id");
+
+      if (jErr || !updatedJobs || updatedJobs.length !== 1) {
+        throw new Error(jErr?.message ?? "Failed to update render job row");
+      }
+
+      // 5. Update projects row and verify exactly one row affected
       const projectPatch: {
         status: "ready";
         output_path: string;
+        updated_at: string;
         duration_seconds?: number;
       } = {
         status: "ready",
-        output_path: data.output_path,
+        output_path: sanitizedOutputPath!,
+        updated_at: nowIso,
       };
       if (data.duration_ms != null) {
         projectPatch.duration_seconds = Math.round(data.duration_ms / 1000);
       }
-      await context.supabase
+
+      const { data: updatedProjects, error: pErr } = await supabaseAdmin
         .from("projects")
         .update(projectPatch)
         .eq("id", data.project_id)
-        .eq("user_id", context.userId);
+        .eq("user_id", context.userId)
+        .select("id");
+
+      if (pErr || !updatedProjects || updatedProjects.length !== 1) {
+        throw new Error(pErr?.message ?? "Failed to update project row");
+      }
     } else {
-      await context.supabase
+      const { data: updatedJobs, error: jErr } = await supabaseAdmin
         .from("render_jobs")
         .update({
           status: "failed",
           stage_message: "Failed",
-          error: data.error ?? "Render failed in browser",
+          error: sanitizedError,
+          updated_at: nowIso,
         })
         .eq("id", data.job_id)
-        .eq("user_id", context.userId);
-      await context.supabase
+        .eq("project_id", data.project_id)
+        .eq("user_id", context.userId)
+        .select("id");
+
+      if (jErr || !updatedJobs || updatedJobs.length !== 1) {
+        throw new Error(jErr?.message ?? "Failed to update render job row");
+      }
+
+      const { data: updatedProjects, error: pErr } = await supabaseAdmin
         .from("projects")
-        .update({ status: "failed" })
+        .update({
+          status: "failed",
+          updated_at: nowIso,
+        })
         .eq("id", data.project_id)
-        .eq("user_id", context.userId);
+        .eq("user_id", context.userId)
+        .select("id");
+
+      if (pErr || !updatedProjects || updatedProjects.length !== 1) {
+        throw new Error(pErr?.message ?? "Failed to update project row");
+      }
     }
+
     return { ok: true };
   });
+
