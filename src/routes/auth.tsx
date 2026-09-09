@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { useUser, useSignIn, useSignUp } from "@clerk/clerk-react";
-import { ArrowLeft, Check, Loader2, Sparkles, Eye, EyeOff, KeyRound } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { ArrowLeft, Check, Loader2, Sparkles, Eye, EyeOff, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,31 +34,47 @@ function AuthPage() {
   const nextPath = safeRelativePath(next);
   const redirectUrl = nextPath ?? "/dashboard";
 
-  const { isLoaded: userLoaded, isSignedIn } = useUser();
-
+  const [checkingSession, setCheckingSession] = useState(true);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [code, setCode] = useState("");
-  const [pendingVerification, setPendingVerification] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const { isLoaded: signInLoaded, signIn, setActive: setSignInActive } = useSignIn();
-  const { isLoaded: signUpLoaded, signUp, setActive: setSignUpActive } = useSignUp();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [emailConfirmationSent, setEmailConfirmationSent] = useState(false);
 
   useEffect(() => {
-    if (userLoaded && isSignedIn) {
-      navigate({ to: redirectUrl, replace: true });
-    }
-  }, [userLoaded, isSignedIn, redirectUrl, navigate]);
+    let isMounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (isMounted) {
+        if (data.session?.user) {
+          navigate({ to: redirectUrl, replace: true });
+        } else {
+          setCheckingSession(false);
+        }
+      }
+    });
 
-  if (userLoaded && isSignedIn) {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user && isMounted) {
+        navigate({ to: redirectUrl, replace: true });
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      listener?.subscription?.unsubscribe();
+    };
+  }, [redirectUrl, navigate]);
+
+  if (checkingSession) {
     return (
       <div className="min-h-screen bg-background grid place-items-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm font-medium text-muted-foreground">You are already signed in. Redirecting to studio…</p>
+          <p className="text-sm font-medium text-muted-foreground">Checking session…</p>
         </div>
       </div>
     );
@@ -70,96 +86,93 @@ function AuthPage() {
     "Publish to TikTok, Reels & Shorts in one click",
   ];
 
-  async function handleGoogleSignIn() {
-    if (!signInLoaded || !signIn) return;
-    setLoading(true);
-    try {
-      const origin = window.location.origin.startsWith("http")
-        ? window.location.origin
-        : `http://${window.location.host}`;
-      await signIn.authenticateWithRedirect({
-        strategy: "oauth_google",
-        redirectUrl: `${origin}/sso-callback`,
-        redirectUrlComplete: `${origin}${redirectUrl}`,
-      });
-    } catch (err: any) {
-      toast.error(err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || "Google sign-in failed");
-      setLoading(false);
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
+    setErrorMessage(null);
     setLoading(true);
 
     try {
-      if (mode === "signin") {
-        if (!signInLoaded || !signIn) {
-          toast.error("Auth not ready yet — please wait a moment.");
-          setLoading(false);
-          return;
-        }
-        const result = await signIn.create({ identifier: email, password });
-        if (result.status === "complete") {
-          await setSignInActive({ session: result.createdSessionId });
-          navigate({ to: redirectUrl, replace: true });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        if (error.message.toLowerCase().includes("invalid login credentials")) {
+          setErrorMessage("Invalid email or password. Please check your credentials.");
+          toast.error("Invalid email or password");
         } else {
-          toast.info("Additional verification required.");
+          setErrorMessage(error.message);
+          toast.error(error.message);
         }
-      } else {
-        if (!signUpLoaded || !signUp) {
-          toast.error("Auth not ready yet — please wait a moment.");
-          setLoading(false);
-          return;
-        }
-        const result = await signUp.create({ emailAddress: email, password });
-        if (result.status === "complete") {
-          await setSignUpActive({ session: result.createdSessionId });
-          navigate({ to: redirectUrl, replace: true });
-        } else {
-          await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-          setPendingVerification(true);
-          toast.success("Verification code sent to your email!");
-        }
+        return;
       }
-    } catch (err: any) {
-      console.error("Auth error:", err);
-      const firstErr = err?.errors?.[0];
-      const errCode = firstErr?.code;
-      const msg = firstErr?.longMessage || firstErr?.message || err?.message || "Something went wrong";
-      
-      if (mode === "signin" && (errCode === "form_identifier_not_found" || msg.toLowerCase().includes("couldn't find"))) {
-        toast.error("No account found with this email", {
-          description: "Would you like to create a free account instead?",
-          action: {
-            label: "Sign Up",
-            onClick: () => setMode("signup"),
-          },
-        });
-      } else {
-        toast.error(msg);
+
+      if (data.session) {
+        toast.success("Welcome back to Stuccord Motion!");
+        navigate({ to: redirectUrl, replace: true });
       }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to sign in. Please try again.";
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleVerify(e: React.FormEvent) {
+  async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
-    if (!signUpLoaded || !signUp) return;
+    setErrorMessage(null);
+
+    if (password.length < 8) {
+      setErrorMessage("Password must be at least 8 characters long.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage("Passwords do not match. Please re-enter.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
-      if (result.status === "complete") {
-        await setSignUpActive({ session: result.createdSessionId });
-        toast.success("Account verified successfully!");
-        navigate({ to: redirectUrl, replace: true });
-      } else {
-        toast.error("Verification incomplete. Please check the code and try again.");
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        if (error.message.toLowerCase().includes("already registered")) {
+          setErrorMessage("An account with this email already exists.");
+          toast.error("Account already exists", {
+            description: "Would you like to sign in instead?",
+            action: {
+              label: "Sign in",
+              onClick: () => {
+                setMode("signin");
+                setErrorMessage(null);
+              },
+            },
+          });
+        } else {
+          setErrorMessage(error.message);
+          toast.error(error.message);
+        }
+        return;
       }
-    } catch (err: any) {
-      const msg = err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || err?.message || "Invalid verification code";
+
+      if (data.session) {
+        toast.success("Account created successfully!");
+        navigate({ to: redirectUrl, replace: true });
+      } else if (data.user) {
+        setEmailConfirmationSent(true);
+        toast.success("Account created! Check your email to confirm.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create account. Please try again.";
+      setErrorMessage(msg);
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -190,76 +203,47 @@ function AuthPage() {
             {/* Badge */}
             <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1 text-[11px] font-medium text-muted-foreground mb-6">
               <Sparkles className="w-3.5 h-3.5 text-primary" />
-              {pendingVerification
+              {emailConfirmationSent
                 ? "Verify your email"
                 : mode === "signin"
                 ? "Welcome back"
                 : "Join 12,400+ creators"}
             </div>
 
-            {pendingVerification ? (
-              /* Email Code Verification Step */
-              <div className="space-y-5">
+            {emailConfirmationSent ? (
+              /* Email confirmation notice */
+              <div className="space-y-5 text-center">
+                <div className="w-12 h-12 rounded-full bg-primary/15 text-primary grid place-items-center mx-auto">
+                  <MailCheck className="w-6 h-6" />
+                </div>
                 <div>
                   <h1 className="text-[24px] font-semibold tracking-tight text-foreground">
                     Check your email
                   </h1>
-                  <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                    We sent a 6-digit verification code to{" "}
+                  <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                    We sent a confirmation link to{" "}
                     <span className="font-semibold text-foreground">{email}</span>.
+                    Click the link in your email to activate your account and start editing.
                   </p>
                 </div>
-
-                <form onSubmit={handleVerify} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="code" className="text-xs font-medium text-foreground">
-                      Verification code
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="code"
-                        type="text"
-                        placeholder="e.g. 566765"
-                        required
-                        maxLength={6}
-                        value={code}
-                        onChange={(e) => setCode(e.target.value.trim())}
-                        className="h-12 text-center text-lg font-mono tracking-widest uppercase font-semibold"
-                        disabled={loading}
-                        autoFocus
-                      />
-                      <KeyRound className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-                    </div>
-                  </div>
-
+                <div className="pt-2">
                   <Button
-                    type="submit"
-                    className="w-full h-11 font-medium shadow-sm"
-                    disabled={loading || code.length < 6}
-                  >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      "Verify & Launch Studio"
-                    )}
-                  </Button>
-                </form>
-
-                <div className="pt-2 text-center">
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
+                    variant="outline"
+                    className="w-full"
                     onClick={() => {
-                      setPendingVerification(false);
-                      setCode("");
+                      setEmailConfirmationSent(false);
+                      setMode("signin");
+                      setPassword("");
+                      setConfirmPassword("");
+                      setErrorMessage(null);
                     }}
                   >
-                    Use a different email address
-                  </button>
+                    Back to Sign In
+                  </Button>
                 </div>
               </div>
             ) : (
-              /* Standard Sign In / Sign Up Form */
+              /* Sign In / Sign Up Form */
               <>
                 <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
                   {mode === "signin" ? "Sign in to your studio" : "Create your studio"}
@@ -270,26 +254,14 @@ function AuthPage() {
                     : "Ship your first cinematic short in under 5 minutes."}
                 </p>
 
-                {/* Google */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full mt-7 h-11 font-medium gap-2.5"
-                  onClick={handleGoogleSignIn}
-                  disabled={loading}
-                >
-                  <GoogleIcon />
-                  Continue with Google
-                </Button>
+                {errorMessage && (
+                  <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs leading-relaxed">
+                    {errorMessage}
+                  </div>
+                )}
 
-                <div className="flex items-center gap-3 my-5 text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <div className="h-px flex-1 bg-border" />
-                  or with email
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-
-                {/* Email/password form */}
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={mode === "signin" ? handleSignIn : handleSignUp} className="space-y-4 mt-6">
+                  {/* Email */}
                   <div className="space-y-1.5">
                     <Label htmlFor="email" className="text-xs font-medium text-foreground">
                       Email
@@ -307,20 +279,11 @@ function AuthPage() {
                     />
                   </div>
 
+                  {/* Password */}
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="password" className="text-xs font-medium text-foreground">
-                        Password
-                      </Label>
-                      {mode === "signin" && (
-                        <button
-                          type="button"
-                          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Forgot password?
-                        </button>
-                      )}
-                    </div>
+                    <Label htmlFor="password" className="text-xs font-medium text-foreground">
+                      Password
+                    </Label>
                     <div className="relative">
                       <Input
                         id="password"
@@ -328,7 +291,7 @@ function AuthPage() {
                         autoComplete={mode === "signup" ? "new-password" : "current-password"}
                         placeholder={mode === "signup" ? "At least 8 characters" : "••••••••"}
                         required
-                        minLength={8}
+                        minLength={mode === "signup" ? 8 : undefined}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         className="h-11 pr-10"
@@ -337,17 +300,50 @@ function AuthPage() {
                       <button
                         type="button"
                         onClick={() => setShowPw((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                         tabIndex={-1}
+                        aria-label={showPw ? "Hide password" : "Show password"}
                       >
                         {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
 
+                  {/* Confirm Password (Sign up only) */}
+                  {mode === "signup" && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="confirmPassword" className="text-xs font-medium text-foreground">
+                        Confirm password
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="confirmPassword"
+                          type={showConfirmPw ? "text" : "password"}
+                          autoComplete="new-password"
+                          placeholder="Re-enter your password"
+                          required
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="h-11 pr-10"
+                          disabled={loading}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPw((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          tabIndex={-1}
+                          aria-label={showConfirmPw ? "Hide password" : "Show password"}
+                        >
+                          {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Submit button */}
                   <Button
                     type="submit"
-                    className="w-full h-11 font-medium shadow-sm"
+                    className="w-full h-11 font-medium shadow-sm cursor-pointer"
                     disabled={loading}
                   >
                     {loading ? (
@@ -365,11 +361,12 @@ function AuthPage() {
                   {mode === "signin" ? "New to Stuccord?" : "Already have an account?"}{" "}
                   <button
                     type="button"
-                    className="text-foreground font-semibold hover:underline underline-offset-4 transition-colors"
+                    className="text-foreground font-semibold hover:underline underline-offset-4 transition-colors cursor-pointer"
                     onClick={() => {
                       setMode(mode === "signin" ? "signup" : "signin");
-                      setEmail("");
+                      setErrorMessage(null);
                       setPassword("");
+                      setConfirmPassword("");
                     }}
                   >
                     {mode === "signin" ? "Create free account" : "Sign in"}
@@ -378,14 +375,8 @@ function AuthPage() {
 
                 <p className="mt-8 text-[11px] leading-relaxed text-muted-foreground text-center">
                   By continuing you agree to our{" "}
-                  <a className="underline underline-offset-2 hover:text-foreground transition-colors cursor-pointer">
-                    Terms
-                  </a>{" "}
-                  and{" "}
-                  <a className="underline underline-offset-2 hover:text-foreground transition-colors cursor-pointer">
-                    Privacy Policy
-                  </a>
-                  .
+                  <span className="underline underline-offset-2 text-foreground">Terms</span> and{" "}
+                  <span className="underline underline-offset-2 text-foreground">Privacy Policy</span>.
                 </p>
               </>
             )}
@@ -411,8 +402,8 @@ function AuthPage() {
 
           <div className="max-w-md space-y-8">
             <blockquote className="text-[24px] leading-[1.35] font-medium tracking-tight text-background/90">
-              "Stuccord replaced a $4k/mo editor. I ship five shorts a week now and my retention
-              is up 38%."
+              &ldquo;Stuccord replaced a $4k/mo editor. I ship five shorts a week now and my retention
+              is up 38%.&rdquo;
             </blockquote>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary grid place-items-center font-semibold text-sm text-primary-foreground shadow-sm">
@@ -444,16 +435,5 @@ function AuthPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function GoogleIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" />
-    </svg>
   );
 }

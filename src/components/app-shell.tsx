@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { useUser, useClerk, UserButton } from "@clerk/clerk-react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -74,8 +74,20 @@ export function AppShell({
   const navigate = useNavigate();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, isSignedIn } = useUser();
-  const { signOut } = useClerk();
+  const [user, setUser] = useState<{ email?: string; user_metadata?: { full_name?: string } } | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setUser(data.user);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => {
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const fetchStats = useServerFn(getUsageStats);
@@ -95,13 +107,14 @@ export function AppShell({
   async function handleSignOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
-    await signOut();
+    await supabase.auth.signOut();
     router.invalidate();
     navigate({ to: "/auth", search: { next: undefined }, replace: true });
   }
 
-  const userEmail = user?.primaryEmailAddress?.emailAddress ?? (import.meta.env.DEV ? "dev-user@example.com" : null);
-  const displayName = user?.fullName || user?.firstName || (userEmail ? userEmail.split("@")[0] : "Guest");
+  const userEmail = user?.email ?? null;
+  const fullName = (user?.user_metadata?.full_name as string | undefined) ?? null;
+  const displayName = fullName || (userEmail ? userEmail.split("@")[0] : "Creator");
   const initials = displayName.slice(0, 2).toUpperCase();
 
   const isActive = (item: NavItem) =>
@@ -274,40 +287,36 @@ export function AppShell({
                 <Plus className="w-4 h-4" /> New project
               </Button>
 
-              {isSignedIn ? (
-                <UserButton afterSignOutUrl="/auth" />
-              ) : (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-surface">
-                      <div className="w-7 h-7 rounded-full bg-foreground text-background text-[11px] font-semibold grid place-items-center">
-                        {initials}
-                      </div>
-                      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground hidden sm:block" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel className="font-normal">
-                      <div className="text-xs text-muted-foreground">Signed in as</div>
-                      <div className="text-sm font-medium truncate text-foreground">{userEmail ?? "Guest"}</div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
-                      <Settings className="w-4 h-4 mr-2" /> Settings
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate({ to: "/billing" })}>
-                      <CreditCard className="w-4 h-4 mr-2" /> Billing
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate({ to: "/help" })}>
-                      <HelpCircle className="w-4 h-4 mr-2" /> Help
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
-                      <LogOut className="w-4 h-4 mr-2" /> Sign out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-surface cursor-pointer">
+                    <div className="w-7 h-7 rounded-full bg-foreground text-background text-[11px] font-semibold grid place-items-center">
+                      {initials}
+                    </div>
+                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground hidden sm:block" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="text-xs text-muted-foreground">Signed in as</div>
+                    <div className="text-sm font-medium truncate text-foreground">{userEmail ?? "Creator"}</div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
+                    <Settings className="w-4 h-4 mr-2" /> Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate({ to: "/billing" })}>
+                    <CreditCard className="w-4 h-4 mr-2" /> Billing
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate({ to: "/help" })}>
+                    <HelpCircle className="w-4 h-4 mr-2" /> Help
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
+                    <LogOut className="w-4 h-4 mr-2" /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 

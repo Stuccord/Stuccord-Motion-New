@@ -8,17 +8,11 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
-import { ClerkProvider } from "@clerk/clerk-react";
 import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
 import faviconUrl from "../assets/logo.png";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-
-const CLERK_PUBLISHABLE_KEY =
-  (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined) ||
-  (import.meta.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY as string | undefined) ||
-  "pk_test_ZWxlY3RyaWMtamF3ZmlzaC0zNC5jbGVyay5hY2NvdW50cy5kZXYk";
 
 function NotFoundComponent() {
   return (
@@ -144,14 +138,9 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
-    <ClerkProvider
-      publishableKey={CLERK_PUBLISHABLE_KEY}
-      afterSignOutUrl="/"
-    >
-      <QueryClientProvider client={queryClient}>
-        <Outlet />
-        <Toaster />
-      </QueryClientProvider>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <Outlet />
+      <Toaster />
+    </QueryClientProvider>
   );
 }
