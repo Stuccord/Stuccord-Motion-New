@@ -211,16 +211,12 @@ export function AppShell({
 
       <div className="border-t border-border p-3">
         <button
-          onClick={() => (isSignedIn ? navigate({ to: "/settings" }) : navigate({ to: "/auth", search: { next: undefined } }))}
+          onClick={() => (!!user ? navigate({ to: "/settings" }) : navigate({ to: "/auth", search: { next: undefined } }))}
           className="flex w-full items-center gap-2.5 rounded-lg p-2 hover:bg-surface transition-colors text-left"
         >
-          {user?.imageUrl ? (
-            <img src={user.imageUrl} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 border border-border" />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center shrink-0 shadow-sm">
-              {initials}
-            </div>
-          )}
+          <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center shrink-0 shadow-sm">
+            {initials}
+          </div>
           <div className="min-w-0 flex-1">
             <div className="text-[12px] font-medium truncate text-foreground">{displayName}</div>
             <div className="text-[10px] text-muted-foreground truncate">{userEmail ?? ""}</div>
