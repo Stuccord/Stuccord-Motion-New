@@ -105,6 +105,7 @@ import {
   PreviewCanvas,
   AIMotionPanel,
   TimelinePanel,
+  ClipInspector,
   formatTimecode,
   type AspectRatio,
   type ViewMode,
@@ -218,6 +219,7 @@ function EditorPage() {
   const [inspectorTab, setInspectorTab] = useState<"ai" | "notes">("ai");
   const [mobileTab, setMobileTab] = useState<"edit" | "media" | "ai">("edit");
   const [mobileFullscreen, setMobileFullscreen] = useState(false);
+  const [showRightPanel, setShowRightPanel] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -1003,6 +1005,8 @@ function EditorPage() {
       <EditorShell
         mobileTab={mobileTab}
         onMobileTabChange={setMobileTab}
+        showRightPanel={showRightPanel}
+        onToggleRightPanel={() => setShowRightPanel((v) => !v)}
         topBar={
           <EditorTopBar
             title={project.title}
@@ -1071,27 +1075,43 @@ function EditorPage() {
           />
         }
         rightPanel={
-          <AIMotionPanel
-            projectId={projectId}
-            status={project.status}
-            latestJob={latestJob}
-            clipCount={clips.length}
-            preset={project.style_preset}
-            script={project.script}
-            musicEnabled={musicEnabled}
-            musicVolume={musicVolume}
-            captionsEnabled={captionsEnabled}
-            captionsText={captionsText}
-            onScriptChange={setCaptionsText}
-            onScriptBlur={() => {
-              if (captionsText !== null && captionsText !== project.script) {
-                updateSettings({ data: { id: projectId, script: captionsText } });
+          selectedClip ? (
+            <ClipInspector
+              clip={selectedClip}
+              onDeselect={() => setSelectedClipId(null)}
+              onSplit={doSplit}
+              onDuplicate={doDuplicate}
+              onDelete={doDelete}
+              onTrim={(id, trimInMs, trimOutMs) =>
+                trimMut.mutate({ id, trim_in_ms: trimInMs, trim_out_ms: trimOutMs })
               }
-            }}
-            onMusicEnabledChange={setMusicEnabled}
-            onMusicVolumeChange={setMusicVolume}
-            onCaptionsEnabledChange={setCaptionsEnabled}
-          />
+              isSplitting={splitMut.isPending}
+              isDuplicating={duplicateMut.isPending}
+              isDeleting={removeClipMut.isPending}
+            />
+          ) : (
+            <AIMotionPanel
+              projectId={projectId}
+              status={project.status}
+              latestJob={latestJob}
+              clipCount={clips.length}
+              preset={project.style_preset}
+              script={project.script}
+              musicEnabled={musicEnabled}
+              musicVolume={musicVolume}
+              captionsEnabled={captionsEnabled}
+              captionsText={captionsText}
+              onScriptChange={setCaptionsText}
+              onScriptBlur={() => {
+                if (captionsText !== null && captionsText !== project.script) {
+                  updateSettings({ data: { id: projectId, script: captionsText } });
+                }
+              }}
+              onMusicEnabledChange={setMusicEnabled}
+              onMusicVolumeChange={setMusicVolume}
+              onCaptionsEnabledChange={setCaptionsEnabled}
+            />
+          )
         }
         bottomPanel={
           <TimelinePanel

@@ -7,3 +7,4 @@ export * from "./PreviewCanvas";
 export * from "./PlaybackControls";
 export * from "./AIMotionPanel";
 export * from "./TimelinePanel";
+export * from "./ClipInspector";
