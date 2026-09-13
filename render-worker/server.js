@@ -16,7 +16,7 @@
 
 import express from "express";
 import crypto from "crypto";
-import { spawn } from "child_process";
+import { spawn, execFile } from "child_process";
 import fs from "fs";
 import fsp from "fs/promises";
 import os from "os";
@@ -27,46 +27,145 @@ const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
 
 const SECRET = process.env.RENDER_WORKER_SECRET;
-if (!SECRET) console.warn("RENDER_WORKER_SECRET not set — /jobs will reject all requests");
-if (!ffmpegPath) console.warn("ffmpeg-static failed to resolve a binary path");
+if (!SECRET) console.warn("[Worker] RENDER_WORKER_SECRET not set — /jobs will reject all requests");
+if (!ffmpegPath) console.warn("[Worker] ffmpeg-static failed to resolve a binary path");
+
+let currentJobId = null;
 
 function verifySignature(req) {
   const sig = req.header("x-stuccord-signature") || "";
-  const expected = crypto.createHmac("sha256", SECRET || "").update(req.rawBody).digest("hex");
+  const expected = crypto.createHmac("sha256", SECRET || "").update(req.rawBody || Buffer.alloc(0)).digest("hex");
   const a = Buffer.from(sig), b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function isAbsoluteHttpUrl(urlStr) {
+  if (typeof urlStr !== "string" || !urlStr.trim()) return false;
+  try {
+    const u = new URL(urlStr.trim());
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isSafeRelativePath(p) {
+  if (typeof p !== "string" || !p.trim()) return false;
+  const s = p.trim();
+  if (s.startsWith("/") || s.startsWith("\\")) return false;
+  if (s.includes("..")) return false;
+  if (s.includes("//") || s.includes("\\\\")) return false;
+  if (/^https?:\/\//i.test(s)) return false;
+  return true;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validateJobPayload(job) {
+  if (!job || typeof job !== "object" || Array.isArray(job)) {
+    return "Job payload must be a JSON object";
+  }
+  if (typeof job.job_id !== "string" || !UUID_REGEX.test(job.job_id)) {
+    return "Invalid or missing job_id UUID";
+  }
+  if (!isAbsoluteHttpUrl(job.callback_url)) {
+    return "callback_url must be an absolute http or https URL";
+  }
+  if (!Array.isArray(job.clips) || job.clips.length === 0) {
+    return "clips must be a non-empty array";
+  }
+  const hasValidClips = job.clips.every(
+    (c) => c && typeof c === "object" && isAbsoluteHttpUrl(c.download_url)
+  );
+  if (!hasValidClips) {
+    return "Each clip must have an absolute http or https download_url";
+  }
+  if (!job.output || typeof job.output !== "object" || Array.isArray(job.output)) {
+    return "Missing or invalid output object";
+  }
+  if (!isAbsoluteHttpUrl(job.output.upload_url)) {
+    return "output.upload_url must be an absolute http or https URL";
+  }
+  if (!isSafeRelativePath(job.output.path)) {
+    return "output.path must be a safe relative storage path";
+  }
+  return null;
+}
+
 async function callback(url, payload) {
   const body = JSON.stringify(payload);
-  const signature = crypto.createHmac("sha256", SECRET).update(body).digest("hex");
+  const signature = crypto.createHmac("sha256", SECRET || "").update(body).digest("hex");
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", "x-stuccord-signature": signature },
       body,
     });
-    if (!res.ok) console.error("callback failed", res.status, await res.text().catch(() => ""));
+    if (!res.ok) console.error("[Worker] Callback failed with status", res.status);
   } catch (e) {
-    console.error("callback error", e);
+    console.error("[Worker] Callback network error", e?.message || e);
   }
 }
 
 app.get("/", (_req, res) => res.send("Stuccord render worker up"));
-app.get("/health", (_req, res) => res.json({ ok: true, ffmpeg: Boolean(ffmpegPath) }));
+
+app.get("/health", (_req, res) => {
+  if (!ffmpegPath) {
+    return res.status(503).json({ ok: false, ffmpeg: false, error: "FFmpeg unavailable" });
+  }
+  try {
+    execFile(ffmpegPath, ["-version"], { timeout: 3000, windowsHide: true }, (err, stdout) => {
+      if (err) {
+        return res.status(503).json({ ok: false, ffmpeg: false, error: "FFmpeg unavailable" });
+      }
+      const firstLine = (stdout || "").split("\n")[0]?.trim() || "";
+      res.json({ ok: true, ffmpeg: true, version: firstLine.slice(0, 80) });
+    });
+  } catch {
+    return res.status(503).json({ ok: false, ffmpeg: false, error: "FFmpeg unavailable" });
+  }
+});
 
 app.post("/jobs", async (req, res) => {
   if (!verifySignature(req)) return res.status(401).send("bad signature");
+
   const job = req.body;
+  const validationError = validateJobPayload(job);
+  if (validationError) {
+    console.warn(`[Worker] Rejected invalid job payload: ${validationError}`);
+    return res.status(400).json({ ok: false, error: "Invalid job payload" });
+  }
+
+  if (currentJobId === job.job_id) {
+    return res.status(409).json({ ok: false, error: "Job is already rendering" });
+  }
+
+  if (currentJobId !== null) {
+    res.setHeader("Retry-After", "30");
+    return res.status(503).json({ ok: false, error: "Worker is busy" });
+  }
+
+  currentJobId = job.job_id;
   res.status(202).json({ ok: true, job_id: job.job_id });
-  runRender(job).catch(async (err) => {
-    console.error("render failed", err);
-    await callback(job.callback_url, {
-      job_id: job.job_id,
-      status: "failed",
-      error: String(err?.message ?? err),
-    });
-  });
+
+  (async () => {
+    try {
+      await runRender(job);
+    } catch (err) {
+      console.error(`[Worker] Render failed for job=${job.job_id}:`, err?.message || err);
+      try {
+        await callback(job.callback_url, {
+          job_id: job.job_id,
+          status: "failed",
+          error: String(err?.message ?? err).slice(0, 500),
+        });
+      } catch (cbErr) {
+        console.error(`[Worker] Failed error-callback for job=${job.job_id}:`, cbErr?.message || cbErr);
+      }
+    } finally {
+      currentJobId = null;
+    }
+  })();
 });
 
 // ---------- helpers ----------
@@ -307,5 +406,8 @@ async function runRender(job) {
   }
 }
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log("worker listening on", port));
+const port = Number(process.env.PORT) || 3000;
+const host = "0.0.0.0";
+app.listen(port, host, () => {
+  console.log(`[Worker] Listening on ${host}:${port}`);
+});
