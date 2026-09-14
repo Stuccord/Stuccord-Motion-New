@@ -7,3 +7,32 @@ services:
     envVars:
       - key: NITRO_PRESET
         value: node-server
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_DEV_MOCK_AUTH
+        value: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: RENDER_WORKER_URL
+        sync: false
+      - key: RENDER_WORKER_SECRET
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+
+  - type: web
+    name: stuccord-render-worker
+    runtime: node
+    rootDir: render-worker
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: RENDER_WORKER_SECRET
+        sync: false
