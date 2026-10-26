@@ -6,12 +6,25 @@ const ALLOWED_MIME_TYPES = new Set([
   "video/mp4",
   "video/quicktime",
   "video/webm",
+  // Audio for the music / SFX tracks. Browsers report several names for the
+  // same formats (e.g. MP3 as audio/mpeg or audio/mp3, WAV as audio/wav,
+  // audio/x-wav or audio/wave), so accept each of them.
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/ogg",
+  "audio/webm",
 ]);
 
 /**
  * POST /api/authenticated/uploads/presign
- * Generates a signed upload credential for uploading video files directly
- * from the browser to private Supabase Storage ("raw-clips").
+ * Generates a signed upload credential for uploading video or audio files
+ * directly from the browser to private Supabase Storage ("raw-clips").
  *
  * Expected Request Body:
  *   {
@@ -90,7 +103,7 @@ export const Route = createFileRoute("/api/authenticated/uploads/presign")({
         // 3. Validate MIME type & file size
         if (!ALLOWED_MIME_TYPES.has(contentType)) {
           return new Response(
-            `Unsupported file type '${contentType}'. Only MP4, MOV, and WebM videos are allowed.`,
+            `Unsupported file type '${contentType}'. Upload MP4, MOV or WebM video, or MP3, WAV, M4A, AAC or OGG audio.`,
             { status: 400 }
           );
         }
