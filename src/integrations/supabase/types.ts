@@ -199,6 +199,45 @@ export type Database = {
           },
         ]
       }
+      transcripts: {
+        Row: {
+          created_at: string
+          edited: boolean
+          id: string
+          language: string | null
+          model: string | null
+          provider: string | null
+          storage_path: string
+          updated_at: string
+          user_id: string
+          words: Json
+        }
+        Insert: {
+          created_at?: string
+          edited?: boolean
+          id?: string
+          language?: string | null
+          model?: string | null
+          provider?: string | null
+          storage_path: string
+          updated_at?: string
+          user_id: string
+          words?: Json
+        }
+        Update: {
+          created_at?: string
+          edited?: boolean
+          id?: string
+          language?: string | null
+          model?: string | null
+          provider?: string | null
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+          words?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
