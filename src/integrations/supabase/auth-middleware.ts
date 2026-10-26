@@ -28,13 +28,10 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
-let loggedDevMockWarning = false;
-
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
   async ({ next }) => {
     const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
       throw new Error('Server configuration error: Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY environment variables');
@@ -53,52 +50,26 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
       authHeader !== 'Bearer null' &&
       authHeader !== 'Bearer';
 
-    const isDev = process.env.NODE_ENV !== 'production';
-    const isDevMockAuthEnabled = isDev && process.env.ENABLE_DEV_MOCK_AUTH === 'true';
-
     // -------------------------------------------------------------
-    // 1. Unauthenticated request handling (no Bearer token)
+    // 1. Resolve the access token. Without a Bearer token, local dev may
+    //    sign in as a real dev user (never the service role, so RLS still
+    //    applies); everywhere else this is a strict 401.
     // -------------------------------------------------------------
-    if (!hasBearerToken) {
-      if (isDevMockAuthEnabled) {
-        if (!loggedDevMockWarning) {
-          console.warn(
-            '[Supabase Auth] [DEV MODE ONLY] No bearer token provided. Operating with dev mock user session because ENABLE_DEV_MOCK_AUTH=true.'
-          );
-          loggedDevMockWarning = true;
-        }
-
-        const devKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_PUBLISHABLE_KEY;
-        const supabase = createClient<Database>(SUPABASE_URL, devKey, {
-          global: {
-            fetch: createSupabaseFetch(devKey),
-            headers: devKey === SUPABASE_SERVICE_ROLE_KEY ? { 'x-supabase-role': 'service_role' } : {},
-          },
-          auth: {
-            storage: undefined,
-            persistSession: false,
-            autoRefreshToken: false,
-          },
-        });
-
-        const mockUserId = process.env.DEV_MOCK_USER_ID || '623eb6d8-49c5-4f69-8abe-779d3b71811e';
-        return next({
-          context: {
-            supabase,
-            userId: mockUserId,
-            claims: { sub: mockUserId } as any,
-          },
-        });
+    let token: string;
+    if (hasBearerToken) {
+      token = authHeader.replace('Bearer ', '').trim();
+    } else {
+      const { getDevMockAccessToken } = await import('./dev-mock-auth.server');
+      const devToken = await getDevMockAccessToken();
+      if (!devToken) {
+        throw new Error('Unauthorized: Missing authorization header');
       }
-
-      // Production or whenever ENABLE_DEV_MOCK_AUTH is false/missing: strict 401
-      throw new Error('Unauthorized: Missing authorization header');
+      token = devToken;
     }
 
     // -------------------------------------------------------------
     // 2. Authenticated token verification
     // -------------------------------------------------------------
-    const token = authHeader.replace('Bearer ', '').trim();
     if (!token || token.split('.').length !== 3) {
       throw new Error('Unauthorized: Invalid bearer token structure');
     }

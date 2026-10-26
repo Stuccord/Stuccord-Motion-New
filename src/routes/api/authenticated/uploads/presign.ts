@@ -34,31 +34,35 @@ export const Route = createFileRoute("/api/authenticated/uploads/presign")({
       POST: async ({ request }) => {
         // 1. Verify user authentication from Bearer token
         const authHeader = request.headers.get("authorization");
-        const token =
+        const headerToken =
           authHeader && authHeader.startsWith("Bearer ")
             ? authHeader.replace("Bearer ", "").trim()
             : null;
+        const hasHeaderToken =
+          !!headerToken && headerToken !== "undefined" && headerToken !== "null";
+
+        // Without a Bearer token, local dev may sign in as the real dev user
+        // (see dev-mock-auth.server.ts); otherwise this is a strict 401.
+        let token: string | null = hasHeaderToken ? headerToken : null;
+        if (!token) {
+          const { getDevMockAccessToken } = await import(
+            "@/integrations/supabase/dev-mock-auth.server"
+          );
+          token = await getDevMockAccessToken();
+        }
 
         let userId: string | null = null;
-
-        if (token && token !== "undefined" && token !== "null") {
+        if (token) {
           const { data, error } = await supabaseAdmin.auth.getUser(token);
           if (!error && data?.user) {
             userId = data.user.id;
           }
         }
 
-        const isDev = process.env.NODE_ENV !== "production";
-        const isDevMockAuthEnabled = isDev && process.env.ENABLE_DEV_MOCK_AUTH === "true";
-
         if (!userId) {
-          if (isDevMockAuthEnabled) {
-            userId = process.env.DEV_MOCK_USER_ID || "623eb6d8-49c5-4f69-8abe-779d3b71811e";
-          } else {
-            return new Response("Unauthorized: Missing or invalid authorization token", {
-              status: 401,
-            });
-          }
+          return new Response("Unauthorized: Missing or invalid authorization token", {
+            status: 401,
+          });
         }
 
         // 2. Parse request body

@@ -1,7 +1,8 @@
 /**
- * Seed script: creates a stable dev user in Supabase auth.users
- * and writes the resulting UUID to .env.local as DEV_MOCK_USER_ID
- * so the auth-middleware can read it at runtime.
+ * Seed script: creates (or resets) a dev user in Supabase auth.users with a
+ * freshly generated password, and writes DEV_MOCK_USER_EMAIL and
+ * DEV_MOCK_USER_PASSWORD to .env.local. With ENABLE_DEV_MOCK_AUTH=true the
+ * dev server signs in as this user, so Row Level Security still applies.
  *
  * Run once: node --env-file=.env supabase/seed-dev-user.mjs
  *
@@ -9,6 +10,7 @@
  * Point these at a development project, not production.
  */
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -38,6 +40,7 @@ async function seed() {
   console.log("🌱 Seeding dev user into Supabase auth.users...");
 
   let userId;
+  const password = crypto.randomBytes(24).toString("base64url");
 
   // Check if dev user already exists
   const { data: existingList } = await supabase.auth.admin.listUsers({ perPage: 1000 });
@@ -45,13 +48,18 @@ async function seed() {
 
   if (existing) {
     userId = existing.id;
-    console.log("✅ Dev user already exists:", userId);
+    const { error } = await supabase.auth.admin.updateUserById(userId, { password });
+    if (error) {
+      console.error("❌ Failed to reset dev user password:", error.message);
+      process.exit(1);
+    }
+    console.log("✅ Dev user already exists, password reset:", userId);
   } else {
     const { data, error } = await supabase.auth.admin.createUser({
       email: DEV_USER_EMAIL,
       email_confirm: true,
       user_metadata: { full_name: "Stuccord Dev User" },
-      password: "dev-password-" + Math.random().toString(36).slice(2),
+      password,
     });
     if (error) {
       console.error("❌ Failed to create dev user:", error.message);
@@ -72,18 +80,20 @@ async function seed() {
     console.log("✅ Profile seeded.");
   }
 
-  // Write DEV_MOCK_USER_ID to .env.local
+  // Write the dev user's credentials to .env.local (gitignored)
   const envLocalPath = path.join(ROOT, ".env.local");
   let envContent = fs.existsSync(envLocalPath) ? fs.readFileSync(envLocalPath, "utf-8") : "";
-  if (envContent.includes("DEV_MOCK_USER_ID=")) {
-    envContent = envContent.replace(/DEV_MOCK_USER_ID=.*/g, `DEV_MOCK_USER_ID="${userId}"`);
-  } else {
-    envContent += `\nDEV_MOCK_USER_ID="${userId}"\n`;
-  }
+  const setEnv = (key, value) => {
+    const line = `${key}="${value}"`;
+    const re = new RegExp(`^${key}=.*$`, "m");
+    envContent = re.test(envContent) ? envContent.replace(re, line) : `${envContent.trimEnd()}\n${line}\n`;
+  };
+  setEnv("DEV_MOCK_USER_EMAIL", DEV_USER_EMAIL);
+  setEnv("DEV_MOCK_USER_PASSWORD", password);
   fs.writeFileSync(envLocalPath, envContent, "utf-8");
-  console.log(`✅ Wrote DEV_MOCK_USER_ID="${userId}" to .env.local`);
+  console.log("✅ Wrote DEV_MOCK_USER_EMAIL and DEV_MOCK_USER_PASSWORD to .env.local");
 
-  console.log("\n🎉 Done! Restart your dev server to pick up the new mock user ID.");
+  console.log("\n🎉 Done! Restart your dev server to pick up the dev user credentials.");
 }
 
 seed();
