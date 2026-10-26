@@ -265,6 +265,9 @@ function EditorPage() {
         } catch {
           /* silent */
         }
+      } else {
+        // Edits since the last render make it stale — stop previewing it.
+        setPreviewUrl(null);
       }
     }
     load();
@@ -638,8 +641,12 @@ function EditorPage() {
     setRenderPct(0);
     setRenderMsg("Preparing render");
     try {
-      // If a completed render already exists, just download it.
-      if (data?.project.output_path && data.latestJob?.status === "completed") {
+      // If a completed render exists and nothing changed since, just download it.
+      if (
+        data?.project.status === "ready" &&
+        data.project.output_path &&
+        data.latestJob?.status === "completed"
+      ) {
         const { url } = await signRender({ data: { path: data.project.output_path } });
         const safeTitle = (data.project.title || "stuccord-export").replace(/[^\w.-]+/g, "_");
         const outExt = data.project.output_path.split(".").pop() || "mp4";

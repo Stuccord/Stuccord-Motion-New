@@ -1,6 +1,20 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+
+// A finished render no longer matches the timeline once clips or
+// render-affecting settings change. Drop a "ready" project back to "draft"
+// so the next Render produces a fresh video instead of re-serving the old one.
+async function markProjectEdited(supabase: SupabaseClient<Database>, projectId: string) {
+  const { error } = await supabase
+    .from("projects")
+    .update({ status: "draft" })
+    .eq("id", projectId)
+    .eq("status", "ready");
+  if (error) throw new Error(error.message);
+}
 
 const CreateInput = z.object({
   title: z.string().trim().min(1).max(120),
@@ -207,6 +221,7 @@ export const attachClip = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    await markProjectEdited(context.supabase, data.project_id);
     return row;
   });
 
@@ -219,7 +234,7 @@ export const removeClip = createServerFn({ method: "POST" })
     // leave the storage object in place so those siblings still play.
     const { data: clip } = await context.supabase
       .from("clips")
-      .select("storage_path, parent_clip_id, id")
+      .select("storage_path, parent_clip_id, id, project_id")
       .eq("id", data.id)
       .single();
     if (clip?.storage_path) {
@@ -235,6 +250,7 @@ export const removeClip = createServerFn({ method: "POST" })
     }
     const { error } = await context.supabase.from("clips").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
+    if (clip?.project_id) await markProjectEdited(context.supabase, clip.project_id);
     return { ok: true };
   });
 
@@ -265,6 +281,7 @@ export const updateClipOrder = createServerFn({ method: "POST" })
         .eq("project_id", data.project_id);
       if (error) throw new Error(error.message);
     }
+    await markProjectEdited(context.supabase, data.project_id);
     return { ok: true };
   });
 
@@ -280,11 +297,14 @@ export const updateClipTrim = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
+    const { data: updated, error } = await context.supabase
       .from("clips")
       .update({ trim_in_ms: data.trim_in_ms, trim_out_ms: data.trim_out_ms })
-      .eq("id", data.id);
+      .eq("id", data.id)
+      .select("project_id")
+      .maybeSingle();
     if (error) throw new Error(error.message);
+    if (updated?.project_id) await markProjectEdited(context.supabase, updated.project_id);
     return { ok: true };
   });
 
@@ -362,6 +382,7 @@ export const splitClip = createServerFn({ method: "POST" })
       .eq("id", src.id);
     if (uErr) throw new Error(uErr.message);
 
+    await markProjectEdited(context.supabase, src.project_id);
     return { left_id: src.id, right_id: right.id };
   });
 
@@ -406,6 +427,7 @@ export const duplicateClip = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (iErr) throw new Error(iErr.message);
+    await markProjectEdited(context.supabase, src.project_id);
     return copy;
   });
 
@@ -444,6 +466,16 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    // Title is display-only; everything else here changes the rendered video.
+    const affectsRender =
+      data.aspect_ratio !== undefined ||
+      data.style_preset !== undefined ||
+      data.script !== undefined ||
+      data.brief !== undefined;
+    if (affectsRender && row.status === "ready") {
+      await markProjectEdited(context.supabase, data.id);
+      return { ...row, status: "draft" as const };
+    }
     return row;
   });
 
