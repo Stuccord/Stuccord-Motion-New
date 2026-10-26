@@ -1,13 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
-import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
+import { defineTool } from "@lovable.dev/mcp-js";
 import { z } from "zod";
-
-function supabaseForUser(ctx: ToolContext) {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
+import { supabaseForUser } from "../supabase";
 
 export default defineTool({
   name: "create_project",
@@ -33,12 +26,13 @@ export default defineTool({
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   handler: async ({ title, brief, style_preset, aspect_ratio }, ctx) => {
-    if (!ctx.isAuthenticated())
+    const userId = ctx.getUserId();
+    if (!ctx.isAuthenticated() || !userId)
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
     const { data, error } = await supabaseForUser(ctx)
       .from("projects")
       .insert({
-        user_id: ctx.getUserId(),
+        user_id: userId,
         title,
         brief: brief ?? null,
         style_preset,

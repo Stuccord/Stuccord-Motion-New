@@ -1,13 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
-import { defineTool, type ToolContext } from "@lovable.dev/mcp-js";
+import { defineTool } from "@lovable.dev/mcp-js";
 import { z } from "zod";
-
-function supabaseForUser(ctx: ToolContext) {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
+import { RENDER_JOB_COLUMNS, supabaseForUser, withDownloadUrls } from "../supabase";
 
 export default defineTool({
   name: "get_project",
@@ -27,7 +20,7 @@ export default defineTool({
       sb.from("clips").select("*").eq("project_id", project_id).order("ordinal"),
       sb
         .from("render_jobs")
-        .select("id, status, created_at, updated_at, output_url")
+        .select(RENDER_JOB_COLUMNS)
         .eq("project_id", project_id)
         .order("created_at", { ascending: false })
         .limit(5),
@@ -35,7 +28,11 @@ export default defineTool({
     if (pErr) return { content: [{ type: "text", text: pErr.message }], isError: true };
     if (!project)
       return { content: [{ type: "text", text: "Project not found" }], isError: true };
-    const payload = { project, clips: clips ?? [], render_jobs: jobs ?? [] };
+    const payload = {
+      project,
+      clips: clips ?? [],
+      render_jobs: await withDownloadUrls(sb, jobs ?? []),
+    };
     return {
       content: [{ type: "text", text: JSON.stringify(payload) }],
       structuredContent: payload,
