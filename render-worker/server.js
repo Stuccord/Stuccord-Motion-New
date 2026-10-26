@@ -10,8 +10,9 @@
 //
 // The worker receives signed download/upload URLs from the app, so it does
 // NOT need any Supabase service keys. It uses ffmpeg to normalize each
-// source clip to the target aspect ratio (1080p, H.264 + AAC, 30fps) and
-// concatenates them into a single deliverable video. When an AI edit plan
+// source clip to the target aspect ratio (1080p, H.264 + AAC, 30fps),
+// concatenates the A-roll into the main track and overlays the B-roll on top
+// of it from 0:00 (matching the editor timeline). When an AI edit plan
 // produces a "hook" line, that hook is burned into the first ~3 seconds.
 
 import express from "express";
@@ -283,8 +284,21 @@ async function runRender(job) {
       job_id: job.job_id, status: "transcribing", progress: 10,
       stage_message: `Downloading ${job.clips.length} clip${job.clips.length === 1 ? "" : "s"}`,
     });
-    const clips = job.clips.filter((c) => c.download_url);
-    if (!clips.length) throw new Error("No downloadable clips provided");
+    // Video tracks in timeline order. A-roll ("aroll"/"auto") plays back to
+    // back as the main picture and sound. B-roll plays back to back from 0:00
+    // on top of it, muted, and is cut where the A-roll ends: the same layout
+    // the editor timeline shows. With no A-roll, the B-roll is the main track.
+    const videoClips = job.clips.filter(
+      (c) => c.download_url && c.role !== "music" && c.role !== "sfx",
+    );
+    if (!videoClips.length) throw new Error("No downloadable clips provided");
+    let mainClips = videoClips.filter((c) => c.role !== "broll");
+    let brollClips = videoClips.filter((c) => c.role === "broll");
+    if (!mainClips.length) {
+      mainClips = brollClips;
+      brollClips = [];
+    }
+    const clips = [...mainClips, ...brollClips];
 
     const sources = [];
     for (let i = 0; i < clips.length; i++) {
@@ -341,21 +355,48 @@ async function runRender(job) {
     }
 
 
-    // 4. Concat via demuxer
-    const listPath = path.join(workdir, "list.txt");
-    await fsp.writeFile(
-      listPath,
-      normalized.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"),
-    );
-    const concatOut = path.join(workdir, "concat.mp4");
-    await run(ffmpegPath, [
-      "-y", "-f", "concat", "-safe", "0", "-i", listPath,
-      "-c", "copy", "-movflags", "+faststart",
-      concatOut,
-    ]);
+    // 4. Concat each track via demuxer
+    const concatTrack = async (files, name, extraArgs = []) => {
+      const listPath = path.join(workdir, `${name}.txt`);
+      await fsp.writeFile(
+        listPath,
+        files.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"),
+      );
+      const out = path.join(workdir, `${name}.mp4`);
+      await run(ffmpegPath, [
+        "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+        ...extraArgs,
+        "-c", "copy", "-movflags", "+faststart",
+        out,
+      ]);
+      return out;
+    };
+    const concatOut = await concatTrack(normalized.slice(0, mainClips.length), "concat");
+
+    // 4b. Overlay the B-roll track (video only). eof_action=pass shows the
+    //     A-roll again once the B-roll runs out, and the output ends with the
+    //     A-roll, so B-roll past that point is cut.
+    let composedOut = concatOut;
+    if (brollClips.length) {
+      await callback(job.callback_url, {
+        job_id: job.job_id, status: "rendering", progress: 75,
+        stage_message: "Overlaying B-roll",
+      });
+      const brollOut = await concatTrack(normalized.slice(mainClips.length), "broll", ["-an"]);
+      const overlayOut = path.join(workdir, "overlay.mp4");
+      await run(ffmpegPath, [
+        "-y", "-i", concatOut, "-i", brollOut,
+        "-filter_complex", "[0:v][1:v]overlay=eof_action=pass[v]",
+        "-map", "[v]", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-c:a", "copy", "-movflags", "+faststart",
+        overlayOut,
+      ]);
+      composedOut = overlayOut;
+    }
 
     // 5. Optional: burn hook text on the first 3 seconds
-    let finalOut = concatOut;
+    let finalOut = composedOut;
     const font = findSystemFont();
     if (hook && font) {
       await callback(job.callback_url, {
@@ -370,7 +411,7 @@ async function runRender(job) {
         `x=(w-text_w)/2:y=h*0.08:enable='lt(t,3)'`;
       try {
         await run(ffmpegPath, [
-          "-y", "-i", concatOut,
+          "-y", "-i", composedOut,
           "-vf", drawtext,
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
           "-c:a", "copy", "-movflags", "+faststart",
