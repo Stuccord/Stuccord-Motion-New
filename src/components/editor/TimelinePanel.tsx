@@ -11,9 +11,6 @@ import {
   Minus,
   Maximize2,
   Film,
-  Volume2,
-  Lock,
-  Eye,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -26,6 +23,7 @@ import { cn } from "@/lib/utils";
 import type { ClipRow } from "./types";
 import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
 import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
+import { thumbnailKey } from "@/lib/video-thumbnail";
 
 /* ---------- shared types ---------- */
 export interface HistoryItem {
@@ -112,9 +110,14 @@ function Divider() {
 }
 
 /* ---------- track row ---------- */
+// Video tracks hold clips; slim tracks (voice, captions, music) hold labels.
+const TRACK_HEIGHT = { clip: 56, slim: 34 } as const;
+
 function TrackRow({
   label,
   name,
+  note,
+  size = "clip",
   innerWidth,
   contentHandlers,
   contentRef,
@@ -122,6 +125,9 @@ function TrackRow({
 }: {
   label: string;
   name: string;
+  /** A short line under the track name, e.g. what the track is for. */
+  note?: string;
+  size?: keyof typeof TRACK_HEIGHT;
   innerWidth: number;
   /** Pointer handlers for the track's content area (click/drag to seek). */
   contentHandlers?: React.HTMLAttributes<HTMLDivElement>;
@@ -129,45 +135,25 @@ function TrackRow({
   contentRef?: (el: HTMLDivElement | null) => void;
   children: React.ReactNode;
 }) {
+  const height = TRACK_HEIGHT[size];
   return (
-    <div className="flex border-b border-white/[0.05] min-h-[76px] hover:bg-white/[0.015] transition-colors">
+    <div
+      className="flex border-b border-white/[0.05] hover:bg-white/[0.015] transition-colors"
+      style={{ height }}
+    >
       <div
         data-track-header
-        className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] px-2.5 py-2 flex flex-col justify-center gap-1 sticky left-0 z-10"
+        className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] px-2.5 flex flex-col justify-center sticky left-0 z-10"
       >
-        <div className="flex items-baseline gap-1.5">
+        <div className="flex items-baseline gap-1.5 min-w-0">
           <span className="text-[11px] font-mono font-bold text-violet-400">{label}</span>
           <span className="text-[9px] text-neutral-500 uppercase tracking-wider truncate">
             {name}
           </span>
         </div>
-        <div className="flex gap-0.5 -ml-1">
-          <button
-            title="Mute"
-            className="w-5 h-5 grid place-items-center rounded text-neutral-500 hover:text-white hover:bg-white/[0.06]"
-          >
-            <Volume2 className="w-3 h-3" />
-          </button>
-          <button
-            title="Lock"
-            className="w-5 h-5 grid place-items-center rounded text-neutral-500 hover:text-white hover:bg-white/[0.06]"
-          >
-            <Lock className="w-3 h-3" />
-          </button>
-          <button
-            title="Visibility"
-            className="w-5 h-5 grid place-items-center rounded text-neutral-500 hover:text-white hover:bg-white/[0.06]"
-          >
-            <Eye className="w-3 h-3" />
-          </button>
-        </div>
+        {note && <span className="text-[8.5px] text-neutral-600 truncate">{note}</span>}
       </div>
-      <div
-        ref={contentRef}
-        className="relative p-2 min-h-[76px]"
-        style={{ width: innerWidth }}
-        {...contentHandlers}
-      >
+      <div ref={contentRef} className="relative" style={{ width: innerWidth }} {...contentHandlers}>
         {children}
       </div>
     </div>
@@ -188,6 +174,8 @@ function TimelineClip({
   snapBoundariesMs,
   clipStartMs,
   tone,
+  thumbnail,
+  cutAtMs,
 }: {
   clip: ClipRow;
   index: number;
@@ -203,6 +191,10 @@ function TimelineClip({
   snapBoundariesMs: number[];
   clipStartMs: number;
   tone: "primary" | "teal";
+  /** A frame from the clip (data URL), repeated along the block. */
+  thumbnail?: string;
+  /** Where in this clip the exported video ends (ms); the rest is cut. */
+  cutAtMs?: number | null;
 }) {
   const sourceMs = clipSourceMs(clip);
   const trimIn = clip.trim_in_ms ?? 0;
@@ -328,8 +320,8 @@ function TimelineClip({
         position: "absolute",
         left: leftPx,
         width: Math.max(20, widthPx),
-        top: 8,
-        bottom: 8,
+        top: 5,
+        bottom: 5,
         transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
       }}
       className={cn(
@@ -359,18 +351,44 @@ function TimelineClip({
         </div>
       ))}
 
+      {/* Thumbnail strip, dimmed so the label stays readable */}
+      {thumbnail && (
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-45 pointer-events-none"
+          style={{
+            backgroundImage: `url(${thumbnail})`,
+            backgroundSize: "auto 100%",
+            backgroundRepeat: "repeat-x",
+          }}
+        />
+      )}
+
+      {/* Part past the end of the exported video: cut */}
+      {cutAtMs != null && (
+        <div
+          className="absolute inset-y-0 right-0 pointer-events-none border-l border-dashed border-white/50"
+          style={{
+            left: (cutAtMs / 1000) * pxPerSec,
+            background:
+              "repeating-linear-gradient(135deg, rgba(0,0,0,0.55) 0 4px, rgba(0,0,0,0.25) 4px 8px)",
+          }}
+          title="Cut: this part runs past the end of the video"
+        />
+      )}
+
       {/* Label */}
-      <div className="absolute inset-0 p-1.5 pl-3 pr-3 flex flex-col justify-between text-[9px] pointer-events-none">
+      <div className="absolute inset-0 px-3 py-1 flex flex-col justify-between text-[9px] pointer-events-none [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
         <div className="flex items-center gap-1 text-white/95 font-mono font-semibold truncate">
           <Film className="w-2.5 h-2.5 shrink-0" />
           <span className="truncate">
             {String(index + 1).padStart(2, "0")} · {clip.filename.replace(/\.[^.]+$/, "")}
           </span>
         </div>
-        <div className="flex items-center justify-between text-white/70 font-mono tabular-nums">
-          <span>{formatTimecode(visibleMs / 1000)}</span>
+        <div className="flex items-center justify-between text-white/75 font-mono tabular-nums">
+          <span>{formatPlaybackTime(visibleMs / 1000)}</span>
           {sourceMs != null && (
-            <span className="text-white/40">/ {formatTimecode(sourceMs / 1000)}</span>
+            <span className="text-white/45">/ {formatPlaybackTime(sourceMs / 1000)}</span>
           )}
         </div>
       </div>
@@ -378,43 +396,40 @@ function TimelineClip({
   );
 }
 
-/* ---------- audio waveform decoration ---------- */
-function WaveformTrack({
-  width,
-  color,
-  opacity = 1,
+/* ---------- slim track labels ---------- */
+// A labelled bar on a slim track (voice, caption phrase, music clip).
+function TrackLabel({
+  leftPx,
+  widthPx,
+  text,
+  title,
+  className,
 }: {
-  width: number;
-  color: string;
-  opacity?: number;
+  leftPx: number;
+  widthPx: number;
+  text: string;
+  title?: string;
+  className: string;
 }) {
   return (
     <div
-      className={`absolute inset-y-2 left-0 rounded bg-gradient-to-r ${color} border flex items-center gap-[2px] overflow-hidden`}
-      style={{ width: width - 8, opacity }}
+      className={cn(
+        "absolute top-1 bottom-1 rounded px-1.5 flex items-center text-[9.5px] leading-none truncate pointer-events-none border",
+        className,
+      )}
+      style={{ left: leftPx, width: Math.max(4, widthPx - 1) }}
+      title={title ?? text}
     >
-      {Array.from({ length: Math.floor((width - 16) / 4) }).map((_, i) => {
-        const h = 20 + Math.abs(Math.sin(i * 0.4 + i * 0.11)) * 70;
-        return (
-          <div
-            key={i}
-            className="w-[3px] rounded-full shrink-0"
-            style={{
-              height: `${h}%`,
-              background:
-                color.includes("emerald")
-                  ? "rgba(52,211,153,0.7)"
-                  : "rgba(167,139,250,0.7)",
-            }}
-          />
-        );
-      })}
+      <span className="truncate">{text}</span>
     </div>
   );
 }
 
 /* ---------- TimelineTracks ---------- */
 type Track = "aroll" | "broll";
+
+/** A caption phrase on the timeline: its text and where it's shown. */
+export type CaptionPhrase = { key: string; text: string; startMs: number; endMs: number };
 
 type TimelineTracksProps = {
   aRoll: ClipRow[];
@@ -437,6 +452,12 @@ type TimelineTracksProps = {
   onZoomTo: (pxPerSec: number) => void;
   /** Changes when the Fit button is pressed. */
   fitRequest: number;
+  /** Caption phrases on the timeline (from the saved transcripts). */
+  captionPhrases: CaptionPhrase[];
+  /** Uploaded music and SFX clips. */
+  audioClips: ClipRow[];
+  /** Clip thumbnails by thumbnailKey(clip). */
+  thumbnails: Record<string, string>;
 };
 
 function TimelineTracks({
@@ -456,6 +477,9 @@ function TimelineTracks({
   pushToHistory,
   onZoomTo,
   fitRequest,
+  captionPhrases,
+  audioClips,
+  thumbnails,
 }: TimelineTracksProps) {
   // Clip being dragged to a new position (with how far the pointer moved),
   // and the track and position among that track's other clips it would land.
@@ -487,6 +511,17 @@ function TimelineTracks({
   }, [bRoll]);
 
   const totalMs = Math.max(aLayout.totalMs, bLayout.totalMs);
+
+  // Where the exported video ends: the end of the main track (the A-roll,
+  // or the B-roll when there is no A-roll). B-roll past it is cut.
+  const mainClips = aRoll.length > 0 ? aRoll : bRoll;
+  const mainLayout = aRoll.length > 0 ? aLayout : bLayout;
+  const programEndMs = mainClips.reduce((sum, c) => sum + clipVisibleMs(c), 0);
+  const cutAtFor = (c: ClipRow) => {
+    if (aRoll.length === 0) return null;
+    const start = bLayout.offsets.get(c.id) ?? 0;
+    return start + clipVisibleMs(c) > programEndMs ? Math.max(0, programEndMs - start) : null;
+  };
   const trackWidthPx = Math.max(600, (totalMs / 1000) * pxPerSec);
 
   const ruler = useMemo(() => {
@@ -926,6 +961,20 @@ function TimelineTracks({
         </div>
       </div>
 
+      {/* Where the exported video ends */}
+      {programEndMs > 0 && (
+        <div
+          aria-hidden
+          data-video-end
+          className="pointer-events-none absolute top-0 bottom-0 z-10 border-l border-dashed border-white/30"
+          style={{ left: `calc(var(--tl-gutter, 96px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
+        >
+          <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45">
+            End
+          </span>
+        </div>
+      )}
+
       {/* Playhead */}
       <div
         aria-hidden
@@ -977,6 +1026,7 @@ function TimelineTracks({
                 snapBoundariesMs={snapPointsFor(c, aLayout.offsets.get(c.id) ?? 0)}
                 clipStartMs={aLayout.offsets.get(c.id) ?? 0}
                 tone="primary"
+                thumbnail={thumbnails[thumbnailKey(c)]}
               />
             ))
           )}
@@ -1018,54 +1068,95 @@ function TimelineTracks({
                 snapBoundariesMs={snapPointsFor(c, bLayout.offsets.get(c.id) ?? 0)}
                 clipStartMs={bLayout.offsets.get(c.id) ?? 0}
                 tone="teal"
+                thumbnail={thumbnails[thumbnailKey(c)]}
+                cutAtMs={cutAtFor(c)}
               />
             ))
           )}
         </TrackRow>
 
-        {/* A1 Audio */}
-        <TrackRow label="A1" name="Audio" innerWidth={trackWidthPx} contentHandlers={scrubHandlers}>
-          <WaveformTrack
-            width={trackWidthPx}
-            color="from-emerald-500/10 to-transparent border-emerald-500/20"
-          />
+        {/* A1 Voice: the main track's own sound, which is what the export uses */}
+        <TrackRow
+          label="A1"
+          name="Voice"
+          note="From the A-roll"
+          size="slim"
+          innerWidth={trackWidthPx}
+          contentHandlers={scrubHandlers}
+        >
+          {mainClips.map((c) => (
+            <TrackLabel
+              key={c.id}
+              leftPx={((mainLayout.offsets.get(c.id) ?? 0) / 1000) * pxPerSec}
+              widthPx={(clipVisibleMs(c) / 1000) * pxPerSec}
+              text={c.filename.replace(/.[^.]+$/, "")}
+              title={`Voice from ${c.filename}`}
+              className="bg-emerald-500/10 border-emerald-500/25 text-emerald-200/80"
+            />
+          ))}
         </TrackRow>
 
-        {/* V3 Captions */}
+        {/* V3 Captions: the phrases the export burns in */}
         {captions && (
           <TrackRow
             label="V3"
             name="Captions"
+            size="slim"
             innerWidth={trackWidthPx}
             contentHandlers={scrubHandlers}
           >
-            <div className="absolute inset-y-2 left-0 flex gap-1.5 items-center">
-              {["HOOK", "PROOF", "PAYOFF", "CTA"].map((t, i) => (
-                <div
-                  key={i}
-                  style={{ marginLeft: i === 0 ? 4 : 0, width: 120 }}
-                  className="h-8 px-2 py-1 rounded bg-violet-400/15 border border-violet-400/30 text-violet-300 text-[10px] font-bold tracking-wider grid place-items-center"
-                >
-                  T · {t}
-                </div>
-              ))}
-            </div>
+            {captionPhrases.length === 0 ? (
+              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+                Captions appear here after a cloud render transcribes your clips
+              </div>
+            ) : (
+              captionPhrases.map((p) => (
+                <TrackLabel
+                  key={p.key}
+                  leftPx={(p.startMs / 1000) * pxPerSec}
+                  widthPx={((p.endMs - p.startMs) / 1000) * pxPerSec}
+                  text={p.text}
+                  className="bg-violet-400/15 border-violet-400/30 text-violet-200 font-medium"
+                />
+              ))
+            )}
           </TrackRow>
         )}
 
-        {/* A2 Music */}
+        {/* A2 Music: uploaded music and SFX, not mixed into exports yet */}
         {music && (
           <TrackRow
             label="A2"
             name="Music"
+            note="Not in export yet"
+            size="slim"
             innerWidth={trackWidthPx}
             contentHandlers={scrubHandlers}
           >
-            <WaveformTrack
-              width={trackWidthPx}
-              color="from-violet-500/10 to-transparent border-violet-500/20"
-              opacity={0.7}
-            />
+            {audioClips.length === 0 ? (
+              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+                No music or SFX uploaded
+              </div>
+            ) : (
+              (() => {
+                let cursor = 0;
+                return audioClips.map((c) => {
+                  const leftPx = (cursor / 1000) * pxPerSec;
+                  const ms = clipVisibleMs(c);
+                  cursor += ms;
+                  return (
+                    <TrackLabel
+                      key={c.id}
+                      leftPx={leftPx}
+                      widthPx={(ms / 1000) * pxPerSec}
+                      text={`${c.role === "sfx" ? "SFX" : "♪"} ${c.filename.replace(/.[^.]+$/, "")}`}
+                      title={`${c.filename}: not mixed into exports yet`}
+                      className="bg-amber-500/5 border-dashed border-amber-400/30 text-amber-200/70"
+                    />
+                  );
+                });
+              })()
+            )}
           </TrackRow>
         )}
       </div>
@@ -1107,6 +1198,12 @@ export interface TimelinePanelProps {
   isSplitting?: boolean;
   isDuplicating?: boolean;
   isDeleting?: boolean;
+  /** Caption phrases on the timeline (from the saved transcripts). */
+  captionPhrases?: CaptionPhrase[];
+  /** Uploaded music and SFX clips. */
+  audioClips?: ClipRow[];
+  /** Clip thumbnails by thumbnailKey(clip). */
+  thumbnails?: Record<string, string>;
 }
 
 export function TimelinePanel({
@@ -1138,6 +1235,9 @@ export function TimelinePanel({
   isSplitting,
   isDuplicating,
   isDeleting,
+  captionPhrases = [],
+  audioClips = [],
+  thumbnails = {},
 }: TimelinePanelProps) {
   // Length of the exported video: the A-roll, or the B-roll when there's no A-roll.
   const mainTrack = aRoll.length > 0 ? aRoll : bRoll;
@@ -1242,6 +1342,9 @@ export function TimelinePanel({
         pushToHistory={pushToHistory}
         onZoomTo={onPxPerSecChange}
         fitRequest={fitRequest}
+        captionPhrases={captionPhrases}
+        audioClips={audioClips}
+        thumbnails={thumbnails}
       />
     </div>
   );

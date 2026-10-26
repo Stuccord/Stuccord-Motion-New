@@ -24,12 +24,15 @@ import {
 import { renderProjectInBrowser, aspectDims } from "@/lib/client-render";
 import {
   cleanTranscriptWords,
+  groupIntoPhrases,
+  placeTranscripts,
   type CaptionSegment,
   type TimelineWord,
   type TranscriptWord,
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
+import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -118,6 +121,7 @@ import {
   ClipInspector,
   type AspectRatio,
   type ViewMode,
+  type CaptionPhrase,
 } from "@/components/editor";
 import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
 
@@ -420,6 +424,31 @@ function EditorPage() {
       if (updated) refetch();
     })();
   }, [data, signClip, durationFn, refetch]);
+
+  // Timeline thumbnails: one frame per video clip at its trim point, grabbed
+  // once per source file + trim point, one at a time.
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const thumbnailsRequested = useRef(new Set<string>());
+  useEffect(() => {
+    if (!data) return;
+    const todo = (data.clips as ClipRow[]).filter(
+      (c) =>
+        c.role !== "music" && c.role !== "sfx" && !thumbnailsRequested.current.has(thumbnailKey(c)),
+    );
+    if (todo.length === 0) return;
+    for (const c of todo) thumbnailsRequested.current.add(thumbnailKey(c));
+    void (async () => {
+      for (const c of todo) {
+        try {
+          const { url } = await signClip({ data: { path: c.storage_path } });
+          const frame = await captureVideoFrame(url, (c.trim_in_ms ?? 0) + 100);
+          if (frame) setThumbnails((t) => ({ ...t, [thumbnailKey(c)]: frame }));
+        } catch (e) {
+          console.warn("[editor] Couldn't make a clip thumbnail:", e);
+        }
+      }
+    })();
+  }, [data, signClip]);
 
   const splitMut = useMutation({
     mutationFn: (v: { id: string; at_ms: number }) => splitFn({ data: v }),
@@ -909,6 +938,15 @@ function EditorPage() {
     durationMs: clipVisibleMs(c),
     offsetMs: programOffsets.get(c.id) ?? 0,
   }));
+  // The same phrases the Captions tab lists, for the timeline's caption track.
+  const captionPhrases: CaptionPhrase[] = groupIntoPhrases(
+    placeTranscripts(captionSegments, transcriptMap),
+  ).map((phrase) => ({
+    key: phrase[0].key,
+    text: phrase.map((w) => w.text).join(" "),
+    startMs: phrase[0].startMs,
+    endMs: phrase[phrase.length - 1].endMs,
+  }));
 
   // Jumps the player to a caption word. On the rendered preview that's a
   // timeline time; otherwise select the word's clip and seek within its file.
@@ -1337,6 +1375,9 @@ function EditorPage() {
               trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
             }}
             captions={captionsEnabled}
+            captionPhrases={captionPhrases}
+            audioClips={audioClips}
+            thumbnails={thumbnails}
             music={musicEnabled}
             snapEnabled={snapEnabled}
             onSnapToggle={() => setSnapEnabled((s) => !s)}

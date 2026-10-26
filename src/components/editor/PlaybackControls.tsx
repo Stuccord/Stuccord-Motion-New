@@ -19,10 +19,12 @@ interface PlaybackControlsProps {
 
 export function formatTimecode(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return "00:00";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 10);
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${ms}`;
+  // Work in whole tenths: (3.4 % 1) * 10 is 3.999… in floating point.
+  const tenths = Math.floor(Math.round(seconds * 1000) / 100);
+  const m = Math.floor(tenths / 600);
+  const s = Math.floor(tenths / 10) % 60;
+  const t = tenths % 10;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${t}`;
 }
 
 export function PlaybackControls({
