@@ -361,6 +361,12 @@ export const removeClip = createServerFn({ method: "POST" })
         .from("raw-clips")
         .remove([clip.storage_path]);
       if (rmErr) console.error("[removeClip] Failed to delete source file:", rmErr.message);
+      // Its transcript goes with it.
+      const { error: tErr } = await context.supabase
+        .from("transcripts")
+        .delete()
+        .eq("storage_path", clip.storage_path);
+      if (tErr) console.error("[removeClip] Failed to delete transcript:", tErr.message);
     }
 
     await markProjectEdited(context.supabase, clip.project_id);
@@ -541,6 +547,61 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
       await markProjectEdited(context.supabase, data.id);
       return { ...row, status: "draft" as const };
     }
+    return row;
+  });
+
+/** Saved transcripts (words in source-file time) for a project's clips. */
+export const listProjectTranscripts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ project_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: clips, error: cErr } = await context.supabase
+      .from("clips")
+      .select("storage_path")
+      .eq("project_id", data.project_id);
+    if (cErr) throw new Error(cErr.message);
+    const paths = [...new Set((clips ?? []).map((c) => c.storage_path))];
+    if (paths.length === 0) return [];
+    const { data: rows, error } = await context.supabase
+      .from("transcripts")
+      .select("storage_path, words, edited, language, updated_at")
+      .in("storage_path", paths);
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+const TranscriptWordInput = z
+  .object({
+    text: z.string().trim().min(1).max(100),
+    start_ms: z.number().int().nonnegative(),
+    end_ms: z.number().int().nonnegative(),
+  })
+  .refine((w) => w.end_ms >= w.start_ms, "A word can't end before it starts");
+
+/**
+ * Saves the user's corrected words for one source file's transcript. Only an
+ * existing transcript can be updated (they're created by the render worker).
+ */
+export const saveTranscriptWords = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        storage_path: z.string().min(1).max(1024),
+        words: z.array(TranscriptWordInput).max(50_000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const words = [...data.words].sort((a, b) => a.start_ms - b.start_ms);
+    const { data: row, error } = await context.supabase
+      .from("transcripts")
+      .update({ words, edited: true })
+      .eq("storage_path", data.storage_path)
+      .select("storage_path, words, edited, language, updated_at")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!row) throw new Error("Transcript not found");
     return row;
   });
 

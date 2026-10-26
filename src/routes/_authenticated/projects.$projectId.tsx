@@ -17,9 +17,18 @@ import {
   duplicateClip,
   startBrowserRender,
   finishBrowserRender,
+  listProjectTranscripts,
+  saveTranscriptWords,
   getSignedClipUploadUrl,
 } from "@/lib/projects.functions";
 import { renderProjectInBrowser, aspectDims } from "@/lib/client-render";
+import {
+  cleanTranscriptWords,
+  type CaptionSegment,
+  type TimelineWord,
+  type TranscriptWord,
+} from "@/lib/captions";
+import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -227,6 +236,41 @@ function EditorPage() {
   const [mobileTab, setMobileTab] = useState<"edit" | "media" | "ai">("edit");
   const [mobileFullscreen, setMobileFullscreen] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false);
+  const [rightTab, setRightTab] = useState<"edit" | "captions">("edit");
+  // Source-file time (ms) to jump to once the selected clip's video loads.
+  const pendingSourceSeekMs = useRef<number | null>(null);
+
+  // Saved transcripts per source file, for the Captions panel.
+  const fetchTranscripts = useServerFn(listProjectTranscripts);
+  const saveWordsFn = useServerFn(saveTranscriptWords);
+  const transcriptsQuery = useQuery({
+    queryKey: ["transcripts", projectId],
+    queryFn: () => fetchTranscripts({ data: { project_id: projectId } }),
+    enabled: typeof window !== "undefined",
+  });
+  const transcriptMap = useMemo(() => {
+    const map = new Map<string, TranscriptWord[]>();
+    for (const t of transcriptsQuery.data ?? []) {
+      map.set(t.storage_path, cleanTranscriptWords(t.words));
+    }
+    return map;
+  }, [transcriptsQuery.data]);
+  const saveWordsMut = useMutation({
+    mutationFn: (args: { storage_path: string; words: TranscriptWord[] }) =>
+      saveWordsFn({ data: args }),
+    onSuccess: (row) => {
+      qc.setQueryData(["transcripts", projectId], (old: typeof transcriptsQuery.data) =>
+        (old ?? []).map((t) => (t.storage_path === row.storage_path ? row : t)),
+      );
+    },
+  });
+  // A finished render may have transcribed new files: reload the captions.
+  const latestJobKey = `${data?.latestJob?.id ?? ""}:${data?.latestJob?.status ?? ""}`;
+  useEffect(() => {
+    if (latestJobKey.endsWith(":completed")) {
+      void qc.invalidateQueries({ queryKey: ["transcripts", projectId] });
+    }
+  }, [latestJobKey, qc, projectId]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -818,6 +862,37 @@ function EditorPage() {
   const audioClips = clips.filter((c) => c.role === "music" || c.role === "sfx");
   const aRoll = videoClips.filter((c) => c.role === "aroll" || c.role === "auto");
   const bRoll = videoClips.filter((c) => c.role === "broll");
+
+  // Captions come from the main track's voice: the A-roll, or the B-roll when
+  // there's no A-roll (the same rule as the export).
+  const captionSegments: CaptionSegment[] = (aRoll.length > 0 ? aRoll : bRoll).map((c) => ({
+    clipId: c.id,
+    storagePath: c.storage_path,
+    trimInMs: c.trim_in_ms ?? 0,
+    durationMs: clipVisibleMs(c),
+    offsetMs: programOffsets.get(c.id) ?? 0,
+  }));
+
+  // Jumps the player to a caption word. On the rendered preview that's a
+  // timeline time; otherwise select the word's clip and seek within its file.
+  function seekToCaption(word: TimelineWord) {
+    const seg = captionSegments.find((s) => s.clipId === word.clipId);
+    if (!seg) return;
+    const v = videoRef.current;
+    if (showingProgram) {
+      if (v) v.currentTime = word.startMs / 1000;
+      setCurrentTime(word.startMs / 1000);
+      return;
+    }
+    const sourceMs = seg.trimInMs + (word.startMs - seg.offsetMs);
+    if (selectedClipId === word.clipId && v) {
+      v.currentTime = sourceMs / 1000;
+      setCurrentTime(sourceMs / 1000);
+    } else {
+      pendingSourceSeekMs.current = sourceMs;
+      setSelectedClipId(word.clipId);
+    }
+  }
   const inProgress =
     latestJob && ["queued", "transcribing", "planning", "rendering"].includes(latestJob.status);
 
@@ -1107,6 +1182,11 @@ function EditorPage() {
             onTimeUpdate={(t) => setCurrentTime(t)}
             onLoadedMetadata={(d) => {
               setDuration(d);
+              if (pendingSourceSeekMs.current != null && videoRef.current) {
+                videoRef.current.currentTime = pendingSourceSeekMs.current / 1000;
+                setCurrentTime(pendingSourceSeekMs.current / 1000);
+                pendingSourceSeekMs.current = null;
+              }
               if (selectedClipId && d > 0) {
                 const c = data?.clips.find((x) => x.id === selectedClipId) as ClipRow | undefined;
                 if (c && (c.duration_ms == null || Math.abs(c.duration_ms - Math.round(d * 1000)) > 250)) {
@@ -1117,43 +1197,80 @@ function EditorPage() {
           />
         }
         rightPanel={
-          selectedClip ? (
-            <ClipInspector
-              clip={selectedClip}
-              onDeselect={() => setSelectedClipId(null)}
-              onSplit={doSplit}
-              onDuplicate={doDuplicate}
-              onDelete={doDelete}
-              onTrim={(id, trimInMs, trimOutMs) =>
-                trimMut.mutate({ id, trim_in_ms: trimInMs, trim_out_ms: trimOutMs })
-              }
-              isSplitting={splitMut.isPending}
-              isDuplicating={duplicateMut.isPending}
-              isDeleting={removeClipMut.isPending}
-            />
-          ) : (
-            <AIMotionPanel
-              projectId={projectId}
-              status={project.status}
-              latestJob={latestJob}
-              clipCount={clips.length}
-              preset={project.style_preset}
-              script={project.script}
-              musicEnabled={musicEnabled}
-              musicVolume={musicVolume}
-              captionsEnabled={captionsEnabled}
-              captionsText={captionsText}
-              onScriptChange={setCaptionsText}
-              onScriptBlur={() => {
-                if (captionsText !== null && captionsText !== project.script) {
-                  updateSettings({ data: { id: projectId, script: captionsText } });
-                }
-              }}
-              onMusicEnabledChange={setMusicEnabled}
-              onMusicVolumeChange={setMusicVolume}
-              onCaptionsEnabledChange={setCaptionsEnabled}
-            />
-          )
+          <div className="flex flex-col h-full min-h-0">
+            {/* Edit (clip inspector / AI) or Captions */}
+            <div className="h-9 border-b border-white/[0.06] flex items-center px-1 gap-0.5 shrink-0">
+              {(["edit", "captions"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setRightTab(tab)}
+                  aria-pressed={rightTab === tab}
+                  className={cn(
+                    "px-2.5 h-6 rounded text-[11px] font-medium transition-colors",
+                    rightTab === tab
+                      ? "bg-white/[0.08] text-violet-300"
+                      : "text-neutral-500 hover:text-neutral-300 hover:bg-white/[0.03]",
+                  )}
+                >
+                  {tab === "edit" ? (selectedClip ? "Clip" : "AI") : "Captions"}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 min-h-0">
+              {rightTab === "captions" ? (
+                <CaptionsPanel
+                  segments={captionSegments}
+                  transcripts={transcriptMap}
+                  isLoading={transcriptsQuery.isLoading}
+                  loadError={transcriptsQuery.error ? transcriptsQuery.error.message : null}
+                  captionsEnabled={captionsEnabled}
+                  currentTimeMs={timelinePlayheadMs}
+                  onSeek={seekToCaption}
+                  onSaveWords={async (storagePath, words) => {
+                    await saveWordsMut.mutateAsync({ storage_path: storagePath, words });
+                  }}
+                  isSaving={saveWordsMut.isPending}
+                />
+              ) : selectedClip ? (
+                <ClipInspector
+                  clip={selectedClip}
+                  onDeselect={() => setSelectedClipId(null)}
+                  onSplit={doSplit}
+                  onDuplicate={doDuplicate}
+                  onDelete={doDelete}
+                  onTrim={(id, trimInMs, trimOutMs) =>
+                    trimMut.mutate({ id, trim_in_ms: trimInMs, trim_out_ms: trimOutMs })
+                  }
+                  isSplitting={splitMut.isPending}
+                  isDuplicating={duplicateMut.isPending}
+                  isDeleting={removeClipMut.isPending}
+                />
+              ) : (
+                <AIMotionPanel
+                  projectId={projectId}
+                  status={project.status}
+                  latestJob={latestJob}
+                  clipCount={clips.length}
+                  preset={project.style_preset}
+                  script={project.script}
+                  musicEnabled={musicEnabled}
+                  musicVolume={musicVolume}
+                  captionsEnabled={captionsEnabled}
+                  captionsText={captionsText}
+                  onScriptChange={setCaptionsText}
+                  onScriptBlur={() => {
+                    if (captionsText !== null && captionsText !== project.script) {
+                      updateSettings({ data: { id: projectId, script: captionsText } });
+                    }
+                  }}
+                  onMusicEnabledChange={setMusicEnabled}
+                  onMusicVolumeChange={setMusicVolume}
+                  onCaptionsEnabledChange={setCaptionsEnabled}
+                />
+              )}
+            </div>
+          </div>
         }
         bottomPanel={
           <TimelinePanel
