@@ -119,6 +119,7 @@ import {
   type AspectRatio,
   type ViewMode,
 } from "@/components/editor";
+import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId")({
   head: () => ({ meta: [{ title: "Editor — Stuccord Motion" }] }),
@@ -509,7 +510,7 @@ function EditorPage() {
     del: () => void;
     dup: () => void;
     split: () => void;
-    zoom: (d: number) => void;
+    zoom: (direction: 1 | -1) => void;
     undo: () => void;
     redo: () => void;
     seekRelative: (offset: number) => void;
@@ -556,10 +557,10 @@ function EditorPage() {
         actionsRef.current.dup();
       } else if (e.key === "=" || e.key === "+") {
         e.preventDefault();
-        actionsRef.current.zoom(20);
+        actionsRef.current.zoom(1);
       } else if (e.key === "-" || e.key === "_") {
         e.preventDefault();
-        actionsRef.current.zoom(-20);
+        actionsRef.current.zoom(-1);
       } else if (meta && e.key === "z") {
         e.preventDefault();
         actionsRef.current.undo();
@@ -1084,8 +1085,9 @@ function EditorPage() {
     );
   }
 
-  function zoom(delta: number) {
-    setPxPerSec((z) => Math.max(8, Math.min(240, Math.round(z + delta))));
+  // One zoom step in (1) or out (-1); steps multiply so they feel even.
+  function zoom(direction: 1 | -1) {
+    setPxPerSec((z) => clampZoom(z * ZOOM_STEP ** direction));
   }
 
   const seekRelative = (offset: number) => {

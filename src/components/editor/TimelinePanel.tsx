@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Scissors,
   Copy,
@@ -9,6 +9,7 @@ import {
   Magnet,
   Plus,
   Minus,
+  Maximize2,
   Film,
   Volume2,
   Lock,
@@ -24,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ClipRow } from "./types";
 import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
+import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 
 /* ---------- shared types ---------- */
 export interface HistoryItem {
@@ -431,6 +433,10 @@ type TimelineTracksProps = {
     mutate: (data: { order: { id: string; ordinal: number; role?: string }[] }) => void;
   };
   pushToHistory: (item: HistoryItem) => void;
+  /** Sets the zoom (px per second). */
+  onZoomTo: (pxPerSec: number) => void;
+  /** Changes when the Fit button is pressed. */
+  fitRequest: number;
 };
 
 function TimelineTracks({
@@ -448,6 +454,8 @@ function TimelineTracks({
   onSeekMs,
   reorderMut,
   pushToHistory,
+  onZoomTo,
+  fitRequest,
 }: TimelineTracksProps) {
   // Clip being dragged to a new position (with how far the pointer moved),
   // and the track and position among that track's other clips it would land.
@@ -483,10 +491,22 @@ function TimelineTracks({
 
   const ruler = useMemo(() => {
     const seconds = totalMs / 1000;
+    // Labelled ticks at least ~60px apart, with a few small ticks between.
     const step =
-      pxPerSec >= 120 ? 1 : pxPerSec >= 60 ? 2 : pxPerSec >= 30 ? 5 : 10;
+      pxPerSec >= 120
+        ? 1
+        : pxPerSec >= 60
+          ? 2
+          : pxPerSec >= 30
+            ? 5
+            : pxPerSec >= 12
+              ? 10
+              : pxPerSec >= 4
+                ? 30
+                : 60;
+    const minor = step >= 30 ? step / 6 : step >= 10 ? step / 5 : 1;
     const ticks: { t: number; label: string; major: boolean }[] = [];
-    for (let t = 0; t <= seconds + step; t += 1) {
+    for (let t = 0; t <= seconds + step; t += minor) {
       const major = t % step === 0;
       ticks.push({ t, label: major ? formatTimecode(t) : "", major });
     }
@@ -579,8 +599,12 @@ function TimelineTracks({
 
   // Keep the playhead in view while it moves (playback, scrubbing, seeking):
   // when it leaves the visible area, page the view so it sits a quarter in.
+  // Zooming alone doesn't count, so zooming at the pointer isn't undone.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastFollowedMs = useRef(currentTimeMs);
   useEffect(() => {
+    if (currentTimeMs === lastFollowedMs.current) return;
+    lastFollowedMs.current = currentTimeMs;
     const el = scrollRef.current;
     if (!el) return;
     const gutter = el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 96;
@@ -590,7 +614,78 @@ function TimelineTracks({
     if (playheadPx < el.scrollLeft || playheadPx > el.scrollLeft + visibleWidth - margin) {
       el.scrollLeft = Math.max(0, playheadPx - visibleWidth * 0.25);
     }
-  }, [playheadPx]);
+  }, [playheadPx, currentTimeMs]);
+
+  // When the zoom changes, keep one point of the timeline at the same place
+  // on screen: where the pointer was for Ctrl/⌘ + scroll, the start for Fit,
+  // otherwise the playhead if it's in view, else the middle of the view.
+  const gutterWidth = (el: HTMLElement) =>
+    el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 96;
+  const zoomAnchor = useRef<{ ms: number; viewX: number } | null>(null);
+  const prevPxPerSec = useRef(pxPerSec);
+  const pxPerSecRef = useRef(pxPerSec);
+  pxPerSecRef.current = pxPerSec;
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const oldPx = prevPxPerSec.current;
+    prevPxPerSec.current = pxPerSec;
+    const anchorRequest = zoomAnchor.current;
+    zoomAnchor.current = null;
+    if (!el || oldPx === pxPerSec) return;
+    const visible = el.clientWidth - gutterWidth(el);
+    let anchor = anchorRequest;
+    if (!anchor) {
+      const playheadViewX = (currentTimeMs / 1000) * oldPx - el.scrollLeft;
+      anchor =
+        playheadViewX >= 0 && playheadViewX <= visible
+          ? { ms: currentTimeMs, viewX: playheadViewX }
+          : { ms: ((el.scrollLeft + visible / 2) / oldPx) * 1000, viewX: visible / 2 };
+    }
+    el.scrollLeft = Math.max(0, (anchor.ms / 1000) * pxPerSec - anchor.viewX);
+    // Only zoom changes matter here; the playhead is read as it was.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pxPerSec]);
+
+  // Ctrl/⌘ + scroll wheel (or a trackpad pinch) zooms around the pointer.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const viewX = Math.max(0, e.clientX - r.left - gutterWidth(el));
+      const px = pxPerSecRef.current;
+      const next = clampZoom(px * Math.exp(-e.deltaY * 0.0015));
+      if (next === px) return;
+      zoomAnchor.current = { ms: ((el.scrollLeft + viewX) / px) * 1000, viewX };
+      onZoomTo(next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [onZoomTo]);
+
+  // Fit: zoom so the whole video fills the visible width, from its start.
+  const lastFitRequest = useRef(fitRequest);
+  useEffect(() => {
+    if (fitRequest === lastFitRequest.current) return;
+    lastFitRequest.current = fitRequest;
+    const el = scrollRef.current;
+    if (!el) return;
+    const contentMs = Math.max(
+      aRoll.reduce((sum, c) => sum + clipVisibleMs(c), 0),
+      bRoll.reduce((sum, c) => sum + clipVisibleMs(c), 0),
+    );
+    if (contentMs <= 0) return;
+    const visible = el.clientWidth - gutterWidth(el) - 24;
+    const next = clampZoom((visible / contentMs) * 1000);
+    if (next === pxPerSecRef.current) {
+      el.scrollLeft = 0;
+      return;
+    }
+    zoomAnchor.current = { ms: 0, viewX: 0 };
+    onZoomTo(next);
+  }, [fitRequest, aRoll, bRoll, onZoomTo]);
 
   const trackClips = (track: Track) => (track === "aroll" ? aRoll : bRoll);
   const trackLayout = (track: Track) => (track === "aroll" ? aLayout : bLayout);
@@ -992,7 +1087,8 @@ export interface TimelinePanelProps {
   snapEnabled: boolean;
   onSnapToggle: () => void;
   pxPerSec: number;
-  onZoom: (delta: number) => void;
+  /** Zoom one step in (1) or out (-1). */
+  onZoom: (direction: 1 | -1) => void;
   onPxPerSecChange: (v: number) => void;
   /** Playhead position on the timeline (not the player's raw file time). */
   currentTimeMs: number;
@@ -1046,6 +1142,8 @@ export function TimelinePanel({
   // Length of the exported video: the A-roll, or the B-roll when there's no A-roll.
   const mainTrack = aRoll.length > 0 ? aRoll : bRoll;
   const programMs = mainTrack.reduce((sum, c) => sum + clipVisibleMs(c), 0);
+  // Bumped by the Fit button; the tracks measure their width and zoom to fit.
+  const [fitRequest, setFitRequest] = useState(0);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0b0b12]">
@@ -1107,17 +1205,22 @@ export function TimelinePanel({
         />
         <Divider />
         <div className="flex items-center gap-2 pl-1 pr-0.5">
-          <ToolBtn icon={Minus} title="Zoom out (-)" onClick={() => onZoom(-20)} />
+          <ToolBtn icon={Minus} title="Zoom out (-)" onClick={() => onZoom(-1)} />
           <Slider
-            min={8}
-            max={240}
-            step={4}
-            value={[pxPerSec]}
-            onValueChange={(v) => onPxPerSecChange(v[0])}
+            min={0}
+            max={100}
+            step={1}
+            value={[zoomToSlider(pxPerSec)]}
+            onValueChange={(v) => onPxPerSecChange(clampZoom(sliderToZoom(v[0])))}
             aria-label="Timeline zoom"
             className="w-16 sm:w-24"
           />
-          <ToolBtn icon={Plus} title="Zoom in (+)" onClick={() => onZoom(20)} />
+          <ToolBtn icon={Plus} title="Zoom in (+)" onClick={() => onZoom(1)} />
+          <ToolBtn
+            icon={Maximize2}
+            title="Fit the whole video (Ctrl/⌘ + scroll to zoom)"
+            onClick={() => setFitRequest((n) => n + 1)}
+          />
         </div>
       </div>
 
@@ -1137,6 +1240,8 @@ export function TimelinePanel({
         onSeekMs={onSeekMs}
         reorderMut={reorderMut}
         pushToHistory={pushToHistory}
+        onZoomTo={onPxPerSecChange}
+        fitRequest={fitRequest}
       />
     </div>
   );
