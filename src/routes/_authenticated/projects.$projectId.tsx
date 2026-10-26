@@ -317,8 +317,9 @@ function EditorPage() {
 
   const removeClipMut = useMutation({
     mutationFn: (id: string) => dropClip({ data: { id } }),
-    onSuccess: () => {
-      setSelectedClipId(null);
+    onSuccess: (_res, id) => {
+      // Only clear the selection if the removed clip was the selected one.
+      setSelectedClipId((current) => (current === id ? null : current));
       refetch();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -1074,6 +1075,7 @@ function EditorPage() {
         leftPanel={
           <MediaLibrary
             clips={videoClips}
+            audioClips={audioClips}
             selectedClipId={selectedClipId}
             onSelectClip={(id) => setSelectedClipId(id)}
             onRemoveClip={(id) => removeClipMut.mutate(id)}
