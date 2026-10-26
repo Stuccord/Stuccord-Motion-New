@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ClipRow } from "./types";
+import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
 
 /* ---------- shared types ---------- */
 export interface HistoryItem {
@@ -811,8 +812,8 @@ export interface TimelinePanelProps {
   pxPerSec: number;
   onZoom: (delta: number) => void;
   onPxPerSecChange: (v: number) => void;
+  /** Playhead position on the timeline (not the player's raw file time). */
   currentTimeMs: number;
-  currentTimeSec: number;
   onSeekMs: (clipId: string, absMs: number, atTimelineMs: number) => void;
   reorderMut: {
     mutate: (data: { order: { id: string; ordinal: number; role?: string }[] }) => void;
@@ -846,7 +847,6 @@ export function TimelinePanel({
   onZoom,
   onPxPerSecChange,
   currentTimeMs,
-  currentTimeSec,
   onSeekMs,
   reorderMut,
   pushToHistory,
@@ -861,6 +861,10 @@ export function TimelinePanel({
   isDuplicating,
   isDeleting,
 }: TimelinePanelProps) {
+  // Length of the exported video: the A-roll, or the B-roll when there's no A-roll.
+  const mainTrack = aRoll.length > 0 ? aRoll : bRoll;
+  const programMs = mainTrack.reduce((sum, c) => sum + clipVisibleMs(c), 0);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0b0b12]">
       {/* Toolbar */}
@@ -906,7 +910,8 @@ export function TimelinePanel({
             {projectTitle}
           </span>
           <span className="text-[11px] font-mono text-violet-300/90 tabular-nums">
-            {formatTimecode(currentTimeSec)}
+            {formatPlaybackTime(currentTimeMs / 1000)}
+            <span className="text-neutral-500"> / {formatPlaybackTime(programMs / 1000)}</span>
           </span>
         </div>
         <div className="md:hidden flex-1" />

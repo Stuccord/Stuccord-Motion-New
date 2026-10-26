@@ -106,7 +106,6 @@ import {
   AIMotionPanel,
   TimelinePanel,
   ClipInspector,
-  formatTimecode,
   type AspectRatio,
   type ViewMode,
 } from "@/components/editor";
@@ -828,7 +827,6 @@ function EditorPage() {
       : viewMode === "program"
       ? previewUrl ?? selectedClipUrl
       : previewUrl ?? selectedClipUrl;
-  const timecode = formatTimecode((latestJob?.progress ?? 0) * 0.6);
 
   const selectedClip = selectedClipId
     ? (clips.find((c) => c.id === selectedClipId) as ClipRow | undefined)
@@ -1191,7 +1189,6 @@ function EditorPage() {
             onZoom={zoom}
             onPxPerSecChange={setPxPerSec}
             currentTimeMs={timelinePlayheadMs}
-            currentTimeSec={currentTime}
             onSeekMs={(clipId, absMs, atTimelineMs) => {
               if (videoRef.current) {
                 if (showingProgram) {
