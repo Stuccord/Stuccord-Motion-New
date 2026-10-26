@@ -16,6 +16,48 @@ async function markProjectEdited(supabase: SupabaseClient<Database>, projectId: 
   if (error) throw new Error(error.message);
 }
 
+type ClipRow = Database["public"]["Tables"]["clips"]["Row"];
+
+/**
+ * Inserts a copy of `src` directly after it, shifting every later clip in the
+ * project down by one. The shift, the optional patch to `src` and the insert
+ * go out as a single upsert, which Postgres applies as one statement, so a
+ * failure can't leave the timeline with duplicated or skipped ordinals.
+ */
+async function insertClipAfter(
+  supabase: SupabaseClient<Database>,
+  src: ClipRow,
+  fields: Pick<ClipRow, "trim_in_ms" | "trim_out_ms">,
+  srcPatch: Partial<ClipRow> = {},
+): Promise<ClipRow> {
+  const { data: later, error: lErr } = await supabase
+    .from("clips")
+    .select("*")
+    .eq("project_id", src.project_id)
+    .gt("ordinal", src.ordinal);
+  if (lErr) throw new Error(lErr.message);
+
+  const inserted: ClipRow = {
+    ...src,
+    ...fields,
+    id: crypto.randomUUID(),
+    ordinal: src.ordinal + 1,
+    parent_clip_id: src.parent_clip_id ?? src.id,
+    created_at: new Date().toISOString(),
+  };
+  const rows = [
+    { ...src, ...srcPatch },
+    ...(later ?? []).map((c) => ({ ...c, ordinal: c.ordinal + 1 })),
+    inserted,
+  ];
+  const { data: written, error } = await supabase
+    .from("clips")
+    .upsert(rows, { onConflict: "id" })
+    .select("*");
+  if (error) throw new Error(error.message);
+  return written?.find((c) => c.id === inserted.id) ?? inserted;
+}
+
 // Render jobs only advance when the worker (or the user's browser) reports
 // back. If that never happens — a closed tab, a crashed or restarted worker —
 // the job stays in progress forever and blocks new renders. Any job with no
@@ -291,27 +333,37 @@ export const removeClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    // If this clip has siblings sharing the same source (via parent_clip_id),
-    // leave the storage object in place so those siblings still play.
-    const { data: clip } = await context.supabase
+    const { data: clip, error: cErr } = await context.supabase
       .from("clips")
-      .select("storage_path, parent_clip_id, id, project_id")
+      .select("storage_path, project_id")
       .eq("id", data.id)
-      .single();
-    if (clip?.storage_path) {
-      const sourceId = clip.parent_clip_id ?? clip.id;
-      const { count } = await context.supabase
-        .from("clips")
-        .select("id", { count: "exact", head: true })
-        .or(`id.eq.${sourceId},parent_clip_id.eq.${sourceId}`);
-      const remainingAfterDelete = (count ?? 0) - 1;
-      if (remainingAfterDelete <= 0) {
-        await context.supabase.storage.from("raw-clips").remove([clip.storage_path]);
-      }
-    }
+      .maybeSingle();
+    if (cErr) throw new Error(cErr.message);
+    if (!clip) return { ok: true };
+
     const { error } = await context.supabase.from("clips").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
-    if (clip?.project_id) await markProjectEdited(context.supabase, clip.project_id);
+
+    // Split halves and duplicates share the uploaded file. Only delete it once
+    // no clip references that storage path any more. parent_clip_id can't be
+    // used for this: it is nulled when the original clip is deleted.
+    const { count, error: countErr } = await context.supabase
+      .from("clips")
+      .select("id", { count: "exact", head: true })
+      .eq("storage_path", clip.storage_path);
+    if (countErr) {
+      console.error(
+        "[removeClip] Could not check for shared source; keeping file:",
+        countErr.message,
+      );
+    } else if (count === 0) {
+      const { error: rmErr } = await context.supabase.storage
+        .from("raw-clips")
+        .remove([clip.storage_path]);
+      if (rmErr) console.error("[removeClip] Failed to delete source file:", rmErr.message);
+    }
+
+    await markProjectEdited(context.supabase, clip.project_id);
     return { ok: true };
   });
 
@@ -332,14 +384,24 @@ export const updateClipOrder = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    for (const item of data.order) {
-      const updateData: { ordinal: number; role?: "auto" | "aroll" | "broll" | "music" | "sfx" } = { ordinal: item.ordinal };
-      if (item.role) updateData.role = item.role;
-      const { error } = await context.supabase
-        .from("clips")
-        .update(updateData)
-        .eq("id", item.id)
-        .eq("project_id", data.project_id);
+    // Write the whole new order in one upsert so it applies all-or-nothing.
+    // Ids outside this project are ignored, as before.
+    const { data: rows, error: rErr } = await context.supabase
+      .from("clips")
+      .select("*")
+      .eq("project_id", data.project_id)
+      .in(
+        "id",
+        data.order.map((item) => item.id),
+      );
+    if (rErr) throw new Error(rErr.message);
+    const byId = new Map(data.order.map((item) => [item.id, item]));
+    const updated = (rows ?? []).map((row) => {
+      const item = byId.get(row.id)!;
+      return { ...row, ordinal: item.ordinal, role: item.role ?? row.role };
+    });
+    if (updated.length > 0) {
+      const { error } = await context.supabase.from("clips").upsert(updated, { onConflict: "id" });
       if (error) throw new Error(error.message);
     }
     await markProjectEdited(context.supabase, data.project_id);
@@ -403,45 +465,13 @@ export const splitClip = createServerFn({ method: "POST" })
       throw new Error("Split point too close to a clip edge");
     }
 
-    // Shift ordinals of everything after src.ordinal in this project by +1
-    const { data: laterClips } = await context.supabase
-      .from("clips")
-      .select("id, ordinal")
-      .eq("project_id", src.project_id)
-      .gt("ordinal", src.ordinal);
-    for (const c of laterClips ?? []) {
-      await context.supabase
-        .from("clips")
-        .update({ ordinal: c.ordinal + 1 })
-        .eq("id", c.id);
-    }
-
-    // Second half insert
-    const { data: right, error: rErr } = await context.supabase
-      .from("clips")
-      .insert({
-        project_id: src.project_id,
-        user_id: context.userId,
-        storage_path: src.storage_path,
-        filename: src.filename,
-        size_bytes: src.size_bytes,
-        role: src.role,
-        ordinal: src.ordinal + 1,
-        duration_ms: src.duration_ms,
-        trim_in_ms: cutAbs,
-        trim_out_ms: trimOut,
-        parent_clip_id: src.parent_clip_id ?? src.id,
-      })
-      .select("*")
-      .single();
-    if (rErr) throw new Error(rErr.message);
-
-    // Update left half's trim_out
-    const { error: uErr } = await context.supabase
-      .from("clips")
-      .update({ trim_out_ms: cutAbs })
-      .eq("id", src.id);
-    if (uErr) throw new Error(uErr.message);
+    // Left half keeps src's id and ends at the cut; the right half starts there.
+    const right = await insertClipAfter(
+      context.supabase,
+      src,
+      { trim_in_ms: cutAbs, trim_out_ms: trimOut },
+      { trim_out_ms: cutAbs },
+    );
 
     await markProjectEdited(context.supabase, src.project_id);
     return { left_id: src.id, right_id: right.id };
@@ -458,36 +488,10 @@ export const duplicateClip = createServerFn({ method: "POST" })
       .single();
     if (sErr || !src) throw new Error("Clip not found");
 
-    const { data: laterClips } = await context.supabase
-      .from("clips")
-      .select("id, ordinal")
-      .eq("project_id", src.project_id)
-      .gt("ordinal", src.ordinal);
-    for (const c of laterClips ?? []) {
-      await context.supabase
-        .from("clips")
-        .update({ ordinal: c.ordinal + 1 })
-        .eq("id", c.id);
-    }
-
-    const { data: copy, error: iErr } = await context.supabase
-      .from("clips")
-      .insert({
-        project_id: src.project_id,
-        user_id: context.userId,
-        storage_path: src.storage_path,
-        filename: src.filename,
-        size_bytes: src.size_bytes,
-        role: src.role,
-        ordinal: src.ordinal + 1,
-        duration_ms: src.duration_ms,
-        trim_in_ms: src.trim_in_ms ?? 0,
-        trim_out_ms: src.trim_out_ms,
-        parent_clip_id: src.parent_clip_id ?? src.id,
-      })
-      .select("*")
-      .single();
-    if (iErr) throw new Error(iErr.message);
+    const copy = await insertClipAfter(context.supabase, src, {
+      trim_in_ms: src.trim_in_ms ?? 0,
+      trim_out_ms: src.trim_out_ms,
+    });
     await markProjectEdited(context.supabase, src.project_id);
     return copy;
   });
