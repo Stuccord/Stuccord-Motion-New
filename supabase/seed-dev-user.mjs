@@ -3,7 +3,10 @@
  * and writes the resulting UUID to .env.local as DEV_MOCK_USER_ID
  * so the auth-middleware can read it at runtime.
  *
- * Run once: node supabase/seed-dev-user.mjs
+ * Run once: node --env-file=.env supabase/seed-dev-user.mjs
+ *
+ * Reads SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from the environment.
+ * Point these at a development project, not production.
  */
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
@@ -13,9 +16,17 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-const SUPABASE_URL = "https://ayelmiaagypuracepbzl.supabase.co";
-const SERVICE_ROLE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5ZWxtaWFhZ3lwdXJhY2VwYnpsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzMzMTAxMSwiZXhwIjoyMDk4OTA3MDExfQ.9j408pU8L5_Da-K0_3zzfmcWlv_Y4JgnqH81DOYmb00";
+// Credentials come from the environment — never hardcode keys in this file.
+// Run with: node --env-file=.env supabase/seed-dev-user.mjs
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  console.error(
+    "❌ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Run with: node --env-file=.env supabase/seed-dev-user.mjs",
+  );
+  process.exit(1);
+}
 
 const DEV_USER_EMAIL = "dev-user@stuccord.local";
 
