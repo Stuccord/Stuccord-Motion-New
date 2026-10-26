@@ -1343,14 +1343,20 @@ function EditorPage() {
             onPxPerSecChange={setPxPerSec}
             currentTimeMs={timelinePlayheadMs}
             onSeekMs={(clipId, absMs, atTimelineMs) => {
-              if (videoRef.current) {
-                if (showingProgram) {
-                  videoRef.current.currentTime = atTimelineMs / 1000;
-                  setCurrentTime(atTimelineMs / 1000);
-                } else if (clipId === selectedClipId) {
-                  videoRef.current.currentTime = absMs / 1000;
-                  setCurrentTime(absMs / 1000);
-                }
+              const v = videoRef.current;
+              if (showingProgram) {
+                // The rendered preview: seek straight to the timeline time.
+                if (v) v.currentTime = atTimelineMs / 1000;
+                setCurrentTime(atTimelineMs / 1000);
+                if (clipId && clipId !== selectedClipId) setSelectedClipId(clipId);
+              } else if (clipId === selectedClipId) {
+                // The selected clip's own file: seek within it.
+                if (v) v.currentTime = absMs / 1000;
+                setCurrentTime(absMs / 1000);
+              } else if (clipId) {
+                // Another clip: select it and seek once its video loads.
+                pendingSourceSeekMs.current = absMs;
+                setSelectedClipId(clipId);
               }
             }}
             reorderMut={reorderMut}

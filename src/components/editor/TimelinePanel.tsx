@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Scissors,
   Copy,
@@ -114,16 +114,22 @@ function TrackRow({
   label,
   name,
   innerWidth,
+  contentHandlers,
   children,
 }: {
   label: string;
   name: string;
   innerWidth: number;
+  /** Pointer handlers for the track's content area (click/drag to seek). */
+  contentHandlers?: React.HTMLAttributes<HTMLDivElement>;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex border-b border-white/[0.05] min-h-[76px] hover:bg-white/[0.015] transition-colors">
-      <div className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] px-2.5 py-2 flex flex-col justify-center gap-1 sticky left-0 z-10">
+      <div
+        data-track-header
+        className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] px-2.5 py-2 flex flex-col justify-center gap-1 sticky left-0 z-10"
+      >
         <div className="flex items-baseline gap-1.5">
           <span className="text-[11px] font-mono font-bold text-violet-400">{label}</span>
           <span className="text-[9px] text-neutral-500 uppercase tracking-wider truncate">
@@ -151,7 +157,7 @@ function TrackRow({
           </button>
         </div>
       </div>
-      <div className="relative p-2 min-h-[76px]" style={{ width: innerWidth }}>
+      <div className="relative p-2 min-h-[76px]" style={{ width: innerWidth }} {...contentHandlers}>
         {children}
       </div>
     </div>
@@ -274,6 +280,7 @@ function TimelineClip({
 
   return (
     <div
+      data-timeline-clip
       draggable
       onDragStart={(e) => {
         e.stopPropagation();
@@ -479,26 +486,74 @@ function TimelineTracks({
     return pts;
   }, [snapEnabled, currentTimeMs, videoClips, allOffsets.offsets]);
 
-  function handleRulerSeek(e: React.PointerEvent<HTMLDivElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const scrollEl = e.currentTarget.closest(".tl-scroll") as HTMLElement | null;
-    const scrollLeft = scrollEl?.scrollLeft ?? 0;
-    const x = e.clientX - rect.left + scrollLeft;
-    const atTimelineMs = Math.max(0, (x / pxPerSec) * 1000);
-
-    let acc = 0;
-    for (const c of aRoll) {
-      const w = clipVisibleMs(c);
-      if (atTimelineMs <= acc + w) {
-        const absMs = (c.trim_in_ms ?? 0) + (atTimelineMs - acc);
-        onSelect(c.id);
-        onSeekMs(c.id, absMs, atTimelineMs);
-        return;
+  // Moves the playhead to a timeline time. The clip under it on the main
+  // track (the A-roll, or the B-roll when there's no A-roll) is reported with
+  // the matching time in its source file, so the editor can seek either the
+  // rendered preview or that clip.
+  function seekTimeline(atTimelineMs: number) {
+    const main = aRoll.length > 0 ? aRoll : bRoll;
+    const layout = aRoll.length > 0 ? aLayout : bLayout;
+    let ms = Math.max(0, atTimelineMs);
+    let target: ClipRow | undefined;
+    for (const c of main) {
+      const start = layout.offsets.get(c.id) ?? 0;
+      if (ms < start + clipVisibleMs(c)) {
+        target = c;
+        break;
       }
-      acc += w;
     }
-    onSeekMs("", 0, atTimelineMs);
+    // Past the end: stay on the last frame of the last clip.
+    if (!target && main.length > 0) {
+      target = main[main.length - 1];
+      ms = (layout.offsets.get(target.id) ?? 0) + clipVisibleMs(target) - 1;
+    }
+    if (!target) return onSeekMs("", 0, ms);
+    const start = layout.offsets.get(target.id) ?? 0;
+    onSeekMs(target.id, (target.trim_in_ms ?? 0) + (ms - start), ms);
   }
+
+  // Click or drag anywhere along the ruler, or on empty track space, to move
+  // the playhead. The element's left edge is timeline 0:00; it scrolls with
+  // the tracks, so its on-screen position already includes the scroll.
+  const scrubbing = useRef(false);
+  function timelineMsAt(e: React.PointerEvent<HTMLElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return ((e.clientX - rect.left) / pxPerSec) * 1000;
+  }
+  const scrubHandlers = {
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      if (e.button !== 0) return;
+      // On a track, presses on clips are for selecting, trimming and dragging.
+      if ((e.target as HTMLElement).closest("[data-timeline-clip]")) return;
+      scrubbing.current = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      seekTimeline(timelineMsAt(e));
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
+      if (scrubbing.current) seekTimeline(timelineMsAt(e));
+    },
+    onPointerUp: () => {
+      scrubbing.current = false;
+    },
+    onPointerCancel: () => {
+      scrubbing.current = false;
+    },
+  };
+
+  // Keep the playhead in view while it moves (playback, scrubbing, seeking):
+  // when it leaves the visible area, page the view so it sits a quarter in.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const gutter = el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 96;
+    const visibleWidth = el.clientWidth - gutter;
+    if (visibleWidth <= 0) return;
+    const margin = 24;
+    if (playheadPx < el.scrollLeft || playheadPx > el.scrollLeft + visibleWidth - margin) {
+      el.scrollLeft = Math.max(0, playheadPx - visibleWidth * 0.25);
+    }
+  }, [playheadPx]);
 
   function handleReorder(
     draggedId: string,
@@ -586,16 +641,19 @@ function TimelineTracks({
   }
 
   return (
-    <div className="relative flex-1 overflow-auto min-h-0 tl-scroll">
+    // tl-root sets --tl-gutter (the track header width) on the whole scroll
+    // area, so the playhead below lines up with the ruler and clips.
+    <div ref={scrollRef} className="relative flex-1 overflow-auto min-h-0 tl-scroll tl-root">
       {/* Ruler */}
       <div className="h-6 border-b border-white/[0.06] sticky top-0 z-10 bg-[#0b0b12]/95 backdrop-blur select-none flex">
         <div className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
           Time
         </div>
         <div
-          className="relative h-full cursor-crosshair flex-1"
+          className="relative h-full cursor-ew-resize flex-1 touch-none"
           style={{ width: trackWidthPx }}
-          onPointerDown={handleRulerSeek}
+          title="Click or drag to move the playhead"
+          {...scrubHandlers}
         >
           {ruler.map((t, i) => (
             <div
@@ -633,9 +691,14 @@ function TimelineTracks({
         .tl-root { --tl-gutter: 96px; }
         @media (min-width: 640px) { .tl-root { --tl-gutter: 112px; } }
       `}</style>
-      <div className="tl-root">
+      <div>
         {/* V1 A-Roll */}
-        <TrackRow label="V1" name="A-Roll" innerWidth={trackWidthPx}>
+        <TrackRow
+          label="V1"
+          name="A-Roll"
+          innerWidth={trackWidthPx}
+          contentHandlers={scrubHandlers}
+        >
           <div
             className="absolute inset-y-2 right-0 w-12 z-10"
             onDragOver={(e) => {
@@ -689,7 +752,12 @@ function TimelineTracks({
         </TrackRow>
 
         {/* V2 B-Roll */}
-        <TrackRow label="V2" name="B-Roll" innerWidth={trackWidthPx}>
+        <TrackRow
+          label="V2"
+          name="B-Roll"
+          innerWidth={trackWidthPx}
+          contentHandlers={scrubHandlers}
+        >
           <div
             className="absolute inset-y-2 right-0 w-12 z-10"
             onDragOver={(e) => {
@@ -759,7 +827,7 @@ function TimelineTracks({
         </TrackRow>
 
         {/* A1 Audio */}
-        <TrackRow label="A1" name="Audio" innerWidth={trackWidthPx}>
+        <TrackRow label="A1" name="Audio" innerWidth={trackWidthPx} contentHandlers={scrubHandlers}>
           <WaveformTrack
             width={trackWidthPx}
             color="from-emerald-500/10 to-transparent border-emerald-500/20"
@@ -768,7 +836,12 @@ function TimelineTracks({
 
         {/* V3 Captions */}
         {captions && (
-          <TrackRow label="V3" name="Captions" innerWidth={trackWidthPx}>
+          <TrackRow
+            label="V3"
+            name="Captions"
+            innerWidth={trackWidthPx}
+            contentHandlers={scrubHandlers}
+          >
             <div className="absolute inset-y-2 left-0 flex gap-1.5 items-center">
               {["HOOK", "PROOF", "PAYOFF", "CTA"].map((t, i) => (
                 <div
@@ -785,7 +858,12 @@ function TimelineTracks({
 
         {/* A2 Music */}
         {music && (
-          <TrackRow label="A2" name="Music" innerWidth={trackWidthPx}>
+          <TrackRow
+            label="A2"
+            name="Music"
+            innerWidth={trackWidthPx}
+            contentHandlers={scrubHandlers}
+          >
             <WaveformTrack
               width={trackWidthPx}
               color="from-violet-500/10 to-transparent border-violet-500/20"
