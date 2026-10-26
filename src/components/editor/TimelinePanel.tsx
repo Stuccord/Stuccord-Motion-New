@@ -115,6 +115,7 @@ function TrackRow({
   name,
   innerWidth,
   contentHandlers,
+  contentRef,
   children,
 }: {
   label: string;
@@ -122,6 +123,8 @@ function TrackRow({
   innerWidth: number;
   /** Pointer handlers for the track's content area (click/drag to seek). */
   contentHandlers?: React.HTMLAttributes<HTMLDivElement>;
+  /** The track's content area (where its clips sit), e.g. to find drop targets. */
+  contentRef?: (el: HTMLDivElement | null) => void;
   children: React.ReactNode;
 }) {
   return (
@@ -157,7 +160,12 @@ function TrackRow({
           </button>
         </div>
       </div>
-      <div className="relative p-2 min-h-[76px]" style={{ width: innerWidth }} {...contentHandlers}>
+      <div
+        ref={contentRef}
+        className="relative p-2 min-h-[76px]"
+        style={{ width: innerWidth }}
+        {...contentHandlers}
+      >
         {children}
       </div>
     </div>
@@ -171,12 +179,9 @@ function TimelineClip({
   pxPerSec,
   offsetMs,
   selected,
-  over,
+  dragOffset,
   onSelect,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  onBodyPointerDown,
   onTrim,
   snapBoundariesMs,
   clipStartMs,
@@ -187,12 +192,11 @@ function TimelineClip({
   pxPerSec: number;
   offsetMs: number;
   selected: boolean;
-  over: boolean;
+  /** Pointer movement while this clip is being dragged to a new position. */
+  dragOffset: { x: number; y: number } | null;
   onSelect: () => void;
-  onDragStart: () => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDragLeave: () => void;
-  onDrop: () => void;
+  /** Press on the clip body (not a trim handle): may start a drag. */
+  onBodyPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
   onTrim: (id: string, trimInMs: number, trimOutMs: number | null) => void;
   snapBoundariesMs: number[];
   clipStartMs: number;
@@ -313,31 +317,25 @@ function TimelineClip({
   return (
     <div
       data-timeline-clip
-      draggable
-      onDragStart={(e) => {
-        e.stopPropagation();
-        onDragStart();
-      }}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={(e) => {
-        e.stopPropagation();
-        onDrop();
-      }}
+      onPointerDown={onBodyPointerDown}
       onClick={onSelect}
+      // Stop the browser's own image/text drag and the long-press menu.
+      onDragStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => dragOffset && e.preventDefault()}
       style={{
         position: "absolute",
         left: leftPx,
         width: Math.max(20, widthPx),
         top: 8,
         bottom: 8,
+        transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
       }}
       className={cn(
-        "rounded-md border bg-gradient-to-br cursor-grab active:cursor-grabbing overflow-hidden group select-none transition-shadow",
+        "rounded-md border bg-gradient-to-br cursor-grab overflow-hidden group select-none transition-shadow",
         gradient,
-        selected &&
-          "ring-2 ring-violet-400 shadow-[0_0_20px_-4px_rgba(139,92,246,0.5)]",
-        over && "ring-1 ring-white/40 brightness-125",
+        selected && "ring-2 ring-violet-400 shadow-[0_0_20px_-4px_rgba(139,92,246,0.5)]",
+        dragOffset &&
+          "z-30 opacity-70 cursor-grabbing shadow-[0_8px_24px_rgba(0,0,0,0.5)] pointer-events-none",
       )}
     >
       {/* Trim handles: always shown on the selected clip, on hover otherwise.
@@ -414,6 +412,8 @@ function WaveformTrack({
 }
 
 /* ---------- TimelineTracks ---------- */
+type Track = "aroll" | "broll";
+
 type TimelineTracksProps = {
   aRoll: ClipRow[];
   bRoll: ClipRow[];
@@ -449,13 +449,14 @@ function TimelineTracks({
   reorderMut,
   pushToHistory,
 }: TimelineTracksProps) {
-  const [dragState, setDragState] = useState<{
-    id: string;
-    fromTrack: "aroll" | "broll";
-  } | null>(null);
-  const [overDropTarget, setOverDropTarget] = useState<{
-    id: string | "__end_aroll__" | "__end_broll__";
-  } | null>(null);
+  // Clip being dragged to a new position (with how far the pointer moved),
+  // and the track and position among that track's other clips it would land.
+  const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ track: Track; index: number } | null>(null);
+  const trackEls = useRef<Record<Track, HTMLDivElement | null>>({ aroll: null, broll: null });
+  // A drag ends with a click on whatever is under the pointer; don't let it
+  // select a clip.
+  const suppressClick = useRef(false);
 
   const aLayout = useMemo(() => {
     const offsets = new Map<string, number>();
@@ -591,50 +592,62 @@ function TimelineTracks({
     }
   }, [playheadPx]);
 
-  function handleReorder(
-    draggedId: string,
-    fromTrack: "aroll" | "broll",
-    targetId: string | "__end_aroll__" | "__end_broll__",
-  ) {
+  const trackClips = (track: Track) => (track === "aroll" ? aRoll : bRoll);
+  const trackLayout = (track: Track) => (track === "aroll" ? aLayout : bLayout);
+
+  /**
+   * Where a dragged clip would land under the pointer: the track row it's
+   * over, and its position among that track's other clips, decided by which
+   * side of each clip's midpoint the pointer is on. Null outside the tracks.
+   */
+  function dropTargetAt(clientX: number, clientY: number, draggedId: string) {
+    for (const track of ["aroll", "broll"] as const) {
+      const el = trackEls.current[track];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (clientY < r.top || clientY > r.bottom) continue;
+      const ms = ((clientX - r.left) / pxPerSec) * 1000;
+      const layout = trackLayout(track);
+      let index = 0;
+      for (const c of trackClips(track)) {
+        if (c.id === draggedId) continue;
+        if (ms > (layout.offsets.get(c.id) ?? 0) + clipVisibleMs(c) / 2) index++;
+      }
+      return { track, index };
+    }
+    return null;
+  }
+
+  /** Timeline x (px) of the insertion line for a drop target. */
+  function insertionPx(target: { track: Track; index: number }, draggedId: string) {
+    const layout = trackLayout(target.track);
+    const others = trackClips(target.track).filter((c) => c.id !== draggedId);
+    if (others.length === 0) return 0;
+    const ms =
+      target.index < others.length
+        ? (layout.offsets.get(others[target.index].id) ?? 0)
+        : (layout.offsets.get(others[others.length - 1].id) ?? 0) +
+          clipVisibleMs(others[others.length - 1]);
+    return (ms / 1000) * pxPerSec;
+  }
+
+  /** Moves a clip to a position on a track (changing its role if the track changes). */
+  function moveClip(draggedId: string, toTrack: Track, index: number) {
     const draggedClip = videoClips.find((c) => c.id === draggedId);
     if (!draggedClip) return;
 
-    const toTrack =
-      targetId === "__end_broll__" || bRoll.some((c) => c.id === targetId)
-        ? "broll"
-        : "aroll";
-
     const newRole =
-      toTrack === "broll"
-        ? "broll"
-        : draggedClip.role === "broll"
-        ? "aroll"
-        : draggedClip.role;
+      toTrack === "broll" ? "broll" : draggedClip.role === "broll" ? "aroll" : draggedClip.role;
 
     const newARoll = aRoll.filter((c) => c.id !== draggedId);
     const newBRoll = bRoll.filter((c) => c.id !== draggedId);
+    const dest = toTrack === "aroll" ? newARoll : newBRoll;
+    dest.splice(Math.min(index, dest.length), 0, { ...draggedClip, role: newRole });
 
-    if (toTrack === "aroll") {
-      const insertIdx =
-        targetId === "__end_aroll__"
-          ? newARoll.length
-          : newARoll.findIndex((c) => c.id === targetId);
-      newARoll.splice(
-        insertIdx >= 0 ? insertIdx : newARoll.length,
-        0,
-        { ...draggedClip, role: newRole },
-      );
-    } else {
-      const insertIdx =
-        targetId === "__end_broll__"
-          ? newBRoll.length
-          : newBRoll.findIndex((c) => c.id === targetId);
-      newBRoll.splice(
-        insertIdx >= 0 ? insertIdx : newBRoll.length,
-        0,
-        { ...draggedClip, role: newRole as "broll" },
-      );
-    }
+    // Dropped back where it was: nothing to save or undo.
+    const same = (a: ClipRow[], b: ClipRow[]) =>
+      a.length === b.length && a.every((c, i) => c.id === b[i].id);
+    if (same(newARoll, aRoll) && same(newBRoll, bRoll)) return;
 
     const combined = [
       ...newARoll.map((c, i) => ({
@@ -672,9 +685,114 @@ function TimelineTracks({
     reorderMut.mutate({
       order: combined,
     });
-    setDragState(null);
-    setOverDropTarget(null);
   }
+
+  /**
+   * Press on a clip body. With a mouse or pen the clip is picked up once the
+   * pointer moves a few pixels (a plain click still selects it). With touch,
+   * press and hold briefly to pick it up; moving the finger first scrolls
+   * the timeline as usual.
+   */
+  function startClipPress(c: ClipRow, e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    const pointerId = e.pointerId;
+    const isTouch = e.pointerType === "touch";
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const scroller = scrollRef.current;
+    const startScroll = scroller?.scrollLeft ?? 0;
+    let active = false;
+    let last = { x: startX, y: startY };
+
+    const update = () => {
+      const scrolled = (scroller?.scrollLeft ?? 0) - startScroll;
+      setDrag({ id: c.id, dx: last.x - startX + scrolled, dy: last.y - startY });
+      setDropTarget(dropTargetAt(last.x, last.y, c.id));
+    };
+    const begin = () => {
+      active = true;
+      suppressClick.current = true;
+      update();
+    };
+    // Scroll the timeline while dragging near its left or right edge.
+    const autoScroll = () => {
+      if (!scroller) return;
+      const r = scroller.getBoundingClientRect();
+      const gutter = scroller.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 96;
+      if (last.x < r.left + gutter + 40) scroller.scrollLeft -= 16;
+      else if (last.x > r.right - 40) scroller.scrollLeft += 16;
+    };
+
+    const holdTimer = isTouch ? setTimeout(begin, 300) : null;
+
+    function finish(commit: boolean) {
+      if (holdTimer) clearTimeout(holdTimer);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("touchmove", blockTouchScroll);
+      if (active && commit) {
+        const target = dropTargetAt(last.x, last.y, c.id);
+        if (target) moveClip(c.id, target.track, target.index);
+      }
+      setDrag(null);
+      setDropTarget(null);
+      // The click that follows pointerup has been dispatched by now.
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    }
+    function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      last = { x: ev.clientX, y: ev.clientY };
+      if (!active) {
+        const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+        // Touch: moving before the hold completes is a scroll, not a drag.
+        if (isTouch) {
+          if (dist > 8) finish(false);
+          return;
+        }
+        if (dist < 4) return;
+        begin();
+      }
+      autoScroll();
+      update();
+    }
+    function onUp(ev: PointerEvent) {
+      if (ev.pointerId === pointerId) finish(true);
+    }
+    function onCancel(ev: PointerEvent) {
+      if (ev.pointerId === pointerId) finish(false);
+    }
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") finish(false);
+    }
+    // Once a touch drag has started, keep the finger from scrolling the page.
+    function blockTouchScroll(ev: TouchEvent) {
+      if (active) ev.preventDefault();
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("touchmove", blockTouchScroll, { passive: false });
+  }
+
+  const selectClip = (id: string) => {
+    if (!suppressClick.current) onSelect(id);
+  };
+
+  // The violet line showing where a dragged clip will land on a track.
+  const insertionLine = (track: Track) =>
+    drag && dropTarget?.track === track ? (
+      <div
+        aria-hidden
+        className="absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(167,139,250,0.9)] z-20 pointer-events-none"
+        style={{ left: insertionPx(dropTarget, drag.id) }}
+      />
+    ) : null;
 
   return (
     // tl-root sets --tl-gutter (the track header width) on the whole scroll
@@ -734,26 +852,16 @@ function TimelineTracks({
           name="A-Roll"
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
+          contentRef={(el) => {
+            trackEls.current.aroll = el;
+          }}
         >
-          <div
-            className="absolute inset-y-2 right-0 w-12 z-10"
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOverDropTarget({ id: "__end_aroll__" });
-            }}
-            onDragLeave={() => setOverDropTarget(null)}
-            onDrop={() =>
-              dragState &&
-              handleReorder(dragState.id, dragState.fromTrack, "__end_aroll__")
-            }
-          />
+          {insertionLine("aroll")}
           {aRoll.length === 0 ? (
             <div
               className={cn(
                 "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
-                overDropTarget?.id === "__end_aroll__"
-                  ? "text-violet-400"
-                  : "text-neutral-600",
+                dropTarget?.track === "aroll" ? "text-violet-400" : "text-neutral-600",
               )}
             >
               Drop A-roll clips here
@@ -767,17 +875,9 @@ function TimelineTracks({
                 pxPerSec={pxPerSec}
                 offsetMs={aLayout.offsets.get(c.id) ?? 0}
                 selected={selectedClipId === c.id}
-                over={overDropTarget?.id === c.id}
-                onSelect={() => onSelect(c.id)}
-                onDragStart={() => setDragState({ id: c.id, fromTrack: "aroll" })}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setOverDropTarget({ id: c.id });
-                }}
-                onDragLeave={() => setOverDropTarget(null)}
-                onDrop={() =>
-                  dragState && handleReorder(dragState.id, dragState.fromTrack, c.id)
-                }
+                dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
+                onSelect={() => selectClip(c.id)}
+                onBodyPointerDown={(e) => startClipPress(c, e)}
                 onTrim={onTrim}
                 snapBoundariesMs={snapPointsFor(c, aLayout.offsets.get(c.id) ?? 0)}
                 clipStartMs={aLayout.offsets.get(c.id) ?? 0}
@@ -793,39 +893,16 @@ function TimelineTracks({
           name="B-Roll"
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
+          contentRef={(el) => {
+            trackEls.current.broll = el;
+          }}
         >
-          <div
-            className="absolute inset-y-2 right-0 w-12 z-10"
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOverDropTarget({ id: "__end_broll__" });
-            }}
-            onDragLeave={() => setOverDropTarget(null)}
-            onDrop={() =>
-              dragState &&
-              handleReorder(dragState.id, dragState.fromTrack, "__end_broll__")
-            }
-          />
-          <div
-            className="absolute inset-0 z-0"
-            onDragOver={(e) => {
-              if (dragState?.fromTrack === "aroll") {
-                e.preventDefault();
-                setOverDropTarget({ id: "__end_broll__" });
-              }
-            }}
-            onDrop={() =>
-              dragState &&
-              handleReorder(dragState.id, dragState.fromTrack, "__end_broll__")
-            }
-          />
+          {insertionLine("broll")}
           {bRoll.length === 0 ? (
             <div
               className={cn(
                 "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
-                overDropTarget?.id === "__end_broll__"
-                  ? "text-teal-400"
-                  : "text-neutral-600",
+                dropTarget?.track === "broll" ? "text-teal-400" : "text-neutral-600",
               )}
             >
               B-roll &amp; cutaways
@@ -839,20 +916,9 @@ function TimelineTracks({
                 pxPerSec={pxPerSec}
                 offsetMs={bLayout.offsets.get(c.id) ?? 0}
                 selected={selectedClipId === c.id}
-                over={overDropTarget?.id === c.id}
-                onSelect={() => onSelect(c.id)}
-                onDragStart={() =>
-                  setDragState({ id: c.id, fromTrack: "broll" })
-                }
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setOverDropTarget({ id: c.id });
-                }}
-                onDragLeave={() => setOverDropTarget(null)}
-                onDrop={() =>
-                  dragState &&
-                  handleReorder(dragState.id, dragState.fromTrack, c.id)
-                }
+                dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
+                onSelect={() => selectClip(c.id)}
+                onBodyPointerDown={(e) => startClipPress(c, e)}
                 onTrim={onTrim}
                 snapBoundariesMs={snapPointsFor(c, bLayout.offsets.get(c.id) ?? 0)}
                 clipStartMs={bLayout.offsets.get(c.id) ?? 0}
