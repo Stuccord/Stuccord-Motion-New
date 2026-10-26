@@ -201,13 +201,30 @@ function TimelineClip({
   const sourceMs = clipSourceMs(clip);
   const trimIn = clip.trim_in_ms ?? 0;
   const trimOut = clip.trim_out_ms ?? sourceMs ?? trimIn + clipVisibleMs(clip);
+  // Trim points shown while dragging a handle, and after release until the
+  // saved values come back (so the clip doesn't flick back to its old size).
   const [localTrimIn, setLocalTrimIn] = useState<number | null>(null);
   const [localTrimOut, setLocalTrimOut] = useState<number | null>(null);
   const effIn = localTrimIn ?? trimIn;
   const effOut = localTrimOut ?? trimOut;
   const visibleMs = Math.max(200, effOut - effIn);
   const widthPx = (visibleMs / 1000) * pxPerSec;
-  const leftPx = (offsetMs / 1000) * pxPerSec;
+  // While the left handle moves, the clip's left edge follows it and its
+  // right edge stays put; the track re-packs once the trim is saved.
+  const leftShiftMs = localTrimIn != null ? localTrimIn - trimIn : 0;
+  const leftPx = ((offsetMs + leftShiftMs) / 1000) * pxPerSec;
+
+  // Saved trim arrived (or the save failed): drop the local preview.
+  useEffect(() => {
+    setLocalTrimIn(null);
+    setLocalTrimOut(null);
+  }, [clip.trim_in_ms, clip.trim_out_ms]);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    };
+  }, []);
 
   const gradient =
     tone === "primary"
@@ -241,41 +258,56 @@ function TimelineClip({
     // measured when the editor opens), the clip can only be shortened.
     const maxOut = sourceMs ?? startOut;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    // Latest values, kept outside React state so release saves exactly once.
+    let nextIn = startIn;
+    let nextOut = startOut;
 
     function onMove(ev: PointerEvent) {
       const dx = ev.clientX - startClientX;
       const deltaMs = Math.round((dx / pxPerSec) * 1000);
       if (edge === "left") {
-        let next = Math.max(0, Math.min(startOut - 200, startIn + deltaMs));
-        next = snapTo(next);
-        setLocalTrimIn(next);
+        nextIn = snapTo(Math.max(0, Math.min(startOut - 200, startIn + deltaMs)));
+        setLocalTrimIn(nextIn);
       } else {
-        let next = Math.max(startIn + 200, Math.min(maxOut, startOut + deltaMs));
-        next = snapTo(next);
-        setLocalTrimOut(next);
+        nextOut = snapTo(Math.max(startIn + 200, Math.min(maxOut, startOut + deltaMs)));
+        setLocalTrimOut(nextOut);
       }
     }
 
-    function onUp() {
+    function stopListening() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      setLocalTrimIn((li) => {
-        setLocalTrimOut((lo) => {
-          const nextIn = li ?? startIn;
-          const nextOut = lo ?? startOut;
-          onTrim(
-            clip.id,
-            nextIn,
-            sourceMs != null && nextOut >= sourceMs ? null : nextOut,
-          );
-          return null;
-        });
-        return null;
-      });
+      window.removeEventListener("pointercancel", onCancel);
+    }
+
+    // The browser took the pointer away (e.g. a touch became a scroll).
+    function onCancel() {
+      stopListening();
+      setLocalTrimIn(null);
+      setLocalTrimOut(null);
+    }
+
+    function onUp() {
+      stopListening();
+      // A press without movement (or back to where it started) changes nothing.
+      if (nextIn === startIn && nextOut === startOut) {
+        setLocalTrimIn(null);
+        setLocalTrimOut(null);
+        return;
+      }
+      // Keep showing the new trim until it's saved; give up after a while
+      // in case the save fails, so the clip shows its real size again.
+      resetTimer.current = setTimeout(() => {
+        setLocalTrimIn(null);
+        setLocalTrimOut(null);
+      }, 8000);
+      onTrim(clip.id, nextIn, sourceMs != null && nextOut >= sourceMs ? null : nextOut);
     }
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   }
 
   return (
@@ -308,28 +340,24 @@ function TimelineClip({
         over && "ring-1 ring-white/40 brightness-125",
       )}
     >
-      {/* Trim handle left */}
-      <div
-        onPointerDown={(e) => beginTrim("left", e)}
-        className={cn(
-          "absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition",
-          selected && "opacity-100",
-        )}
-        title="Drag to trim in"
-      >
-        <span className="w-[2px] h-4 bg-white/90 rounded-full" />
-      </div>
-      {/* Trim handle right */}
-      <div
-        onPointerDown={(e) => beginTrim("right", e)}
-        className={cn(
-          "absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition",
-          selected && "opacity-100",
-        )}
-        title="Drag to trim out"
-      >
-        <span className="w-[2px] h-4 bg-white/90 rounded-full" />
-      </div>
+      {/* Trim handles: always shown on the selected clip, on hover otherwise.
+          touch-none lets a finger drag them instead of scrolling. */}
+      {(["left", "right"] as const).map((edge) => (
+        <div
+          key={edge}
+          onPointerDown={(e) => beginTrim(edge, e)}
+          className={cn(
+            "absolute top-0 bottom-0 w-3.5 cursor-ew-resize z-10 flex items-center justify-center touch-none transition",
+            edge === "left" ? "left-0 rounded-l-md" : "right-0 rounded-r-md",
+            selected
+              ? "bg-violet-400/35 opacity-100 hover:bg-violet-400/55"
+              : "bg-black/35 opacity-0 group-hover:opacity-100",
+          )}
+          title={edge === "left" ? "Drag to trim the start" : "Drag to trim the end"}
+        >
+          <span className="w-[3px] h-6 bg-white/90 rounded-full" />
+        </div>
+      ))}
 
       {/* Label */}
       <div className="absolute inset-0 p-1.5 pl-3 pr-3 flex flex-col justify-between text-[9px] pointer-events-none">
@@ -429,16 +457,6 @@ function TimelineTracks({
     id: string | "__end_aroll__" | "__end_broll__";
   } | null>(null);
 
-  const allOffsets = useMemo(() => {
-    const offsets = new Map<string, number>();
-    let cur = 0;
-    for (const c of videoClips) {
-      offsets.set(c.id, cur);
-      cur += clipVisibleMs(c);
-    }
-    return { offsets, totalMs: Math.max(cur, 10000) };
-  }, [videoClips]);
-
   const aLayout = useMemo(() => {
     const offsets = new Map<string, number>();
     let cur = 0;
@@ -476,15 +494,33 @@ function TimelineTracks({
 
   const playheadPx = (currentTimeMs / 1000) * pxPerSec;
 
-  const snapBoundariesMs = useMemo(() => {
+  // Trim snap points: the edges of every clip where it actually sits (A-roll
+  // and B-roll each start at 0:00 on their own track) and the playhead.
+  // Each clip leaves out its own edges and any point sitting on them (on a
+  // packed track the next clip starts exactly where this one ends), so a
+  // handle isn't held in place.
+  const snapPoints = useMemo(() => {
     if (!snapEnabled) return [];
-    const pts: number[] = [currentTimeMs];
-    for (const c of videoClips) {
-      const off = allOffsets.offsets.get(c.id) ?? 0;
-      pts.push(off, off + clipVisibleMs(c));
+    const pts: { ms: number; clipId: string | null }[] = [{ ms: currentTimeMs, clipId: null }];
+    for (const [clips, layout] of [
+      [aRoll, aLayout],
+      [bRoll, bLayout],
+    ] as const) {
+      for (const c of clips) {
+        const off = layout.offsets.get(c.id) ?? 0;
+        pts.push({ ms: off, clipId: c.id }, { ms: off + clipVisibleMs(c), clipId: c.id });
+      }
     }
     return pts;
-  }, [snapEnabled, currentTimeMs, videoClips, allOffsets.offsets]);
+  }, [snapEnabled, currentTimeMs, aRoll, bRoll, aLayout, bLayout]);
+  const snapPointsFor = (c: ClipRow, startMs: number) => {
+    const endMs = startMs + clipVisibleMs(c);
+    return snapPoints
+      .filter(
+        (p) => p.clipId !== c.id && Math.abs(p.ms - startMs) > 1 && Math.abs(p.ms - endMs) > 1,
+      )
+      .map((p) => p.ms);
+  };
 
   // Moves the playhead to a timeline time. The clip under it on the main
   // track (the A-roll, or the B-roll when there's no A-roll) is reported with
@@ -743,7 +779,7 @@ function TimelineTracks({
                   dragState && handleReorder(dragState.id, dragState.fromTrack, c.id)
                 }
                 onTrim={onTrim}
-                snapBoundariesMs={snapEnabled ? snapBoundariesMs : []}
+                snapBoundariesMs={snapPointsFor(c, aLayout.offsets.get(c.id) ?? 0)}
                 clipStartMs={aLayout.offsets.get(c.id) ?? 0}
                 tone="primary"
               />
@@ -818,7 +854,7 @@ function TimelineTracks({
                   handleReorder(dragState.id, dragState.fromTrack, c.id)
                 }
                 onTrim={onTrim}
-                snapBoundariesMs={snapEnabled ? snapBoundariesMs : []}
+                snapBoundariesMs={snapPointsFor(c, bLayout.offsets.get(c.id) ?? 0)}
                 clipStartMs={bLayout.offsets.get(c.id) ?? 0}
                 tone="teal"
               />
