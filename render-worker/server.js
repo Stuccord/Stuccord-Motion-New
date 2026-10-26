@@ -230,6 +230,68 @@ function findSystemFont() {
   return null;
 }
 
+// ---------- transcripts on the timeline ----------
+
+// Duration of a media file in ms, read from the "Duration:" line ffmpeg
+// prints when given an input and no output. Returns null if unreadable.
+function probeDurationMs(file) {
+  return new Promise((resolve) => {
+    const child = spawn(ffmpegPath, ["-hide_banner", "-i", file], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+    child.on("error", () => resolve(null));
+    child.on("close", () => {
+      const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+      resolve(m ? Math.round((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000) : null);
+    });
+  });
+}
+
+// Keeps only well-formed words ({ text, start_ms, end_ms }), in time order.
+// Saved transcripts include the user's edits, so don't trust their shape.
+function sanitizeWords(words) {
+  if (!Array.isArray(words)) return [];
+  return words
+    .filter(
+      (w) =>
+        w &&
+        typeof w.text === "string" &&
+        w.text.trim() &&
+        Number.isFinite(w.start_ms) &&
+        Number.isFinite(w.end_ms) &&
+        w.end_ms >= w.start_ms,
+    )
+    .map((w) => ({
+      text: w.text.trim(),
+      start_ms: Math.round(w.start_ms),
+      end_ms: Math.round(w.end_ms),
+    }))
+    .sort((a, b) => a.start_ms - b.start_ms);
+}
+
+/**
+ * Converts each clip's source-file words to final-video time. A clip plays
+ * source time [trimInMs, trimInMs + durationMs) starting at offsetMs in the
+ * final video; words that start outside that window aren't shown.
+ */
+function placeWordsOnTimeline(segments) {
+  const placed = [];
+  for (const { words, trimInMs, durationMs, offsetMs } of segments) {
+    const windowEnd = trimInMs + durationMs;
+    for (const w of words) {
+      if (w.start_ms < trimInMs || w.start_ms >= windowEnd) continue;
+      placed.push({
+        text: w.text,
+        start_ms: offsetMs + (w.start_ms - trimInMs),
+        end_ms: offsetMs + (Math.min(w.end_ms, windowEnd) - trimInMs),
+      });
+    }
+  }
+  return placed;
+}
+
 // ---------- captions ----------
 
 const CAPTION_MAX_WORDS = 3;
@@ -543,34 +605,112 @@ async function runRender(job) {
     };
     const concatOut = await concatTrack(normalized.slice(0, mainClips.length), "concat");
 
-    // 4a. Transcribe the main track's audio (best-effort) for captions. Word
-    //     timings are relative to the start of the final video, since B-roll
-    //     and the hook don't change the audio or its timing. Skipped when the
-    //     user turned captions off for this render.
+    // 4a. Captions words (best-effort; skipped when the user turned captions
+    //     off). Transcripts belong to whole source files, in source time, so
+    //     each file is transcribed once and the user's corrections survive
+    //     trims, splits and reorders. The app sends saved transcripts as
+    //     clip.transcript_words; only main-track files without one are
+    //     transcribed here, and new ones are reported back to be saved.
     const wantCaptions = job.captions !== false;
     let editPlan = plan;
     let captionWords = [];
-    if (process.env.ELEVENLABS_API_KEY && wantCaptions) {
-      await callback(job.callback_url, {
-        job_id: job.job_id, status: "rendering", progress: 72,
-        stage_message: "Transcribing speech",
-      });
-      try {
-        const audioPath = path.join(workdir, "speech.m4a");
-        await run(ffmpegPath, [
-          "-y", "-i", concatOut,
-          "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "64k",
-          audioPath,
-        ]);
-        const transcript = await transcribe(audioPath);
-        if (transcript) {
-          editPlan = { ...(plan ?? {}), transcript };
-          captionWords = transcript.words;
+    if (wantCaptions) {
+      const sourceKey = (c) => c.storage_path || c.id;
+      const sourceWords = new Map();
+      for (const c of mainClips) {
+        if (Array.isArray(c.transcript_words)) {
+          sourceWords.set(sourceKey(c), sanitizeWords(c.transcript_words));
         }
-      } catch (e) {
-        console.error(`[Worker] Transcription failed for job=${job.job_id}:`, e?.message || e);
-        editPlan = { ...(plan ?? {}), transcript_error: String(e?.message ?? e).slice(0, 300) };
       }
+
+      // One main clip per source file that still needs transcribing.
+      const toTranscribe = [];
+      const queued = new Set();
+      mainClips.forEach((c, i) => {
+        const key = sourceKey(c);
+        if (sourceWords.has(key) || queued.has(key)) return;
+        queued.add(key);
+        toTranscribe.push(i);
+      });
+
+      const transcriptErrors = [];
+      const newTranscripts = [];
+      if (toTranscribe.length && process.env.ELEVENLABS_API_KEY) {
+        await callback(job.callback_url, {
+          job_id: job.job_id, status: "rendering", progress: 72,
+          stage_message: `Transcribing speech (${toTranscribe.length} file${toTranscribe.length === 1 ? "" : "s"})`,
+        });
+        for (const i of toTranscribe) {
+          const clip = mainClips[i];
+          try {
+            // The whole source file, untrimmed, so later trim changes still
+            // have words to show.
+            const audioPath = path.join(workdir, `speech_${i}.m4a`);
+            await run(ffmpegPath, [
+              "-y", "-i", sources[i],
+              "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "64k",
+              audioPath,
+            ]);
+            const transcript = await transcribe(audioPath);
+            if (!transcript) continue;
+            sourceWords.set(sourceKey(clip), transcript.words);
+            if (clip.storage_path) {
+              newTranscripts.push({
+                storage_path: clip.storage_path,
+                provider: transcript.provider,
+                model: transcript.model,
+                language: transcript.language,
+                words: transcript.words,
+              });
+            }
+          } catch (e) {
+            console.error(
+              `[Worker] Transcription failed for job=${job.job_id} clip=${clip.id}:`,
+              e?.message || e,
+            );
+            transcriptErrors.push(`${clip.filename || clip.id}: ${String(e?.message ?? e)}`);
+          }
+        }
+        // Report right away so the transcripts are kept even if the render
+        // fails later on.
+        if (newTranscripts.length) {
+          await callback(job.callback_url, {
+            job_id: job.job_id, status: "rendering", progress: 74,
+            stage_message: "Transcripts saved",
+            transcripts: newTranscripts,
+          });
+        }
+      } else if (toTranscribe.length) {
+        console.warn(`[Worker] ELEVENLABS_API_KEY not set; ${toTranscribe.length} file(s) not transcribed`);
+      }
+
+      // Place each main clip's words at its position in the final video,
+      // using the real length of its normalized (trimmed) file.
+      const segments = [];
+      let offsetMs = 0;
+      for (let i = 0; i < mainClips.length; i++) {
+        const durationMs = await probeDurationMs(normalized[i]);
+        if (durationMs == null) {
+          transcriptErrors.push(`Could not read the length of clip ${i + 1}; captions stop there`);
+          break;
+        }
+        segments.push({
+          words: sourceWords.get(sourceKey(mainClips[i])) ?? [],
+          trimInMs: Math.max(0, Math.round(Number(mainClips[i].trim_in_ms ?? 0))),
+          durationMs,
+          offsetMs,
+        });
+        offsetMs += durationMs;
+      }
+      captionWords = placeWordsOnTimeline(segments);
+
+      editPlan = {
+        ...(plan ?? {}),
+        transcript: { words: captionWords },
+        ...(transcriptErrors.length
+          ? { transcript_error: transcriptErrors.join("; ").slice(0, 500) }
+          : {}),
+      };
     }
 
     // 4b. Overlay the B-roll track (video only). eof_action=pass shows the

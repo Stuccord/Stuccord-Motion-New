@@ -715,6 +715,20 @@ export const submitRender = createServerFn({ method: "POST" })
         process.env.PUBLIC_APP_URL || process.env.PUBLIC_URL,
       );
 
+      // Saved transcripts (and the user's corrections) for these source files,
+      // so the worker only transcribes files it hasn't seen. Best-effort: if
+      // this lookup fails the worker simply transcribes again.
+      const savedWords = new Map<string, unknown>();
+      if (data.captions) {
+        const paths = [...new Set(clips.map((c) => c.storage_path))];
+        const { data: transcripts, error: tErr } = await context.supabase
+          .from("transcripts")
+          .select("storage_path, words")
+          .in("storage_path", paths);
+        if (tErr) console.error("[submitRender] Transcript lookup failed:", tErr.message);
+        for (const t of transcripts ?? []) savedWords.set(t.storage_path, t.words);
+      }
+
       // Presign download URLs for each clip so the worker doesn't need service role.
       const clipUrls = await Promise.all(
         clips.map(async (c) => {
@@ -732,6 +746,8 @@ export const submitRender = createServerFn({ method: "POST" })
             trim_in_ms: c.trim_in_ms ?? 0,
             trim_out_ms: c.trim_out_ms ?? null,
             parent_clip_id: c.parent_clip_id ?? null,
+            // Words in source-file time, or null when not transcribed yet.
+            transcript_words: savedWords.get(c.storage_path) ?? null,
           };
         }),
       );
