@@ -637,7 +637,15 @@ function resolveCallbackWebhookEndpoint(rawBaseUrl: string | undefined): URL {
 
 export const submitRender = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ project_id: z.string().uuid() }).parse(d))
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        project_id: z.string().uuid(),
+        // Burn word-by-word captions into the export (editor's Captions switch).
+        captions: z.boolean().default(true),
+      })
+      .parse(d),
+  )
   .handler(async ({ data, context }) => {
     // Enforce monthly render cap for the current (Starter) tier.
     // Counts every job created this billing month except failed ones so
@@ -744,6 +752,7 @@ export const submitRender = createServerFn({ method: "POST" })
         brief: project.brief,
         style_preset: project.style_preset,
         aspect_ratio: project.aspect_ratio,
+        captions: data.captions,
         clips: clipUrls,
         output: {
           path: outputPath,

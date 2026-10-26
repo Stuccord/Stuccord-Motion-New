@@ -230,6 +230,122 @@ function findSystemFont() {
   return null;
 }
 
+// ---------- captions ----------
+
+const CAPTION_MAX_WORDS = 3;
+const CAPTION_MAX_GAP_MS = 400; // a longer pause starts a new caption
+const CAPTION_MAX_SPAN_MS = 1500; // and so does a caption running this long
+const CAPTION_HOLD_MS = 250; // keep the last word up briefly after it's spoken
+
+// Groups transcript words into short captions of up to three words, breaking
+// on pauses and at punctuation so each caption reads as one phrase.
+function groupCaptionWords(words) {
+  const groups = [];
+  let cur = [];
+  for (const w of words) {
+    const prev = cur[cur.length - 1];
+    const startNew =
+      prev &&
+      (cur.length >= CAPTION_MAX_WORDS ||
+        w.start_ms - prev.end_ms > CAPTION_MAX_GAP_MS ||
+        /[.!?,;:]$/.test(prev.text) ||
+        w.end_ms - cur[0].start_ms > CAPTION_MAX_SPAN_MS);
+    if (startNew) {
+      groups.push(cur);
+      cur = [];
+    }
+    cur.push(w);
+  }
+  if (cur.length) groups.push(cur);
+  return groups;
+}
+
+// ASS timestamps are H:MM:SS.cc (centiseconds).
+function assTime(ms) {
+  const cs = Math.max(0, Math.round(ms / 10));
+  const h = Math.floor(cs / 360000);
+  const m = Math.floor((cs % 360000) / 6000);
+  const s = Math.floor((cs % 6000) / 100);
+  const c = cs % 100;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
+}
+
+// Braces and backslashes are ASS override syntax; keep them out of the text.
+function assText(text) {
+  return String(text).replace(/[{}\\]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Font family name of the font findSystemFont() picked, for the ASS style.
+function fontFamily(fontPath) {
+  if (/dejavu/i.test(fontPath)) return "DejaVu Sans";
+  if (/arial/i.test(fontPath)) return "Arial";
+  return path.basename(fontPath).replace(/\.[^.]+$/, "").replace(/-.*$/, "");
+}
+
+/**
+ * Builds an ASS subtitle file for word-by-word captions: white bold text with
+ * a black outline in the lower third, showing up to three words at a time
+ * with the word being spoken highlighted yellow. Returns null when the
+ * transcript has no words.
+ */
+function buildCaptionsAss(words, { w, h, fontName }) {
+  const groups = groupCaptionWords(words);
+  if (!groups.length) return null;
+
+  const fontSize = Math.round(Math.min(w, h) * 0.075);
+  const outline = Math.max(2, Math.round(fontSize * 0.08));
+  const marginX = Math.round(w * 0.08);
+  const marginV = Math.round(h * 0.2);
+  // Colours are &HAABBGGRR. Yellow #FFD700 is &H0000D7FF.
+  const WHITE = "&H00FFFFFF";
+  const HIGHLIGHT = "&H0000D7FF";
+
+  const events = [];
+  groups.forEach((group, gi) => {
+    const nextStart = groups[gi + 1]?.[0].start_ms ?? Infinity;
+    group.forEach((word, i) => {
+      const start = word.start_ms;
+      const end =
+        i < group.length - 1
+          ? group[i + 1].start_ms
+          : Math.min(word.end_ms + CAPTION_HOLD_MS, nextStart);
+      if (end <= start) return;
+      const text = group
+        .map((g, j) => {
+          const t = assText(g.text);
+          return j === i ? `{\\c${HIGHLIGHT}&}${t}{\\c${WHITE}&}` : t;
+        })
+        .join(" ");
+      events.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Caption,,0,0,0,,${text}`);
+    });
+  });
+
+  return [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    `PlayResX: ${w}`,
+    `PlayResY: ${h}`,
+    "WrapStyle: 0",
+    "ScaledBorderAndShadow: yes",
+    "",
+    "[V4+ Styles]",
+    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+    `Style: Caption,${fontName},${fontSize},${WHITE},${WHITE},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${outline},0,2,${marginX},${marginX},${marginV},1`,
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ...events,
+    "",
+  ].join("\n");
+}
+
+// Quotes a file path for use inside an ffmpeg filter argument. Everything
+// inside single quotes is literal; a quote in the path closes, escapes and
+// reopens the quoting.
+function filterPath(p) {
+  return `'${String(p).replace(/\\/g, "/").replace(/'/g, "'\\''")}'`;
+}
+
 // ---------- AI edit plan ----------
 
 async function generateEditPlan(job) {
@@ -427,12 +543,14 @@ async function runRender(job) {
     };
     const concatOut = await concatTrack(normalized.slice(0, mainClips.length), "concat");
 
-    // 4a. Transcribe the main track's audio (best-effort). Word timings are
-    //     relative to the start of the final video, since B-roll and the hook
-    //     don't change the audio or its timing. Stored with the edit plan;
-    //     captions are built from it in a later step.
+    // 4a. Transcribe the main track's audio (best-effort) for captions. Word
+    //     timings are relative to the start of the final video, since B-roll
+    //     and the hook don't change the audio or its timing. Skipped when the
+    //     user turned captions off for this render.
+    const wantCaptions = job.captions !== false;
     let editPlan = plan;
-    if (process.env.ELEVENLABS_API_KEY) {
+    let captionWords = [];
+    if (process.env.ELEVENLABS_API_KEY && wantCaptions) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 72,
         stage_message: "Transcribing speech",
@@ -445,7 +563,10 @@ async function runRender(job) {
           audioPath,
         ]);
         const transcript = await transcribe(audioPath);
-        if (transcript) editPlan = { ...(plan ?? {}), transcript };
+        if (transcript) {
+          editPlan = { ...(plan ?? {}), transcript };
+          captionWords = transcript.words;
+        }
       } catch (e) {
         console.error(`[Worker] Transcription failed for job=${job.job_id}:`, e?.message || e);
         editPlan = { ...(plan ?? {}), transcript_error: String(e?.message ?? e).slice(0, 300) };
@@ -474,31 +595,67 @@ async function runRender(job) {
       composedOut = overlayOut;
     }
 
-    // 5. Optional: burn hook text on the first 3 seconds
+    // 5. Burn in text: word-by-word captions in the lower third and the AI
+    //    hook at the top for the first 3 seconds, in a single encode.
     let finalOut = composedOut;
     const font = findSystemFont();
-    if (hook && font) {
-      await callback(job.callback_url, {
-        job_id: job.job_id, status: "rendering", progress: 85,
-        stage_message: "Adding hook caption",
-      });
-      const burnOut = path.join(workdir, "final.mp4");
+    if (!font && (hook || captionWords.length)) {
+      console.warn(`[Worker] No system font found; skipping captions and hook for job=${job.job_id}`);
+    }
+    let captionsFilter = null;
+    if (font && captionWords.length) {
+      const ass = buildCaptionsAss(captionWords, { w, h, fontName: fontFamily(font) });
+      if (ass) {
+        const assPath = path.join(workdir, "captions.ass");
+        await fsp.writeFile(assPath, ass, "utf8");
+        captionsFilter =
+          `ass=filename=${filterPath(assPath)}:fontsdir=${filterPath(path.dirname(font))}`;
+      }
+    }
+    let hookFilter = null;
+    if (font && hook) {
       const fontSize = Math.round(h * 0.055);
-      const drawtext =
+      hookFilter =
         `drawtext=fontfile='${font}':text='${escapeDrawtext(hook)}':` +
         `fontcolor=white:fontsize=${fontSize}:box=1:boxcolor=black@0.55:boxborderw=24:` +
         `x=(w-text_w)/2:y=h*0.08:enable='lt(t,3)'`;
+    }
+
+    const burnText = async (filters, name) => {
+      const out = path.join(workdir, name);
+      await run(ffmpegPath, [
+        "-y", "-i", composedOut,
+        "-vf", filters.join(","),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-c:a", "copy", "-movflags", "+faststart",
+        out,
+      ]);
+      return out;
+    };
+
+    if (captionsFilter || hookFilter) {
+      await callback(job.callback_url, {
+        job_id: job.job_id, status: "rendering", progress: 85,
+        stage_message: captionsFilter ? "Adding captions" : "Adding hook caption",
+      });
       try {
-        await run(ffmpegPath, [
-          "-y", "-i", composedOut,
-          "-vf", drawtext,
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-          "-c:a", "copy", "-movflags", "+faststart",
-          burnOut,
-        ]);
-        finalOut = burnOut;
+        finalOut = await burnText([captionsFilter, hookFilter].filter(Boolean), "final.mp4");
       } catch (e) {
-        console.warn("drawtext failed, using concat output", e);
+        console.warn(`[Worker] Burning text failed for job=${job.job_id}:`, e?.message || e);
+        // A captions problem shouldn't also cost the hook: retry with the hook alone.
+        if (captionsFilter && hookFilter) {
+          try {
+            finalOut = await burnText([hookFilter], "final-hook.mp4");
+          } catch (e2) {
+            console.warn(`[Worker] Hook-only burn failed for job=${job.job_id}:`, e2?.message || e2);
+          }
+        }
+        if (captionsFilter) {
+          editPlan = {
+            ...(editPlan ?? {}),
+            captions_error: String(e?.message ?? e).slice(0, 300),
+          };
+        }
       }
     }
 
