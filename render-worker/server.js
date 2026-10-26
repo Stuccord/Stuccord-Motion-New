@@ -7,6 +7,7 @@
 // Env vars:
 //   RENDER_WORKER_SECRET   shared HMAC secret (matches the Lovable app)
 //   LOVABLE_API_KEY        optional — enables AI edit-plan generation
+//   ELEVENLABS_API_KEY     optional — enables speech-to-text (Scribe v2) for captions
 //
 // The worker receives signed download/upload URLs from the app, so it does
 // NOT need any Supabase service keys. It uses ffmpeg to normalize each
@@ -270,6 +271,59 @@ Clips: ${JSON.stringify(job.clips.map((c) => ({ id: c.id, role: c.role, filename
   }
 }
 
+// ---------- speech-to-text ----------
+
+// Transcribes an audio file with ElevenLabs Scribe v2 and returns the spoken
+// words with their timings in milliseconds from the start of the file.
+// Returns null when no ELEVENLABS_API_KEY is configured.
+async function transcribe(audioPath) {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return null;
+
+  const form = new FormData();
+  form.append("model_id", "scribe_v2");
+  form.append("timestamps_granularity", "word");
+  form.append("tag_audio_events", "false");
+  form.append("file", new Blob([await fsp.readFile(audioPath)], { type: "audio/mp4" }), "audio.m4a");
+
+  const r = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    method: "POST",
+    headers: { "xi-api-key": key },
+    body: form,
+    signal: AbortSignal.timeout(5 * 60 * 1000),
+  });
+  if (!r.ok) {
+    const detail = await r.text().catch(() => "");
+    throw new Error(`speech-to-text failed: ${r.status} ${detail.slice(0, 200)}`);
+  }
+  const data = await r.json();
+
+  // Keep spoken words only (the response also has "spacing" and
+  // "audio_event" entries) and drop any without timings.
+  const words = (Array.isArray(data?.words) ? data.words : [])
+    .filter(
+      (w) =>
+        w?.type === "word" &&
+        typeof w.text === "string" &&
+        Number.isFinite(w.start) &&
+        Number.isFinite(w.end),
+    )
+    .map((w) => ({
+      text: w.text.trim(),
+      start_ms: Math.round(w.start * 1000),
+      end_ms: Math.round(w.end * 1000),
+    }))
+    .filter((w) => w.text);
+
+  return {
+    provider: "elevenlabs",
+    model: "scribe_v2",
+    language: typeof data?.language_code === "string" ? data.language_code : null,
+    text: typeof data?.text === "string" ? data.text : "",
+    words,
+  };
+}
+
 // ---------- render pipeline ----------
 
 async function runRender(job) {
@@ -373,6 +427,31 @@ async function runRender(job) {
     };
     const concatOut = await concatTrack(normalized.slice(0, mainClips.length), "concat");
 
+    // 4a. Transcribe the main track's audio (best-effort). Word timings are
+    //     relative to the start of the final video, since B-roll and the hook
+    //     don't change the audio or its timing. Stored with the edit plan;
+    //     captions are built from it in a later step.
+    let editPlan = plan;
+    if (process.env.ELEVENLABS_API_KEY) {
+      await callback(job.callback_url, {
+        job_id: job.job_id, status: "rendering", progress: 72,
+        stage_message: "Transcribing speech",
+      });
+      try {
+        const audioPath = path.join(workdir, "speech.m4a");
+        await run(ffmpegPath, [
+          "-y", "-i", concatOut,
+          "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "64k",
+          audioPath,
+        ]);
+        const transcript = await transcribe(audioPath);
+        if (transcript) editPlan = { ...(plan ?? {}), transcript };
+      } catch (e) {
+        console.error(`[Worker] Transcription failed for job=${job.job_id}:`, e?.message || e);
+        editPlan = { ...(plan ?? {}), transcript_error: String(e?.message ?? e).slice(0, 300) };
+      }
+    }
+
     // 4b. Overlay the B-roll track (video only). eof_action=pass shows the
     //     A-roll again once the B-roll runs out, and the output ends with the
     //     A-roll, so B-roll past that point is cut.
@@ -440,7 +519,7 @@ async function runRender(job) {
       job_id: job.job_id, status: "completed", progress: 100,
       stage_message: "Done",
       output_path: job.output.path,
-      edit_plan: plan,
+      edit_plan: editPlan,
     });
   } finally {
     await cleanup();

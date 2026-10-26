@@ -36,3 +36,6 @@ services:
     envVars:
       - key: RENDER_WORKER_SECRET
         sync: false
+      # Optional: speech-to-text (ElevenLabs Scribe v2) for captions
+      - key: ELEVENLABS_API_KEY
+        sync: false
