@@ -201,6 +201,14 @@ function EditorPage() {
     // Never run this server-side — it requires an auth session that isn't
     // available during SSR, which throws and crashes the page.
     enabled: typeof window !== "undefined",
+    // While a render is in progress, re-check every minute: realtime only
+    // fires on changes, and getProject is what times out a dead render.
+    refetchInterval: (query) => {
+      const status = query.state.data?.latestJob?.status;
+      return status && ["queued", "transcribing", "planning", "rendering"].includes(status)
+        ? 60_000
+        : false;
+    },
   });
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);

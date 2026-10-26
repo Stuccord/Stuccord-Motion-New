@@ -16,6 +16,66 @@ async function markProjectEdited(supabase: SupabaseClient<Database>, projectId: 
   if (error) throw new Error(error.message);
 }
 
+// Render jobs only advance when the worker (or the user's browser) reports
+// back. If that never happens — a closed tab, a crashed or restarted worker —
+// the job stays in progress forever and blocks new renders. Any job with no
+// update for this long is treated as dead.
+const STALE_RENDER_JOB_MS = 30 * 60 * 1000;
+const ACTIVE_JOB_STATUSES = ["queued", "transcribing", "planning", "rendering"] as const;
+
+/**
+ * Marks the user's stale in-progress render jobs as failed (optionally only
+ * for one project), and fails their projects when no other job is active.
+ * Best-effort: errors are logged and never block the caller. Uses the admin
+ * client because users have no UPDATE policy on render_jobs; every query is
+ * scoped to the caller's user_id.
+ */
+async function reapStaleRenderJobs(userId: string, projectId?: string) {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const cutoffIso = new Date(Date.now() - STALE_RENDER_JOB_MS).toISOString();
+
+    let query = supabaseAdmin
+      .from("render_jobs")
+      .update({
+        status: "failed",
+        stage_message: "Timed out",
+        error: "The render stopped responding. Please try rendering again.",
+      })
+      .eq("user_id", userId)
+      .in("status", [...ACTIVE_JOB_STATUSES])
+      .lt("updated_at", cutoffIso);
+    if (projectId) query = query.eq("project_id", projectId);
+    const { data: reaped, error } = await query.select("project_id");
+    if (error) throw error;
+    if (!reaped?.length) return;
+
+    for (const pid of new Set(reaped.map((j) => j.project_id))) {
+      const { count, error: countErr } = await supabaseAdmin
+        .from("render_jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", pid)
+        .eq("user_id", userId)
+        .in("status", [...ACTIVE_JOB_STATUSES]);
+      if (countErr) throw countErr;
+      if ((count ?? 0) > 0) continue;
+
+      const { error: pErr } = await supabaseAdmin
+        .from("projects")
+        .update({ status: "failed" })
+        .eq("id", pid)
+        .eq("user_id", userId)
+        .in("status", ["queued", "processing"]);
+      if (pErr) throw pErr;
+    }
+    console.warn(`[Render Reaper] Marked ${reaped.length} stale render job(s) as failed`);
+  } catch (err) {
+    console.error(
+      `[Render Reaper] Failed to reap stale jobs: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 const CreateInput = z.object({
   title: z.string().trim().min(1).max(120),
   script: z.string().max(20000).optional().nullable(),
@@ -154,6 +214,7 @@ export const getProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    await reapStaleRenderJobs(context.userId, data.id);
     const [{ data: project, error: pErr }, { data: clips, error: cErr }, { data: jobs, error: jErr }] =
       await Promise.all([
         context.supabase.from("projects").select("*").eq("id", data.id).maybeSingle(),
@@ -576,7 +637,9 @@ export const submitRender = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Enforce monthly render cap for the current (Starter) tier.
     // Counts every job created this billing month except failed ones so
-    // retries after a hard failure don't burn quota.
+    // retries after a hard failure don't burn quota. Stale jobs are failed
+    // first so a dead render doesn't count against the cap.
+    await reapStaleRenderJobs(context.userId);
     const RENDER_CAP = 5;
     const monthStart = new Date();
     monthStart.setUTCDate(1);
@@ -798,6 +861,7 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
+    await reapStaleRenderJobs(context.userId);
     const RENDER_CAP = 5;
     const monthStart = new Date();
     monthStart.setUTCDate(1);
