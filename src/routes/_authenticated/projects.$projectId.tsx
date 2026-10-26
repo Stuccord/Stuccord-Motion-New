@@ -325,11 +325,9 @@ function EditorPage() {
   });
 
   const reorderMut = useMutation({
-    mutationFn: (args: { project_id?: string; order: { id: string; ordinal: number; role?: string }[] } | { id: string; ordinal: number; role?: string }[]) => {
-      const order = Array.isArray(args) ? args : args.order;
-      const pId = (!Array.isArray(args) && args.project_id) ? args.project_id : projectId;
-      return reorder({ data: { project_id: pId, order } });
-    },
+    // The timeline only knows clip ids, so the project always comes from the route.
+    mutationFn: ({ order }: { order: { id: string; ordinal: number; role?: string }[] }) =>
+      reorder({ data: { project_id: projectId, order } }),
     onSuccess: () => refetch(),
     onError: (e: Error) => toast.error(e.message),
   });

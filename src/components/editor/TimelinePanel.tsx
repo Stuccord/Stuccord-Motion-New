@@ -390,10 +390,7 @@ type TimelineTracksProps = {
   currentTimeMs: number;
   onSeekMs: (clipId: string, absMs: number, atTimelineMs: number) => void;
   reorderMut: {
-    mutate: (data: {
-      project_id: string;
-      order: { id: string; ordinal: number; role?: string }[];
-    }) => void;
+    mutate: (data: { order: { id: string; ordinal: number; role?: string }[] }) => void;
   };
   pushToHistory: (item: HistoryItem) => void;
 };
@@ -568,20 +565,17 @@ function TimelineTracks({
       description: "Reorder clip",
       undo: () => {
         reorderMut.mutate({
-          project_id: draggedClip.id.split("-")[0] ?? "",
           order: prevOrder,
         });
       },
       redo: () => {
         reorderMut.mutate({
-          project_id: draggedClip.id.split("-")[0] ?? "",
           order: combined,
         });
       },
     });
 
     reorderMut.mutate({
-      project_id: draggedClip.id.split("-")[0] ?? "",
       order: combined,
     });
     setDragState(null);
@@ -821,10 +815,7 @@ export interface TimelinePanelProps {
   currentTimeSec: number;
   onSeekMs: (clipId: string, absMs: number, atTimelineMs: number) => void;
   reorderMut: {
-    mutate: (data: {
-      project_id: string;
-      order: { id: string; ordinal: number; role?: string }[];
-    }) => void;
+    mutate: (data: { order: { id: string; ordinal: number; role?: string }[] }) => void;
   };
   pushToHistory: (item: HistoryItem) => void;
   onSplit: () => void;
