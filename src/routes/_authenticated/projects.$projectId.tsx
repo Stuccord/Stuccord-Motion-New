@@ -29,6 +29,7 @@ import {
   type TranscriptWord,
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
+import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -388,6 +389,37 @@ function EditorPage() {
     onSuccess: () => refetch(),
   });
 
+  // Clips uploaded before lengths were recorded on upload (or whose length
+  // couldn't be read then) have no duration, so the timeline would draw them
+  // at a 5s placeholder. Measure each such source file once per visit.
+  const probedPaths = useRef(new Set<string>());
+  useEffect(() => {
+    if (!data) return;
+    const byPath = new Map<string, ClipRow[]>();
+    for (const c of data.clips as ClipRow[]) {
+      if (c.duration_ms != null || probedPaths.current.has(c.storage_path)) continue;
+      probedPaths.current.add(c.storage_path);
+      byPath.set(c.storage_path, [...(byPath.get(c.storage_path) ?? []), c]);
+    }
+    if (byPath.size === 0) return;
+    void (async () => {
+      let updated = false;
+      for (const [path, group] of byPath) {
+        try {
+          const { url } = await signClip({ data: { path } });
+          const isAudio = group[0].role === "music" || group[0].role === "sfx";
+          const ms = await probeMediaDurationMs(url, isAudio ? "audio" : "video");
+          if (ms == null) continue;
+          for (const c of group) await durationFn({ data: { id: c.id, duration_ms: ms } });
+          updated = true;
+        } catch (e) {
+          console.warn("[editor] Couldn't measure clip length:", e);
+        }
+      }
+      if (updated) refetch();
+    })();
+  }, [data, signClip, durationFn, refetch]);
+
   const splitMut = useMutation({
     mutationFn: (v: { id: string; at_ms: number }) => splitFn({ data: v }),
     onSuccess: (r) => {
@@ -645,6 +677,9 @@ function EditorPage() {
           .uploadToSignedUrl(path, token, f, { contentType, upsert: true });
         if (upErr) throw new Error(`${f.name}: ${upErr.message}`);
 
+        // Record the clip's real length so the timeline draws it correctly
+        // before it's ever opened in the player.
+        const durationMs = await probeFileDurationMs(f);
         await attachFn({
           data: {
             project_id: projectId,
@@ -653,6 +688,7 @@ function EditorPage() {
             size_bytes: f.size,
             role,
             ordinal: startOrdinal + i,
+            duration_ms: durationMs ?? undefined,
           },
         });
         summary[role] += 1;

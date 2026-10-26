@@ -231,7 +231,9 @@ function TimelineClip({
     const startClientX = e.clientX;
     const startIn = trimIn;
     const startOut = trimOut;
-    const maxOut = sourceMs ?? trimOut + 60_000;
+    // Never past the end of the file. If its length isn't known yet (it's
+    // measured when the editor opens), the clip can only be shortened.
+    const maxOut = sourceMs ?? startOut;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 
     function onMove(ev: PointerEvent) {

@@ -3,6 +3,7 @@ import { useState, useRef, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { createProject, attachClip, getSignedClipUploadUrl } from "@/lib/projects.functions";
+import { probeFileDurationMs } from "@/lib/media-duration";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -159,6 +160,8 @@ function NewProject() {
           ),
         );
 
+        // Record the clip's real length so the editor timeline draws it correctly.
+        const durationMs = await probeFileDurationMs(f.file);
         await attachFn({
           data: {
             project_id: project.id,
@@ -167,6 +170,7 @@ function NewProject() {
             size_bytes: f.file.size,
             role: f.role,
             ordinal: i,
+            duration_ms: durationMs ?? undefined,
           },
         });
       }
