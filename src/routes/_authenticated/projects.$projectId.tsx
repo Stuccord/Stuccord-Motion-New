@@ -744,45 +744,65 @@ function EditorPage() {
     (c) => c.role !== "music" && c.role !== "sfx",
   );
 
-  const videoLayout = useMemo(() => {
-    let cursor = 0;
+  // Where each clip starts in the rendered program, matching the export and the
+  // timeline: A-roll back to back from 0:00, and B-roll back to back from 0:00
+  // on its own track. With no A-roll, the B-roll is the main track.
+  const hasMainTrackClips = videoClipsForHooks.some((c) => c.role !== "broll");
+  const programOffsets = useMemo(() => {
     const offsets = new Map<string, number>();
+    let mainCursor = 0;
+    let brollCursor = 0;
     for (const c of videoClipsForHooks) {
-      offsets.set(c.id, cursor);
-      cursor += clipVisibleMs(c);
+      if (c.role === "broll") {
+        offsets.set(c.id, brollCursor);
+        brollCursor += clipVisibleMs(c);
+      } else {
+        offsets.set(c.id, mainCursor);
+        mainCursor += clipVisibleMs(c);
+      }
     }
-    return { totalMs: Math.max(cursor, 10000), offsets };
+    return offsets;
   }, [videoClipsForHooks]);
 
+  // The main player shows either the rendered program or the selected clip's
+  // source file (see PreviewCanvas). currentTime means a position in whichever
+  // one it is showing, so every time conversion has to check this first.
+  const showingProgram = previewUrl != null && (viewMode !== "source" || !selectedClipUrl);
+
   const timelinePlayheadMs = useMemo(() => {
-    if (viewMode === "program" || viewMode === "compare") {
+    if (showingProgram) {
       return Math.round(currentTime * 1000);
     }
     if (!selectedClipId) return 0;
     const selectedClipForHooks = videoClipsForHooks.find((c) => c.id === selectedClipId);
     if (!selectedClipForHooks) return 0;
-    const offset = videoLayout.offsets.get(selectedClipId) ?? 0;
+    const offset = programOffsets.get(selectedClipId) ?? 0;
     const relInClip = Math.round(currentTime * 1000) - (selectedClipForHooks.trim_in_ms ?? 0);
     return offset + Math.max(0, relInClip);
-  }, [viewMode, currentTime, selectedClipId, videoClipsForHooks, videoLayout.offsets]);
+  }, [showingProgram, currentTime, selectedClipId, videoClipsForHooks, programOffsets]);
 
-  // Auto-select clip under playhead when playing in program mode
+  // Auto-select the main-track clip under the playhead while the program plays
   useEffect(() => {
-    if ((viewMode === "program" || viewMode === "compare") && playing) {
+    if (showingProgram && playing) {
       const tMs = currentTime * 1000;
-      let acc = 0;
-      for (const c of videoClipsForHooks) {
-        const w = clipVisibleMs(c);
-        if (tMs >= acc && tMs <= acc + w) {
-          if (selectedClipId !== c.id) {
-            setSelectedClipId(c.id);
-          }
-          break;
-        }
-        acc += w;
+      const under = videoClipsForHooks.find((c) => {
+        if (c.role === "broll" && hasMainTrackClips) return false;
+        const start = programOffsets.get(c.id) ?? 0;
+        return tMs >= start && tMs <= start + clipVisibleMs(c);
+      });
+      if (under && selectedClipId !== under.id) {
+        setSelectedClipId(under.id);
       }
     }
-  }, [currentTime, playing, viewMode, videoClipsForHooks, selectedClipId]);
+  }, [
+    currentTime,
+    playing,
+    showingProgram,
+    hasMainTrackClips,
+    videoClipsForHooks,
+    programOffsets,
+    selectedClipId,
+  ]);
 
   if (isLoading || !data) {
     return (
@@ -907,8 +927,17 @@ function EditorPage() {
       return;
     }
     const trimIn = selectedClip.trim_in_ms ?? 0;
-    const absMs = Math.round(currentTime * 1000);
-    const relative = absMs - trimIn;
+    const playheadMs = Math.round(currentTime * 1000);
+    // Split point measured from the start of the clip's visible part. The
+    // playhead is a program position when the rendered preview is showing,
+    // and a position in the clip's source file otherwise.
+    const relative = showingProgram
+      ? playheadMs - (programOffsets.get(selectedClipId) ?? 0)
+      : playheadMs - trimIn;
+    if (showingProgram && (relative < 0 || relative > clipVisibleMs(selectedClip))) {
+      toast("Move the playhead over the selected clip to split");
+      return;
+    }
     if (relative < 100) {
       toast("Move the playhead further into the clip to split");
       return;
@@ -1163,7 +1192,7 @@ function EditorPage() {
             currentTimeSec={currentTime}
             onSeekMs={(clipId, absMs, atTimelineMs) => {
               if (videoRef.current) {
-                if (viewMode === "program" || viewMode === "compare") {
+                if (showingProgram) {
                   videoRef.current.currentTime = atTimelineMs / 1000;
                   setCurrentTime(atTimelineMs / 1000);
                 } else if (clipId === selectedClipId) {
