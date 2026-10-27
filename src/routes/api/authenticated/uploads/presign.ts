@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { IMAGE_MIME_TYPES } from "@/lib/media-kind";
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 const ALLOWED_MIME_TYPES = new Set([
@@ -19,11 +20,13 @@ const ALLOWED_MIME_TYPES = new Set([
   "audio/aac",
   "audio/ogg",
   "audio/webm",
+  // Images (photos, screenshots) for the video tracks.
+  ...IMAGE_MIME_TYPES,
 ]);
 
 /**
  * POST /api/authenticated/uploads/presign
- * Generates a signed upload credential for uploading video or audio files
+ * Generates a signed upload credential for uploading video, audio or image files
  * directly from the browser to private Supabase Storage ("raw-clips").
  *
  * Expected Request Body:
@@ -103,7 +106,7 @@ export const Route = createFileRoute("/api/authenticated/uploads/presign")({
         // 3. Validate MIME type & file size
         if (!ALLOWED_MIME_TYPES.has(contentType)) {
           return new Response(
-            `Unsupported file type '${contentType}'. Upload MP4, MOV or WebM video, or MP3, WAV, M4A, AAC or OGG audio.`,
+            `Unsupported file type '${contentType}'. Upload MP4, MOV or WebM video, MP3, WAV, M4A, AAC or OGG audio, or JPG, PNG, WebP or GIF images.`,
             { status: 400 }
           );
         }

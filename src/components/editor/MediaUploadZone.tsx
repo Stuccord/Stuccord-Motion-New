@@ -15,7 +15,7 @@ export function MediaUploadZone({
   isUploading = false,
   compact = false,
   className,
-  accept = "video/mp4,video/quicktime,video/webm,audio/*",
+  accept = "video/mp4,video/quicktime,video/webm,audio/*,image/jpeg,image/png,image/webp,image/gif",
 }: MediaUploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -69,7 +69,7 @@ export function MediaUploadZone({
           className="hidden"
           onChange={handleFileChange}
           disabled={isUploading}
-          aria-label="Upload video or audio clips"
+          aria-label="Upload video, audio or image files"
         />
         <button
           type="button"
@@ -114,7 +114,7 @@ export function MediaUploadZone({
       )}
       role="button"
       tabIndex={0}
-      aria-label="Drop or select video or audio files to upload"
+      aria-label="Drop or select video, audio or image files to upload"
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -150,10 +150,10 @@ export function MediaUploadZone({
 
         <div>
           <p className="text-xs font-semibold text-neutral-200 group-hover:text-white transition-colors">
-            {isUploading ? "Uploading clips..." : "Click or drag videos or audio here"}
+            {isUploading ? "Uploading clips..." : "Click or drag videos, images or audio here"}
           </p>
           <p className="text-[11px] text-neutral-400 mt-0.5">
-            MP4, MOV, WebM, MP3, WAV · Up to 500 MB
+            MP4, MOV, WebM, JPG, PNG, MP3, WAV · Up to 500 MB
           </p>
         </div>
 

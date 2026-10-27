@@ -126,6 +126,13 @@ import {
   type AddMediaSource,
 } from "@/components/editor";
 import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
+import {
+  IMAGE_DEFAULT_MS,
+  IMAGE_MAX_MS,
+  isHeicFile,
+  isImageFile,
+  isImageFilename,
+} from "@/lib/media-kind";
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId")({
   head: () => ({ meta: [{ title: "Editor — Stuccord Motion" }] }),
@@ -475,7 +482,10 @@ function EditorPage() {
       for (const c of todo) {
         try {
           const { url } = await signClip({ data: { path: c.storage_path } });
-          const frame = await captureVideoFrame(url, (c.trim_in_ms ?? 0) + 100);
+          // An image is its own thumbnail.
+          const frame = isImageFilename(c.filename)
+            ? url
+            : await captureVideoFrame(url, (c.trim_in_ms ?? 0) + 100);
           if (frame) setThumbnails((t) => ({ ...t, [thumbnailKey(c)]: frame }));
         } catch (e) {
           console.warn("[editor] Couldn't make a clip thumbnail:", e);
@@ -666,17 +676,20 @@ function EditorPage() {
       if (/sfx|whoosh|impact|riser|swoosh|snap/i.test(file.name)) return "sfx";
       return "music";
     }
-    if (file.type.startsWith("video/")) {
-      // First incoming video becomes A-roll if none exists yet; the rest become B-roll.
+    if (file.type.startsWith("video/") || isImageFile(file)) {
+      // First incoming video (or image) becomes A-roll if none exists yet;
+      // the rest become B-roll.
       if (!hasAnyARoll && videoIndexInBatch === 0) return "aroll";
       return "broll";
     }
     return null;
   }
 
-  // Track a file can go on: video on V1/V2, audio on A2.
+  // Track a file can go on: videos and images on V1/V2, audio on A2.
   const fitsTrack = (f: File, track: AddMediaTarget["track"]) =>
-    track === "music" ? f.type.startsWith("audio/") : f.type.startsWith("video/");
+    track === "music"
+      ? f.type.startsWith("audio/")
+      : f.type.startsWith("video/") || isImageFile(f);
 
   /**
    * Uploads files and adds them to the timeline. With a target they go on
@@ -685,18 +698,22 @@ function EditorPage() {
    */
   async function handleUpload(files: FileList | File[], target?: AddMediaTarget) {
     const all = Array.from(files);
+    if (all.some(isHeicFile)) {
+      toast.error("iPhone HEIC photos can't be shown in browsers. Export them as JPG first.");
+    }
     const arr = all.filter((f) =>
       target
         ? fitsTrack(f, target.track)
-        : f.type.startsWith("video/") || f.type.startsWith("audio/"),
+        : f.type.startsWith("video/") || f.type.startsWith("audio/") || isImageFile(f),
     );
     if (arr.length === 0) {
+      if (all.every(isHeicFile)) return;
       toast.error(
         target
           ? target.track === "music"
             ? "Only music and sound files go on A2"
-            : "Only videos go on V1 and V2"
-          : "Drop video or audio files",
+            : "Only videos and images go on V1 and V2"
+          : "Drop video, audio or image files",
       );
       return;
     }
@@ -722,7 +739,8 @@ function EditorPage() {
               : "music"
             : target.track;
         if (!role) continue;
-        if (f.type.startsWith("video/")) videoSeen++;
+        const image = isImageFile(f);
+        if (f.type.startsWith("video/") || image) videoSeen++;
 
         // Client-side validations
         const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
@@ -766,7 +784,8 @@ function EditorPage() {
 
         // Record the clip's real length so the timeline draws it correctly
         // before it's ever opened in the player.
-        const durationMs = await probeFileDurationMs(f);
+        // An image shows for 3 s and can be stretched to a minute (see media-kind).
+        const durationMs = image ? IMAGE_MAX_MS : await probeFileDurationMs(f);
         const row = await attachFn({
           data: {
             project_id: projectId,
@@ -776,6 +795,7 @@ function EditorPage() {
             role,
             ordinal: startOrdinal + i,
             duration_ms: durationMs ?? undefined,
+            trim_out_ms: image ? IMAGE_DEFAULT_MS : undefined,
           },
         });
         added.push(row as ClipRow);
@@ -832,7 +852,7 @@ function EditorPage() {
     if (!src || !data) return;
     const isAudio = src.role === "music" || src.role === "sfx";
     if (isAudio !== (target.track === "music")) {
-      toast.error(isAudio ? "Music and SFX go on A2" : "Videos go on V1 or V2");
+      toast.error(isAudio ? "Music and SFX go on A2" : "Videos and images go on V1 or V2");
       return;
     }
     // A new clip using the same uploaded file, at its full length.
@@ -846,6 +866,8 @@ function EditorPage() {
           role: target.track === "music" ? (src.role as "music" | "sfx") : target.track,
           ordinal: data.clips.length,
           duration_ms: src.duration_ms ?? undefined,
+          // An image copy starts at the default length, not the 60 s maximum.
+          trim_out_ms: isImageFilename(src.filename) ? IMAGE_DEFAULT_MS : undefined,
           parent_clip_id: src.id,
         },
       });
@@ -912,6 +934,7 @@ function EditorPage() {
         result = await renderProjectInBrowser({
           clips: started.clips.map((c) => ({
             id: c.id,
+            filename: c.filename,
             download_url: c.download_url!,
             role: c.role,
             trim_in_ms: c.trim_in_ms,
@@ -1005,11 +1028,16 @@ function EditorPage() {
   // source file (see PreviewCanvas). currentTime means a position in whichever
   // one it is showing, so every time conversion has to check this first.
   const showingProgram = previewUrl != null && (viewMode !== "source" || !selectedClipUrl);
+  const selectedIsImage = useMemo(() => {
+    const c = data?.clips.find((x) => x.id === selectedClipId);
+    return !!c && isImageFilename(c.filename);
+  }, [data, selectedClipId]);
   // The view the preview actually shows: without a render there's no program,
-  // and Source and Compare need a selected clip.
+  // Source and Compare need a selected clip, and an image can't be compared
+  // against the render.
   const shownViewMode: "program" | "source" | "compare" = !previewUrl
     ? "source"
-    : !selectedClipUrl
+    : !selectedClipUrl || (viewMode === "compare" && selectedIsImage)
       ? "program"
       : viewMode;
 
@@ -1031,6 +1059,14 @@ function EditorPage() {
           endS: Math.min(duration, selectedTrim.endS ?? duration),
         }
       : { startS: 0, endS: duration };
+
+  // An image in Source view has no playback: the playhead sits at its start.
+  useEffect(() => {
+    if (selectedIsImage && !showingProgram) {
+      setCurrentTime(0);
+      setDuration(0);
+    }
+  }, [selectedIsImage, showingProgram, selectedClipId]);
 
   // Stop at the trimmed end of a source clip (timeupdate fires too rarely to
   // stop on time, so check every frame while playing).
@@ -1369,7 +1405,9 @@ function EditorPage() {
         <div className="absolute inset-0 z-50 pointer-events-none grid place-items-center bg-violet-600/15 backdrop-blur-sm">
           <div className="pointer-events-none border-2 border-dashed border-violet-500 rounded-2xl p-10 text-center bg-black/85 shadow-2xl">
             <UploadCloud className="w-10 h-10 text-violet-400 mx-auto" />
-            <div className="mt-3 text-sm font-semibold text-violet-300">Drop video files to add to project</div>
+            <div className="mt-3 text-sm font-semibold text-violet-300">
+              Drop videos, images or audio to add them
+            </div>
             <div className="mt-1 text-[11px] text-neutral-400 font-mono">
               Drop here to auto-place · or on a track to choose where
             </div>
@@ -1423,6 +1461,8 @@ function EditorPage() {
             onViewModeChange={setViewMode}
             programUrl={previewUrl}
             sourceUrl={selectedClipUrl}
+            sourceIsImage={selectedIsImage}
+            imageLengthMs={selectedClip ? clipVisibleMs(selectedClip) : undefined}
             selectedClipFilename={selectedClip?.filename}
             hasClips={videoClips.length > 0}
             isRendering={Boolean(inProgress)}
@@ -1431,8 +1471,14 @@ function EditorPage() {
             playing={playing}
             onPlayingChange={setPlaying}
             onTogglePlay={togglePlay}
-            currentTime={Math.max(0, currentTime - playRange.startS)}
-            duration={Math.max(0, playRange.endS - playRange.startS)}
+            currentTime={
+              selectedIsImage && !showingProgram ? 0 : Math.max(0, currentTime - playRange.startS)
+            }
+            duration={
+              selectedIsImage && !showingProgram && selectedClip
+                ? clipVisibleMs(selectedClip) / 1000
+                : Math.max(0, playRange.endS - playRange.startS)
+            }
             onSeek={seekToPct}
             onSkipBack={() => seekAbsolute(0)}
             onSkipForward={() => seekAbsolute(duration)}

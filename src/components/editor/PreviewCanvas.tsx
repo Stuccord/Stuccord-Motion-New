@@ -3,6 +3,7 @@ import { MonitorPlay, Sparkles, ChevronLeft, ChevronRight, Loader2, Film, SplitS
 import { cn } from "@/lib/utils";
 import type { AspectRatio, ViewMode } from "./types";
 import { PlaybackControls } from "./PlaybackControls";
+import { IMAGE_ZOOM } from "@/lib/media-kind";
 
 interface PreviewCanvasProps {
   aspectRatio: AspectRatio;
@@ -12,6 +13,10 @@ interface PreviewCanvasProps {
   onViewModeChange: (mode: ViewMode) => void;
   programUrl: string | null;
   sourceUrl: string | null;
+  /** The selected clip is an image: Source shows it (slowly zooming) instead of a video. */
+  sourceIsImage?: boolean;
+  /** How long the selected image shows, for its slow zoom. */
+  imageLengthMs?: number;
   selectedClipFilename?: string | null;
   hasClips: boolean;
   isRendering?: boolean;
@@ -42,6 +47,8 @@ export function PreviewCanvas({
   onViewModeChange,
   programUrl,
   sourceUrl,
+  sourceIsImage = false,
+  imageLengthMs = 3000,
   selectedClipFilename,
   hasClips,
   isRendering = false,
@@ -120,7 +127,9 @@ export function PreviewCanvas({
   // Same rule as the exports: (nearly) the frame's shape fills it; others are
   // shown whole over a blurred copy.
   const mismatched = clipRatio != null && Math.abs(Math.log(clipRatio / ratio)) >= 0.03;
-  const blurBackground = mismatched && viewMode !== "compare";
+  // The selected image, shown in Source view.
+  const showImage = sourceIsImage && viewMode !== "compare" && activeVideoSrc === sourceUrl;
+  const blurBackground = mismatched && viewMode !== "compare" && !showImage;
 
   // The blurred copy: the video drawn into a tiny canvas every frame, then
   // stretched and blurred by CSS. Cheap, and always in step with the video.
@@ -193,7 +202,7 @@ export function PreviewCanvas({
   const clipShapeWord =
     suggestedRatio === "9:16" ? "vertical" : suggestedRatio === "16:9" ? "horizontal" : "square";
 
-  const canCompare = Boolean(programUrl && sourceUrl);
+  const canCompare = Boolean(programUrl && sourceUrl && !sourceIsImage);
   const hasVideo = Boolean(activeVideoSrc);
 
   const toggleFullscreen = () => {
@@ -355,6 +364,39 @@ export function PreviewCanvas({
                   </div>
                 </div>
               </>
+            ) : showImage ? (
+              <>
+                {/* Like the exports: a blurred copy behind when the shape
+                    differs, and a slow push-in over the clip's length. */}
+                {mismatched && (
+                  <img
+                    src={activeVideoSrc!}
+                    alt=""
+                    aria-hidden
+                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl brightness-75 pointer-events-none"
+                  />
+                )}
+                <img
+                  key={activeVideoSrc!}
+                  src={activeVideoSrc!}
+                  alt={selectedClipFilename ?? "Selected image"}
+                  className="relative w-full h-full object-contain stuccord-kenburns"
+                  style={{ animationDuration: `${Math.max(500, imageLengthMs)}ms` }}
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    setClipSize({
+                      src: activeVideoSrc!,
+                      w: img.naturalWidth,
+                      h: img.naturalHeight,
+                    });
+                  }}
+                />
+                <style>{`
+                  @keyframes stuccord-kenburns { from { transform: scale(1); } to { transform: scale(${1 + IMAGE_ZOOM}); } }
+                  .stuccord-kenburns { animation: stuccord-kenburns linear infinite; transform-origin: center; }
+                  @media (prefers-reduced-motion: reduce) { .stuccord-kenburns { animation: none; } }
+                `}</style>
+              </>
             ) : (
               <>
                 {blurBackground && (
@@ -478,7 +520,7 @@ export function PreviewCanvas({
         muted={muted}
         onToggleMute={onToggleMute}
         onToggleFullscreen={toggleFullscreen}
-        disabled={!hasVideo}
+        disabled={!hasVideo || showImage}
       />
     </div>
   );

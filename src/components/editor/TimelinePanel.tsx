@@ -11,6 +11,7 @@ import {
   Minus,
   Maximize2,
   Film,
+  Image as ImageIcon,
   Layers,
   Type,
   Mic,
@@ -43,6 +44,7 @@ import { CLIP_DRAG_TYPE, type ClipRow } from "./types";
 import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
 import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { thumbnailKey } from "@/lib/video-thumbnail";
+import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
 
 /* ---------- shared types ---------- */
 /** A track media can be added to, and where on it (null: at the end). */
@@ -498,14 +500,18 @@ function TimelineClip({
       {/* Label */}
       <div className="absolute inset-0 px-4 py-1 flex flex-col justify-between text-[9px] pointer-events-none [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
         <div className="flex items-center gap-1 text-white/95 font-mono font-semibold truncate">
-          <Film className="w-2.5 h-2.5 shrink-0" />
+          {isImageFilename(clip.filename) ? (
+            <ImageIcon className="w-2.5 h-2.5 shrink-0" />
+          ) : (
+            <Film className="w-2.5 h-2.5 shrink-0" />
+          )}
           <span className="truncate">
             {String(index + 1).padStart(2, "0")} · {baseName(clip.filename)}
           </span>
         </div>
         <div className="flex items-center justify-between text-white/75 font-mono tabular-nums">
           <span>{formatPlaybackTime(visibleMs / 1000)}</span>
-          {sourceMs != null && sourceMs - visibleMs >= 50 && (
+          {sourceMs != null && sourceMs - visibleMs >= 50 && !isImageFilename(clip.filename) && (
             <span className="text-white/45 truncate" title="Length of the original file">
               of {formatPlaybackTime(sourceMs / 1000)}
             </span>
@@ -632,7 +638,8 @@ function TimelineTracks({
     const input = fileInput.current;
     if (!input || !onAddMedia) return;
     pickTarget.current = target;
-    input.accept = target.track === "music" ? "audio/*" : "video/*";
+    input.accept =
+      target.track === "music" ? "audio/*" : ["video/*", ...IMAGE_MIME_TYPES].join(",");
     input.value = "";
     input.click();
   };
@@ -1281,7 +1288,7 @@ function TimelineTracks({
               <Plus className="w-3.5 h-3.5" />
               {menu.track === "music"
                 ? "Add music or SFX…"
-                : `Add video to ${trackName(menu.track)}…`}
+                : `Add video or image to ${trackName(menu.track)}…`}
             </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
@@ -1361,7 +1368,7 @@ function TimelineTracks({
           size={aRoll.length === 0 ? "slim" : "clip"}
           trackKey="aroll"
           onAdd={onAddMedia && (() => pickFiles({ track: "aroll", index: null }))}
-          addLabel="video to V1"
+          addLabel="video or image to V1"
           dropHighlight={mediaDrop?.track === "aroll"}
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
@@ -1377,7 +1384,7 @@ function TimelineTracks({
                 dropTarget?.track === "aroll" ? "text-violet-400" : "text-neutral-600",
               )}
             >
-              Drop or drag videos here
+              Drop or drag videos and images here
             </div>
           ) : (
             aRoll.map((c, i) => (
@@ -1410,7 +1417,7 @@ function TimelineTracks({
           size={bRoll.length === 0 ? "slim" : "clip"}
           trackKey="broll"
           onAdd={onAddMedia && (() => pickFiles({ track: "broll", index: null }))}
-          addLabel="video to V2"
+          addLabel="video or image to V2"
           dropHighlight={mediaDrop?.track === "broll"}
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
@@ -1426,7 +1433,7 @@ function TimelineTracks({
                 dropTarget?.track === "broll" ? "text-teal-400" : "text-neutral-600",
               )}
             >
-              B-roll &amp; cutaways: drop videos here
+              B-roll &amp; cutaways: drop videos or images here
             </div>
           ) : (
             bRoll.map((c, i) => (

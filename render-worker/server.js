@@ -233,6 +233,20 @@ function fitFilter(w, h, src) {
   return blurFillFilter(w, h);
 }
 
+// Images (photos, screenshots) as clips, matching the app (src/lib/media-kind.ts):
+// a clip shows for its trimmed length and slowly zooms in by IMAGE_ZOOM.
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif)$/i;
+const IMAGE_ZOOM = 0.08;
+const IMAGE_DEFAULT_MS = 3000;
+const isImageClip = (clip) => IMAGE_EXT.test(String(clip?.filename ?? ""));
+
+// Slow push-in over `lengthS`, applied after the fit filter (input w x h):
+// scale up a little more each frame and crop the middle back to w x h.
+function kenBurnsFilter(w, h, lengthS) {
+  const len = Math.max(0.1, lengthS).toFixed(3);
+  return `scale=w='trunc(${w}*(1+${IMAGE_ZOOM}*t/${len})/2)*2':h=-2:eval=frame,crop=${w}:${h}`;
+}
+
 function escapeDrawtext(text) {
   return String(text)
     .replace(/\\/g, "\\\\")
@@ -676,7 +690,11 @@ async function runRender(job) {
 
     const sources = [];
     for (let i = 0; i < clips.length; i++) {
-      const dest = path.join(workdir, `src_${i}.mp4`);
+      // Images keep their extension: ffmpeg picks the image reader by it.
+      const ext = isImageClip(clips[i])
+        ? String(clips[i].filename).match(IMAGE_EXT)[0].toLowerCase()
+        : ".mp4";
+      const dest = path.join(workdir, `src_${i}${ext}`);
       await download(clips[i].download_url, dest);
       sources.push(dest);
     }
@@ -700,19 +718,46 @@ async function runRender(job) {
     });
 
     const normalized = [];
+    // What each source file holds (shape, sound), for normalizing and for
+    // choosing which files to transcribe.
+    const probes = [];
     for (let i = 0; i < sources.length; i++) {
       const out = path.join(workdir, `norm_${i}.mp4`);
-      // Per-clip trim: -ss (in) and -to (out) as INPUT-side seek so audio stays in sync.
-      const trimIn = Math.max(0, Number(clips[i].trim_in_ms ?? 0)) / 1000;
+      const probe = await probeMedia(sources[i]);
+      probes.push(probe);
+      const image = isImageClip(clips[i]);
+      const trimInMs = Math.max(0, Number(clips[i].trim_in_ms ?? 0));
       const trimOutMs = clips[i].trim_out_ms;
       const args = ["-y"];
-      if (trimIn > 0) args.push("-ss", trimIn.toFixed(3));
-      if (trimOutMs != null && Number(trimOutMs) > 0) {
-        args.push("-to", (Number(trimOutMs) / 1000).toFixed(3));
+      let vf = fitFilter(w, h, probe);
+      if (image) {
+        // A still: repeat it for its length on the timeline, slowly zooming.
+        // A GIF plays its animation on a loop for that length instead.
+        const lengthS =
+          Math.max(100, Number(trimOutMs ?? IMAGE_DEFAULT_MS) - trimInMs) / 1000;
+        if (/\.gif$/i.test(sources[i])) args.push("-ignore_loop", "0");
+        else args.push("-f", "image2", "-loop", "1", "-framerate", "30");
+        args.push("-t", lengthS.toFixed(3), "-i", sources[i]);
+        vf = `${vf},${kenBurnsFilter(w, h, lengthS)}`;
+      } else {
+        // Per-clip trim: -ss (in) and -to (out) as INPUT-side seek so audio stays in sync.
+        if (trimInMs > 0) args.push("-ss", (trimInMs / 1000).toFixed(3));
+        if (trimOutMs != null && Number(trimOutMs) > 0) {
+          args.push("-to", (Number(trimOutMs) / 1000).toFixed(3));
+        }
+        args.push("-i", sources[i]);
+      }
+      // Every piece needs a sound track for the tracks to join cleanly
+      // (they're joined by copying streams): images and silent videos get
+      // silence, as long as the picture.
+      if (image || !probe.hasAudio) {
+        args.push(
+          "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+          "-map", "0:v:0", "-map", "1:a:0", "-shortest",
+        );
       }
       args.push(
-        "-i", sources[i],
-        "-vf", fitFilter(w, h, await probeMedia(sources[i])),
+        "-vf", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart",
@@ -777,6 +822,8 @@ async function runRender(job) {
       mainClips.forEach((c, i) => {
         const key = sourceKey(c);
         if (sourceWords.has(key) || queued.has(key)) return;
+        // Images and silent videos have no speech.
+        if (isImageClip(c) || !probes[i]?.hasAudio) return;
         queued.add(key);
         toTranscribe.push(i);
       });

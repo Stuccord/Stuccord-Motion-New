@@ -6,8 +6,12 @@
 // need an external ffmpeg worker to produce a deliverable. Respects each
 // clip's trim_in / trim_out and fits each clip to the frame like the cloud export.
 
+import { IMAGE_DEFAULT_MS, IMAGE_ZOOM, isImageFilename } from "@/lib/media-kind";
+
 export type BrowserClipInput = {
   id: string;
+  /** Used to tell images (shown for their trimmed length) from videos. */
+  filename?: string | null;
   download_url: string;
   role: string;
   trim_in_ms: number | null;
@@ -54,9 +58,27 @@ function pickMimeType(): { mimeType: string; ext: "mp4" | "webm" } {
   throw new Error("This browser can't record video. Try Chrome or Edge.");
 }
 
-type LoadedClip = { video: HTMLVideoElement; outSec: number; targetMs: number };
+// A loaded clip: a video, or an image shown for targetMs (slowly zooming in
+// from shownAt, when it went on screen).
+type LoadedClip =
+  | { kind: "video"; video: HTMLVideoElement; outSec: number; targetMs: number }
+  | { kind: "image"; image: HTMLImageElement; targetMs: number; shownAt: number | null };
+
+async function loadImageClip(c: BrowserClipInput, label: string): Promise<LoadedClip> {
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  image.src = c.download_url;
+  try {
+    await image.decode();
+  } catch {
+    throw new Error(`Failed to load ${label}`);
+  }
+  const lengthMs = (c.trim_out_ms ?? IMAGE_DEFAULT_MS) - (c.trim_in_ms ?? 0);
+  return { kind: "image", image, targetMs: Math.max(100, lengthMs), shownAt: null };
+}
 
 async function loadClip(c: BrowserClipInput, label: string, muted: boolean): Promise<LoadedClip> {
+  if (isImageFilename(c.filename ?? "")) return loadImageClip(c, label);
   const video = document.createElement("video");
   video.crossOrigin = "anonymous";
   video.playsInline = true;
@@ -97,7 +119,7 @@ async function loadClip(c: BrowserClipInput, label: string, muted: boolean): Pro
     });
   }
 
-  return { video, outSec, targetMs: Math.max(80, (outSec - inSec) * 1000) };
+  return { kind: "video", video, outSec, targetMs: Math.max(80, (outSec - inSec) * 1000) };
 }
 
 /** Plays a loaded clip until its out point (or a stop request); resolves with wall-clock ms. */
@@ -106,6 +128,23 @@ async function playUntilOut(
   shouldStop: () => boolean,
   onTick?: (wallMs: number) => void,
 ): Promise<number> {
+  if (clip.kind === "image") {
+    // Nothing to play: keep it on screen for its length.
+    const start = performance.now();
+    clip.shownAt = start;
+    return new Promise<number>((resolve) => {
+      const tick = () => {
+        const wall = performance.now() - start;
+        if (wall >= clip.targetMs || shouldStop()) {
+          resolve(wall);
+          return;
+        }
+        onTick?.(wall);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
   const { video, outSec, targetMs } = clip;
   try {
     await video.play();
@@ -129,7 +168,12 @@ async function playUntilOut(
   });
 }
 
-function releaseClip(video: HTMLVideoElement) {
+function releaseClip(clip: LoadedClip) {
+  if (clip.kind === "image") {
+    clip.image.src = "";
+    return;
+  }
+  const { video } = clip;
   try {
     video.pause();
   } catch {
@@ -203,8 +247,8 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   }, 0);
 
   // One draw loop composites whatever is currently playing on each track.
-  let currentMain: HTMLVideoElement | null = null;
-  let currentBroll: HTMLVideoElement | null = null;
+  let currentMain: LoadedClip | null = null;
+  let currentBroll: LoadedClip | null = null;
   let drawing = true;
   // A tenth-size canvas for the blurred background: drawn small, then
   // stretched back up, which blurs it without ctx.filter (Safari lacks it).
@@ -214,10 +258,17 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   const blurCtx = blurCanvas.getContext("2d");
   // Like the cloud export: clips (nearly) the frame's shape fill it; others
   // are shown whole over a blurred, darker copy of themselves.
-  const drawFit = (video: HTMLVideoElement) => {
-    const vw = video.videoWidth || width;
-    const vh = video.videoHeight || height;
-    const cover = Math.max(width / vw, height / vh);
+  // An image also zooms in slowly over its time on screen.
+  const drawFit = (clip: LoadedClip) => {
+    const video = clip.kind === "video" ? clip.video : clip.image;
+    const vw = (clip.kind === "video" ? clip.video.videoWidth : clip.image.naturalWidth) || width;
+    const vh =
+      (clip.kind === "video" ? clip.video.videoHeight : clip.image.naturalHeight) || height;
+    const zoom =
+      clip.kind === "image" && clip.shownAt != null
+        ? 1 + IMAGE_ZOOM * Math.min(1, (performance.now() - clip.shownAt) / clip.targetMs)
+        : 1;
+    const cover = Math.max(width / vw, height / vh) * zoom;
     try {
       if (Math.abs(Math.log(vw / vh / (width / height))) < 0.03 || !blurCtx) {
         const dw = vw * cover;
@@ -239,7 +290,7 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       ctx.drawImage(blurCanvas, 0, 0, width, height);
       ctx.fillStyle = "rgba(0,0,0,0.25)";
       ctx.fillRect(0, 0, width, height);
-      const contain = Math.min(width / vw, height / vh);
+      const contain = Math.min(width / vw, height / vh) * zoom;
       const dw = vw * contain;
       const dh = vh * contain;
       ctx.drawImage(video, (width - dw) / 2, (height - dh) / 2, dw, dh);
@@ -247,15 +298,17 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       /* frame not ready */
     }
   };
+  const isReady = (clip: LoadedClip) =>
+    clip.kind === "image" ? clip.image.complete : clip.video.readyState >= 2;
   const draw = () => {
     if (!drawing) return;
     // While the next main clip loads, keep its predecessor's last frame on screen.
-    if (currentMain && currentMain.readyState >= 2) {
+    if (currentMain && isReady(currentMain)) {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, width, height);
       drawFit(currentMain);
     }
-    if (currentBroll && currentBroll.readyState >= 2) drawFit(currentBroll);
+    if (currentBroll && isReady(currentBroll)) drawFit(currentBroll);
     requestAnimationFrame(draw);
   };
   requestAnimationFrame(draw);
@@ -272,13 +325,13 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       const clip = await loadClip(brollClips[i], `B-roll clip ${i + 1}`, true);
       if (i === 0) await mainStartedP;
       if (mainDone) {
-        releaseClip(clip.video);
+        releaseClip(clip);
         break;
       }
-      currentBroll = clip.video;
+      currentBroll = clip;
       await playUntilOut(clip, () => mainDone);
       currentBroll = null;
-      releaseClip(clip.video);
+      releaseClip(clip);
     }
   })().catch((e: unknown) => {
     brollError = e;
@@ -292,15 +345,18 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       const clip = await loadClip(mainClips[i], `clip ${i + 1}`, false);
       if (brollError) throw brollError;
 
+      // An image has no sound: the recording stays silent while it shows.
       let srcNode: MediaElementAudioSourceNode | null = null;
-      try {
-        srcNode = audioCtx.createMediaElementSource(clip.video);
-        srcNode.connect(dest);
-      } catch {
-        /* audio not routable (rare) */
+      if (clip.kind === "video") {
+        try {
+          srcNode = audioCtx.createMediaElementSource(clip.video);
+          srcNode.connect(dest);
+        } catch {
+          /* audio not routable (rare) */
+        }
       }
 
-      currentMain = clip.video;
+      currentMain = clip;
       if (i === 0) mainStarted();
       const wall = await playUntilOut(
         clip,
@@ -321,7 +377,7 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
           /* noop */
         }
       }
-      releaseClip(clip.video);
+      releaseClip(clip);
       if (brollError) throw brollError;
     }
   } finally {

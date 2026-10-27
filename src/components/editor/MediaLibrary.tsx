@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { CLIP_DRAG_TYPE, type ClipRow } from "./types";
 import { MediaUploadZone } from "./MediaUploadZone";
+import { IMAGE_DEFAULT_MS, isImageFilename } from "@/lib/media-kind";
 
 interface MediaLibraryProps {
   clips: ClipRow[];
@@ -30,6 +31,10 @@ function formatDuration(durationMs?: number | null, durationSeconds?: number | n
   const s = totalSec % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
+
+// How long an image clip shows (its trimmed length), e.g. "3.0".
+const imageSeconds = (clip: ClipRow) =>
+  (((clip.trim_out_ms ?? IMAGE_DEFAULT_MS) - (clip.trim_in_ms ?? 0)) / 1000).toFixed(1);
 
 // Drag a clip onto a timeline track to add another copy of it there.
 const startClipDrag = (clip: ClipRow) => (e: React.DragEvent) => {
@@ -213,7 +218,8 @@ export function MediaLibrary({
                 className="w-full"
               />
               <p className="mt-3 text-[11px] text-neutral-500 max-w-[220px] leading-normal">
-                Drop your raw video clips here to add them to the timeline and AI preview canvas.
+                Drop your video clips and images here to add them to the timeline and AI preview
+                canvas.
               </p>
             </div>
           ) : (
@@ -290,10 +296,19 @@ export function MediaLibrary({
                         <HardDrive className="w-2.5 h-2.5" />
                         {formatBytes(clip.size_bytes)}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5" />
-                        {formatDuration(clip.duration_ms, clip.duration_seconds)}
-                      </span>
+                      {isImageFilename(clip.filename) ? (
+                        // An image shows for its trimmed length (its "file"
+                        // length is only how far it can stretch).
+                        <span className="flex items-center gap-1">
+                          <ImageIcon className="w-2.5 h-2.5" />
+                          {imageSeconds(clip)}s
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          {formatDuration(clip.duration_ms, clip.duration_seconds)}
+                        </span>
+                      )}
                     </div>
 
                     <Badge
