@@ -24,6 +24,9 @@ import {
   ArrowUpToLine,
   Keyboard,
   FoldHorizontal,
+  Repeat,
+  LocateFixed,
+  Wand2,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -51,10 +54,16 @@ import { thumbnailKey } from "@/lib/video-thumbnail";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
 import {
   closeGapsPlacements,
+  currentAudioPlacements,
   currentPlacements,
   fitStart,
   layoutTrack,
+  musicBars as layoutMusicBars,
+  musicStarts,
+  planAudioPlacement,
   planPlacement,
+  resetMusicPlacements,
+  sfxPlays,
   type ClipPlacement,
 } from "@/lib/timeline-layout";
 
@@ -563,6 +572,63 @@ function TrackLabel({
   );
 }
 
+/* ---------- A2 blocks ---------- */
+// A piece of music or an SFX on the A2 row. Drag it to move where it plays;
+// right-click for more.
+function AudioBlock({
+  leftPx,
+  widthPx,
+  shiftPx,
+  text,
+  title,
+  className,
+  audioId,
+  audioKey,
+  atMs,
+  onCut,
+  onPointerDown,
+}: {
+  leftPx: number;
+  widthPx: number;
+  /** How far it's being dragged (px). */
+  shiftPx: number;
+  text: string;
+  title: string;
+  className: string;
+  audioId: string;
+  audioKey: string;
+  /** When it plays (ms), for the right-click menu. */
+  atMs: number;
+  /** An SFX playing automatically on a cut. */
+  onCut?: boolean;
+  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      data-timeline-clip
+      data-audio-id={audioId}
+      data-audio-key={audioKey}
+      data-audio-at={atMs}
+      data-audio-oncut={onCut ? "1" : undefined}
+      onPointerDown={onPointerDown}
+      onDragStart={(e) => e.preventDefault()}
+      className={cn(
+        "absolute top-1 bottom-1 rounded px-1.5 flex items-center text-[9.5px] leading-none truncate border select-none cursor-grab active:cursor-grabbing hover:brightness-125",
+        shiftPx !== 0 && "z-10 ring-1 ring-white/60 shadow-lg",
+        className,
+      )}
+      style={{
+        left: leftPx,
+        width: Math.max(4, widthPx - 1),
+        transform: shiftPx ? `translateX(${shiftPx}px)` : undefined,
+      }}
+      title={title}
+    >
+      <span className="truncate pointer-events-none">{text}</span>
+    </div>
+  );
+}
+
 /* ---------- TimelineTracks ---------- */
 type Track = "aroll" | "broll";
 
@@ -663,6 +729,8 @@ function TimelineTracks({
     y: number;
     track: Track | "music" | null;
     clip: ClipRow | null;
+    /** A song or SFX on A2, and when that piece plays. */
+    audio: { clip: ClipRow; atMs: number; onCut: boolean } | null;
   } | null>(null);
   const lastPointerType = useRef<string>("mouse");
   // A drag ends with a click on whatever is under the pointer; don't let it
@@ -687,44 +755,24 @@ function TimelineTracks({
   const mainClips = aRoll.length > 0 ? aRoll : bRoll;
   const mainLayout = aRoll.length > 0 ? aLayout : bLayout;
   const programEndMs = mainLayout.endMs;
-  // The music row as the export mixes it: music files one after another,
-  // looped to the end of the video; one SFX per cut, cycling through files.
+  // The A2 row as the export mixes it (timeline-layout): music pieces, and
+  // when each SFX plays (on cuts, or once where it was placed).
   const musicFiles = audioClips.filter((c) => c.role !== "sfx");
   const sfxFiles = audioClips.filter((c) => c.role === "sfx");
   const musicEndMs =
     programEndMs > 0 ? programEndMs : musicFiles.reduce((t, c) => t + clipVisibleMs(c), 0);
-  const musicBars: {
-    key: string;
-    clip: ClipRow;
-    startMs: number;
-    lengthMs: number;
-    loop: boolean;
-  }[] = [];
-  for (let at = 0, n = 0; musicFiles.length > 0 && at < musicEndMs && n < 500; n++) {
-    const clip = musicFiles[n % musicFiles.length];
-    const lengthMs = Math.min(clipVisibleMs(clip), musicEndMs - at);
-    musicBars.push({
-      key: `${clip.id}:${n}`,
-      clip,
-      startMs: at,
-      lengthMs,
-      loop: n >= musicFiles.length,
-    });
-    at += lengthMs;
-  }
-  const sfxMarks = sfxFiles.length
-    ? mainClips.slice(1).map((c, k) => {
-        const cutMs = mainLayout.offsets.get(c.id) ?? 0;
-        const clip = sfxFiles[k % sfxFiles.length];
-        return {
-          key: `${c.id}:sfx`,
-          clip,
-          cutMs,
-          startMs: Math.max(0, cutMs - 150),
-          lengthMs: Math.max(200, clipVisibleMs(clip)),
-        };
-      })
-    : [];
+  const musicPieces = layoutMusicBars(musicFiles, clipVisibleMs, musicEndMs);
+  const songStarts = new Map(
+    musicStarts(musicFiles, clipVisibleMs).map((ms, i) => [musicFiles[i].id, ms]),
+  );
+  const musicPlaced = musicFiles.some((c) => c.start_ms != null);
+  const cutsMs = mainClips.slice(1).map((c) => mainLayout.offsets.get(c.id) ?? 0);
+  const sfxMarks = sfxPlays(sfxFiles, cutsMs).map((p) => ({
+    ...p,
+    // On a cut it leads in slightly, like the export.
+    startMs: Math.max(0, p.atMs - (p.onCut ? 150 : 0)),
+    lengthMs: Math.max(200, clipVisibleMs(p.clip)),
+  }));
   const cutAtFor = (c: ClipRow) => {
     if (aRoll.length === 0) return null;
     const start = bLayout.offsets.get(c.id) ?? 0;
@@ -1044,6 +1092,123 @@ function TimelineTracks({
   });
   const closeGaps = () => savePlacements(closeGapsPlacements(aRoll, bRoll), "Close gaps");
 
+  /** Saves music/SFX placements, with undo. */
+  function saveAudio(placements: ClipPlacement[], description: string) {
+    const before = currentAudioPlacements(audioClips);
+    const beforeById = new Map(before.map((p) => [p.id, p]));
+    const unchanged = placements.every((p) => {
+      const b = beforeById.get(p.id);
+      return !!b && b.ordinal === p.ordinal && b.start_ms === p.start_ms;
+    });
+    if (unchanged) return;
+    pushToHistory({
+      description,
+      undo: () => reorderMut.mutate({ order: before }),
+      redo: () => reorderMut.mutate({ order: placements }),
+    });
+    reorderMut.mutate({ order: placements });
+  }
+  /** Puts a song's start, or an SFX, at a time (null: SFX back on every cut). */
+  function placeAudio(clip: ClipRow, startMs: number | null) {
+    saveAudio(
+      planAudioPlacement(audioClips, clip.id, startMs, clipVisibleMs),
+      clip.role === "sfx" ? "Move SFX" : "Move music",
+    );
+  }
+
+  // A2 block being dragged: which song or SFX, which piece, and how far (px).
+  const [audioDrag, setAudioDrag] = useState<{ id: string; key: string; dx: number } | null>(null);
+  /**
+   * Press on a piece of music or an SFX: drag sideways to move where it plays
+   * (a song moves where it starts; an SFX playing on cuts becomes one sound
+   * at the drop point). Mouse: after a few pixels; touch: press and hold.
+   */
+  function startAudioPress(
+    e: React.PointerEvent<HTMLDivElement>,
+    clip: ClipRow,
+    key: string,
+    originMs: number,
+  ) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const pointerId = e.pointerId;
+    const isTouch = e.pointerType === "touch";
+    const startX = e.clientX;
+    const scroller = scrollRef.current;
+    const startScroll = scroller?.scrollLeft ?? 0;
+    let active = false;
+    let lastX = startX;
+    const dxPx = () => lastX - startX + ((scroller?.scrollLeft ?? 0) - startScroll);
+    // Where it would play: snapped to 0:00, the playhead, a cut, the end or
+    // another song's start when close to one.
+    const landing = () => {
+      let ms = Math.max(0, originMs + (dxPx() / pxPerSec) * 1000);
+      if (snapEnabled) {
+        const points = [0, currentTimeMs, programEndMs, ...cutsMs];
+        for (const [id, at] of songStarts) if (id !== clip.id) points.push(at);
+        let best = (8 / pxPerSec) * 1000;
+        for (const p of points) {
+          if (Math.abs(p - ms) < best) {
+            best = Math.abs(p - ms);
+            ms = p;
+          }
+        }
+      }
+      return Math.round(ms);
+    };
+    const begin = () => {
+      active = true;
+      suppressClick.current = true;
+      setAudioDrag({ id: clip.id, key, dx: 0 });
+    };
+    const holdTimer = isTouch ? setTimeout(begin, 300) : null;
+    const finish = (commit: boolean) => {
+      if (holdTimer) clearTimeout(holdTimer);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("touchmove", blockTouchScroll);
+      if (active && commit) placeAudio(clip, landing());
+      setAudioDrag(null);
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    };
+    function onMove(ev: PointerEvent) {
+      if (ev.pointerId !== pointerId) return;
+      lastX = ev.clientX;
+      if (!active) {
+        if (isTouch) {
+          if (Math.abs(lastX - startX) > 8) finish(false);
+          return;
+        }
+        if (Math.abs(lastX - startX) < 4) return;
+        begin();
+      }
+      // Show it where it will land (snapped).
+      setAudioDrag({ id: clip.id, key, dx: ((landing() - originMs) / 1000) * pxPerSec });
+    }
+    function onUp(ev: PointerEvent) {
+      if (ev.pointerId === pointerId) finish(true);
+    }
+    function onCancel(ev: PointerEvent) {
+      if (ev.pointerId === pointerId) finish(false);
+    }
+    function blockTouchScroll(ev: TouchEvent) {
+      if (active) ev.preventDefault();
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("touchmove", blockTouchScroll, { passive: false });
+  }
+  // How far a block is being dragged: all pieces of a dragged song move
+  // together; an SFX moves on its own.
+  const audioShift = (clip: ClipRow, key: string) =>
+    audioDrag && audioDrag.id === clip.id && (clip.role !== "sfx" || audioDrag.key === key)
+      ? audioDrag.dx
+      : 0;
+
   /**
    * Press on a clip body. With a mouse or pen the clip is picked up once the
    * pointer moves a few pixels (a plain click still selects it). With touch,
@@ -1240,11 +1405,20 @@ function TimelineTracks({
     e.preventDefault();
     const clip = clipId ? (videoClips.find((c) => c.id === clipId) ?? null) : null;
     if (clip) onSelect(clip.id);
+    const audioEl = el.closest<HTMLElement>("[data-audio-id]");
+    const audioClip = audioEl ? audioClips.find((c) => c.id === audioEl.dataset.audioId) : null;
     setMenu({
       x: e.clientX,
       y: e.clientY,
       track: (trackEl?.dataset.track as Track | "music" | undefined) ?? null,
       clip,
+      audio: audioClip
+        ? {
+            clip: audioClip,
+            atMs: Number(audioEl!.dataset.audioAt ?? 0),
+            onCut: audioEl!.dataset.audioOncut === "1",
+          }
+        : null,
     });
   };
   const trackName = (t: Track | "music") =>
@@ -1455,6 +1629,45 @@ function TimelineTracks({
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
                   <DropdownMenuShortcut>Del</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </>
+            ) : menu?.audio ? (
+              <>
+                <DropdownMenuLabel className="text-[11px] truncate">
+                  {baseName(menu.audio.clip.filename)}
+                </DropdownMenuLabel>
+                {menu.audio.clip.role === "sfx" ? (
+                  menu.audio.onCut ? (
+                    <DropdownMenuItem
+                      onSelect={() => placeAudio(menu.audio!.clip, Math.round(menu.audio!.atMs))}
+                    >
+                      <LocateFixed className="w-3.5 h-3.5" /> Play once here instead
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onSelect={() => placeAudio(menu.audio!.clip, null)}>
+                      <Repeat className="w-3.5 h-3.5" /> Play on every cut instead
+                    </DropdownMenuItem>
+                  )
+                ) : (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={() => placeAudio(menu.audio!.clip, Math.round(currentTimeMs))}
+                    >
+                      <LocateFixed className="w-3.5 h-3.5" /> Start at the playhead
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!musicPlaced}
+                      onSelect={() =>
+                        saveAudio(resetMusicPlacements(audioClips), "Music back to automatic")
+                      }
+                    >
+                      <Wand2 className="w-3.5 h-3.5" /> Music back to automatic
+                    </DropdownMenuItem>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => pickFiles({ track: "music", startMs: null })}>
+                  <Plus className="w-3.5 h-3.5" /> Add music or SFX…
                 </DropdownMenuItem>
               </>
             ) : menu?.track ? (
@@ -1742,24 +1955,47 @@ function TimelineTracks({
               </div>
             ) : (
               <>
-                {musicBars.map((b) => (
-                  <TrackLabel
+                {musicPieces.map((b) => (
+                  <AudioBlock
                     key={b.key}
+                    audioId={b.clip.id}
+                    audioKey={b.key}
+                    atMs={songStarts.get(b.clip.id) ?? b.startMs}
                     leftPx={(b.startMs / 1000) * pxPerSec}
                     widthPx={(b.lengthMs / 1000) * pxPerSec}
+                    shiftPx={audioShift(b.clip, b.key)}
                     text={`♪ ${baseName(b.clip.filename)}${b.loop ? " (loop)" : ""}`}
-                    title={`${b.clip.filename}: loops under the video, quieter while you speak`}
+                    title={`${b.clip.filename}: loops under the video, quieter while you speak. Drag to move where it starts; right-click for more.`}
                     className="bg-amber-500/10 border-amber-400/30 text-amber-200/80"
+                    onPointerDown={(e) =>
+                      startAudioPress(e, b.clip, b.key, songStarts.get(b.clip.id) ?? b.startMs)
+                    }
                   />
                 ))}
                 {sfxMarks.map((m) => (
-                  <TrackLabel
+                  <AudioBlock
                     key={m.key}
+                    audioId={m.clip.id}
+                    audioKey={m.key}
+                    atMs={m.atMs}
+                    onCut={m.onCut}
                     leftPx={(m.startMs / 1000) * pxPerSec}
                     widthPx={(m.lengthMs / 1000) * pxPerSec}
-                    text="SFX"
-                    title={`${m.clip.filename} on the cut at ${formatPlaybackTime(m.cutMs / 1000)}`}
-                    className="bg-pink-500/20 border-pink-400/40 text-pink-100 z-[1]"
+                    shiftPx={audioShift(m.clip, m.key)}
+                    text={m.onCut ? "SFX" : "SFX ●"}
+                    title={
+                      m.onCut
+                        ? `${m.clip.filename} on the cut at ${formatPlaybackTime(m.atMs / 1000)}. Drag to play it once somewhere else.`
+                        : `${m.clip.filename} once at ${formatPlaybackTime(m.atMs / 1000)}. Drag to move; right-click to put it back on every cut.`
+                    }
+                    className={cn(
+                      "z-[1] text-pink-100",
+                      m.onCut
+                        ? "bg-pink-500/20 border-pink-400/40"
+                        : "bg-pink-500/35 border-pink-300/70",
+                    )}
+                    // From where it's drawn, so it lands where it's dropped.
+                    onPointerDown={(e) => startAudioPress(e, m.clip, m.key, m.startMs)}
                   />
                 ))}
               </>

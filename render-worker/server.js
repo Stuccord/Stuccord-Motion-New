@@ -263,6 +263,24 @@ function layoutStarts(clips, lengthsMs) {
   return starts;
 }
 
+// Where each song starts, matching the app (musicStarts in
+// src/lib/timeline-layout.ts): a placed song at its time, others right after
+// the song before. A song plays (looping) until the next one starts, so it
+// only has to start no earlier than the one before it.
+function musicStartsMs(songs, lengthsMs) {
+  const starts = [];
+  let prevStart = 0;
+  let prevEnd = 0;
+  songs.forEach((c, i) => {
+    const want = c.start_ms == null ? prevEnd : Number(c.start_ms);
+    const start = Math.max(prevStart, Math.round(Number.isFinite(want) ? want : prevEnd));
+    starts.push(start);
+    prevStart = start;
+    prevEnd = start + Math.max(0, lengthsMs[i] ?? 0);
+  });
+  return starts;
+}
+
 // A clip's length on the timeline from its trims (used when its rendered
 // file's length can't be read).
 function trimmedLengthMs(clip) {
@@ -1065,7 +1083,7 @@ async function runRender(job) {
         if (musicClips.some((c) => c.start_ms != null)) {
           const lengths = [];
           for (const p of musicPaths) lengths.push((await probeDurationMs(p)) ?? 0);
-          const starts = layoutStarts(musicClips, lengths);
+          const starts = musicStartsMs(musicClips, lengths);
           const segments = [];
           starts.forEach((startMs, i) => {
             const endMs = Math.min(video.durationMs, starts[i + 1] ?? video.durationMs);

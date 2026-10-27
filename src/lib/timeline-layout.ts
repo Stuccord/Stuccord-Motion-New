@@ -153,3 +153,142 @@ export function closeGapsPlacements(aRoll: VideoClip[], bRoll: VideoClip[]): Cli
     })),
   ];
 }
+
+// ---------- A2: music and SFX ----------
+
+type AudioClip = Placeable & { role: string; ordinal: number };
+
+/**
+ * Where each song starts. A placed song starts at its time; one without
+ * follows the song before it (after its full length). Songs don't stop at
+ * each other's edges: a song plays (looping) until the next one starts, so
+ * a song only has to start no earlier than the one before it.
+ */
+export function musicStarts<T extends Placeable>(songs: T[], lengthMs: (c: T) => number): number[] {
+  const starts: number[] = [];
+  let prevStart = 0;
+  let prevEnd = 0;
+  for (const c of songs) {
+    const start = Math.max(prevStart, Math.round(c.start_ms ?? prevEnd));
+    starts.push(start);
+    prevStart = start;
+    prevEnd = start + Math.max(0, lengthMs(c));
+  }
+  return starts;
+}
+
+/** A piece of music on the A2 row: one play of a song (`loop`: a repeat). */
+export type MusicBar<T> = {
+  key: string;
+  clip: T;
+  startMs: number;
+  lengthMs: number;
+  loop: boolean;
+};
+
+/**
+ * The music as the cloud export mixes it, up to `endMs` (the end of the
+ * video). With no song placed: the songs one after another from 0:00, the
+ * whole run looped. Once any song is placed: each song from its start,
+ * looped until the next song starts.
+ */
+export function musicBars<T extends Placeable>(
+  songs: T[],
+  lengthMs: (c: T) => number,
+  endMs: number,
+): MusicBar<T>[] {
+  const bars: MusicBar<T>[] = [];
+  if (songs.length === 0 || endMs <= 0) return bars;
+  if (songs.every((c) => c.start_ms == null)) {
+    for (let at = 0, n = 0; at < endMs && n < 500; n++) {
+      const clip = songs[n % songs.length];
+      const len = Math.min(Math.max(1, lengthMs(clip)), endMs - at);
+      bars.push({
+        key: `${clip.id}:${n}`,
+        clip,
+        startMs: at,
+        lengthMs: len,
+        loop: n >= songs.length,
+      });
+      at += len;
+    }
+    return bars;
+  }
+  const starts = musicStarts(songs, lengthMs);
+  songs.forEach((clip, i) => {
+    const spanEnd = Math.min(endMs, starts[i + 1] ?? endMs);
+    const len = Math.max(1, lengthMs(clip));
+    for (let at = starts[i], n = 0; at < spanEnd && n < 500; n++) {
+      const piece = Math.min(len, spanEnd - at);
+      bars.push({ key: `${clip.id}:${n}`, clip, startMs: at, lengthMs: piece, loop: n > 0 });
+      at += piece;
+    }
+  });
+  return bars;
+}
+
+/** When each SFX plays: unplaced ones on every cut (taking turns), placed ones once. */
+export function sfxPlays<T extends Placeable>(
+  sfx: T[],
+  cutsMs: number[],
+): { key: string; clip: T; atMs: number; onCut: boolean }[] {
+  const auto = sfx.filter((c) => c.start_ms == null);
+  return [
+    ...(auto.length
+      ? cutsMs.map((cut, k) => ({
+          key: `cut${k}`,
+          clip: auto[k % auto.length],
+          atMs: cut,
+          onCut: true,
+        }))
+      : []),
+    ...sfx
+      .filter((c) => c.start_ms != null)
+      .map((c) => ({ key: c.id, clip: c, atMs: c.start_ms as number, onCut: false })),
+  ];
+}
+
+/** The music and SFX as they're saved now, for undo. */
+export function currentAudioPlacements(audio: AudioClip[]): ClipPlacement[] {
+  return audio.map((c) => ({
+    id: c.id,
+    ordinal: c.ordinal,
+    role: c.role,
+    start_ms: c.start_ms ?? null,
+  }));
+}
+
+/**
+ * Places a song or an SFX at `startMs` (null: back to automatic, i.e. an
+ * SFX on every cut). Moving one song gives every song its current start so
+ * the others stay where they are; songs are then numbered in time order.
+ */
+export function planAudioPlacement<T extends AudioClip>(
+  audio: T[],
+  id: string,
+  startMs: number | null,
+  lengthMs: (c: T) => number,
+): ClipPlacement[] {
+  const clip = audio.find((c) => c.id === id);
+  if (!clip) return [];
+  if (clip.role === "sfx") {
+    return [{ id, ordinal: clip.ordinal, role: "sfx", start_ms: startMs }];
+  }
+  const songs = audio.filter((c) => c.role !== "sfx");
+  const starts = musicStarts(songs, lengthMs);
+  const placed = songs.map((c, i) => ({
+    c,
+    start: c.id === id ? Math.max(0, Math.round(startMs ?? starts[i])) : starts[i],
+  }));
+  const ordinals = songs.map((c) => c.ordinal).sort((a, b) => a - b);
+  return placed
+    .sort((a, b) => a.start - b.start)
+    .map((p, i) => ({ id: p.c.id, ordinal: ordinals[i], role: p.c.role, start_ms: p.start }));
+}
+
+/** Music back to automatic: the songs one after another from 0:00, looped. */
+export function resetMusicPlacements(audio: AudioClip[]): ClipPlacement[] {
+  return audio
+    .filter((c) => c.role !== "sfx")
+    .map((c) => ({ id: c.id, ordinal: c.ordinal, role: c.role, start_ms: null }));
+}
