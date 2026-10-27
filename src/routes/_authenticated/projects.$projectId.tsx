@@ -35,6 +35,12 @@ import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
 import { usePreviewAudio } from "@/components/editor/usePreviewAudio";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
 import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
+import {
+  captureFilmstrip,
+  computeWaveform,
+  type Filmstrip,
+  type Waveform,
+} from "@/lib/clip-strips";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -552,6 +558,55 @@ function EditorPage() {
         }
       }
     })();
+  }, [data, signClip]);
+
+  // Filmstrips and waveforms for the timeline's video clips, by file: made
+  // once per file (once its length is known), one file at a time, after the
+  // thumbnails above. null: the file has no sound to show.
+  const [filmstrips, setFilmstrips] = useState<Record<string, Filmstrip>>({});
+  const [waveforms, setWaveforms] = useState<Record<string, Waveform | null>>({});
+  const stripsRequested = useRef(new Set<string>());
+  const stripsQueue = useRef<Promise<void>>(Promise.resolve());
+  const stripsStop = useRef({ cancelled: false });
+  useEffect(() => {
+    const stop = stripsStop.current;
+    stop.cancelled = false;
+    return () => {
+      stop.cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (!data) return;
+    const todo = new Map<string, ClipRow>();
+    for (const c of data.clips as ClipRow[]) {
+      if (c.role === "music" || c.role === "sfx" || isImageFilename(c.filename)) continue;
+      if (c.duration_ms == null || stripsRequested.current.has(c.storage_path)) continue;
+      todo.set(c.storage_path, c);
+    }
+    if (todo.size === 0) return;
+    for (const path of todo.keys()) stripsRequested.current.add(path);
+    const stop = stripsStop.current;
+    stripsQueue.current = stripsQueue.current.then(async () => {
+      // Wait for the thumbnails, which show sooner.
+      await new Promise((r) => setTimeout(r, 1500));
+      for (const [path, c] of todo) {
+        if (stop.cancelled) return;
+        try {
+          const { url } = await signClip({ data: { path } });
+          await captureFilmstrip(
+            url,
+            c.duration_ms ?? 0,
+            (strip) => setFilmstrips((s) => ({ ...s, [path]: strip })),
+            stop,
+          );
+          if (stop.cancelled) return;
+          const wave = await computeWaveform(url, c.size_bytes);
+          setWaveforms((w) => ({ ...w, [path]: wave }));
+        } catch (e) {
+          console.warn("[editor] Couldn't make a clip's filmstrip or waveform:", e);
+        }
+      }
+    });
   }, [data, signClip]);
 
   const splitMut = useMutation({
@@ -1868,6 +1923,8 @@ function EditorPage() {
             captionPhrases={captionPhrases}
             audioClips={audioClips}
             thumbnails={thumbnails}
+            filmstrips={filmstrips}
+            waveforms={waveforms}
             music={musicEnabled}
             snapEnabled={snapEnabled}
             onSnapToggle={() => setSnapEnabled((s) => !s)}

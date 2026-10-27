@@ -51,6 +51,7 @@ import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
 import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { FPS, formatFrameTimecode } from "./timecode";
 import { thumbnailKey } from "@/lib/video-thumbnail";
+import { frameAt, type Filmstrip, type Waveform } from "@/lib/clip-strips";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
 import {
   closeGapsPlacements,
@@ -165,7 +166,8 @@ function Divider() {
 
 /* ---------- track row ---------- */
 // Video tracks hold clips; slim tracks (voice, captions, music) hold labels.
-const TRACK_HEIGHT = { clip: 72, slim: 44 } as const;
+// A clip row fits a clip's name bar, filmstrip and waveform.
+const TRACK_HEIGHT = { clip: 84, slim: 44 } as const;
 
 /** An on/off button in a track's header (e.g. captions or music in the export). */
 type TrackToggle = {
@@ -315,6 +317,8 @@ function TimelineClip({
   clipStartMs,
   tone,
   thumbnail,
+  filmstrip,
+  waveform,
   cutAtMs,
 }: {
   clip: ClipRow;
@@ -333,6 +337,10 @@ function TimelineClip({
   tone: "primary" | "teal";
   /** A frame from the clip (data URL), repeated along the block. */
   thumbnail?: string;
+  /** Frames from across the clip's file, drawn for the part it shows. */
+  filmstrip?: Filmstrip;
+  /** The file's sound; null when it has none, undefined while it's being read. */
+  waveform?: Waveform | null;
   /** Where in this clip the exported video ends (ms); the rest is cut. */
   cutAtMs?: number | null;
 }) {
@@ -364,6 +372,7 @@ function TimelineClip({
     };
   }, []);
 
+  const isImage = isImageFilename(clip.filename);
   const gradient =
     tone === "primary"
       ? "from-violet-500/45 to-violet-500/20 border-violet-500/50"
@@ -492,18 +501,65 @@ function TimelineClip({
         </div>
       ))}
 
-      {/* Thumbnail strip, dimmed so the label stays readable */}
-      {thumbnail && (
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-45 pointer-events-none"
-          style={{
-            backgroundImage: `url(${thumbnail})`,
-            backgroundSize: "auto 100%",
-            backgroundRepeat: "repeat-x",
-          }}
-        />
-      )}
+      {/* Like CapCut: the name on top, frames from the clip, its sound below. */}
+      <div className="absolute inset-0 flex flex-col pointer-events-none">
+        <div className="h-[18px] shrink-0 px-3.5 flex items-center gap-1 text-[11px] leading-none font-mono text-white/95 bg-black/30 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+          {isImage ? (
+            <ImageIcon className="w-3 h-3 shrink-0" />
+          ) : (
+            <Film className="w-3 h-3 shrink-0" />
+          )}
+          <span className="truncate font-semibold">
+            {String(index + 1).padStart(2, "0")} · {baseName(clip.filename)}
+          </span>
+          <span className="ml-auto pl-1 shrink-0 text-white/70 tabular-nums">
+            {formatPlaybackTime(visibleMs / 1000)}
+            {sourceMs != null && sourceMs - visibleMs >= 50 && !isImage && (
+              <span className="text-white/45" title="Length of the original file">
+                {" "}
+                of {formatPlaybackTime(sourceMs / 1000)}
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="relative flex-1 min-h-0 bg-black/40">
+          {filmstrip && filmstrip.times.length > 0 ? (
+            <ClipStrip
+              kind="frames"
+              filmstrip={filmstrip}
+              fromMs={effIn}
+              widthPx={Math.max(20, widthPx)}
+              pxPerSec={pxPerSec}
+            />
+          ) : (
+            thumbnail && (
+              <div
+                aria-hidden
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `url(${thumbnail})`,
+                  backgroundSize: "auto 100%",
+                  backgroundRepeat: "repeat-x",
+                }}
+              />
+            )
+          )}
+        </div>
+        {!isImage && (
+          <div className="relative h-[16px] shrink-0 bg-black/45 border-t border-black/40">
+            {waveform !== undefined && (
+              <ClipStrip
+                kind="wave"
+                waveform={waveform}
+                fromMs={effIn}
+                widthPx={Math.max(20, widthPx)}
+                pxPerSec={pxPerSec}
+                color={tone === "primary" ? "#c4b5fd" : "#5eead4"}
+              />
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Part past the end of the exported video: cut */}
       {cutAtMs != null && (
@@ -517,28 +573,156 @@ function TimelineClip({
           title="Cut: this part runs past the end of the video"
         />
       )}
+    </div>
+  );
+}
 
-      {/* Label */}
-      <div className="absolute inset-0 px-4 py-1.5 flex flex-col justify-between text-[11px] pointer-events-none [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
-        <div className="flex items-center gap-1 text-white/95 font-mono font-semibold truncate">
-          {isImageFilename(clip.filename) ? (
-            <ImageIcon className="w-3 h-3 shrink-0" />
-          ) : (
-            <Film className="w-3 h-3 shrink-0" />
-          )}
-          <span className="truncate">
-            {String(index + 1).padStart(2, "0")} · {baseName(clip.filename)}
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-white/75 font-mono tabular-nums">
-          <span>{formatPlaybackTime(visibleMs / 1000)}</span>
-          {sourceMs != null && sourceMs - visibleMs >= 50 && !isImageFilename(clip.filename) && (
-            <span className="text-white/45 truncate" title="Length of the original file">
-              of {formatPlaybackTime(sourceMs / 1000)}
-            </span>
-          )}
-        </div>
-      </div>
+// Strips are drawn in canvases this wide, side by side, so a long clip at a
+// close zoom doesn't need one huge canvas.
+const STRIP_TILE_PX = 2048;
+
+/**
+ * A clip's filmstrip or waveform for the part of its file it shows, from
+ * `fromMs` in the file, at the timeline's zoom.
+ */
+function ClipStrip({
+  kind,
+  filmstrip,
+  waveform,
+  fromMs,
+  widthPx,
+  pxPerSec,
+  color = "#ffffff",
+}: {
+  kind: "frames" | "wave";
+  filmstrip?: Filmstrip;
+  waveform?: Waveform | null;
+  fromMs: number;
+  widthPx: number;
+  pxPerSec: number;
+  color?: string;
+}) {
+  const tiles = Math.max(1, Math.ceil(widthPx / STRIP_TILE_PX));
+  return (
+    <div aria-hidden className="absolute inset-0 overflow-hidden">
+      {Array.from({ length: tiles }, (_, i) => (
+        <StripTile
+          key={i}
+          kind={kind}
+          filmstrip={filmstrip}
+          waveform={waveform}
+          fromMs={fromMs}
+          leftPx={i * STRIP_TILE_PX}
+          widthPx={Math.min(STRIP_TILE_PX, widthPx - i * STRIP_TILE_PX)}
+          pxPerSec={pxPerSec}
+          color={color}
+        />
+      ))}
+    </div>
+  );
+}
+
+function StripTile({
+  kind,
+  filmstrip,
+  waveform,
+  fromMs,
+  leftPx,
+  widthPx,
+  pxPerSec,
+  color,
+}: {
+  kind: "frames" | "wave";
+  filmstrip?: Filmstrip;
+  waveform?: Waveform | null;
+  fromMs: number;
+  leftPx: number;
+  widthPx: number;
+  pxPerSec: number;
+  color: string;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [redraw, setRedraw] = useState(0);
+  // Only tiles near the visible part of the timeline get a canvas, so a long
+  // clip at a close zoom doesn't hold hundreds of them in memory.
+  const slot = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    const el = slot.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
+    const io = new IntersectionObserver(([entry]) => setNear(entry.isIntersecting), {
+      rootMargin: "0px 1500px",
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!near || !canvas || widthPx <= 0) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cssH = canvas.clientHeight || 1;
+    canvas.width = Math.max(1, Math.round(widthPx * dpr));
+    canvas.height = Math.max(1, Math.round(cssH * dpr));
+    const g = canvas.getContext("2d");
+    if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, widthPx, cssH);
+    // Time in the file at a point of this tile.
+    const msAt = (x: number) => fromMs + ((leftPx + x) / pxPerSec) * 1000;
+
+    if (kind === "frames" && filmstrip) {
+      // Frames side by side, each the frame nearest its left edge. The slots
+      // line up with the clip's start, so they stay put while scrolling.
+      const frameW = Math.max(8, cssH * filmstrip.ratio);
+      const first = Math.floor(leftPx / frameW);
+      let waiting: HTMLImageElement | null = null;
+      for (let k = first; k * frameW < leftPx + widthPx; k++) {
+        const x = k * frameW - leftPx;
+        const img = frameAt(filmstrip, msAt(x));
+        if (!img) continue;
+        if (!img.complete) {
+          waiting = img;
+          continue;
+        }
+        g.drawImage(img, x, 0, frameW, cssH);
+        // A thin line between frames, like a filmstrip.
+        g.fillStyle = "rgba(0,0,0,0.35)";
+        g.fillRect(x + frameW - 1, 0, 1, cssH);
+      }
+      if (waiting) {
+        const img = waiting;
+        const again = () => setRedraw((n) => n + 1);
+        img.addEventListener("load", again, { once: true });
+        return () => img.removeEventListener("load", again);
+      }
+    } else if (kind === "wave") {
+      const mid = cssH / 2;
+      g.fillStyle = color;
+      if (!waveform) {
+        // No sound in this file: a flat line.
+        g.globalAlpha = 0.35;
+        g.fillRect(0, mid - 0.5, widthPx, 1);
+        return;
+      }
+      const { peaks, bucketMs } = waveform;
+      g.globalAlpha = 0.85;
+      for (let x = 0; x < widthPx; x++) {
+        const a = Math.floor(msAt(x) / bucketMs);
+        const b = Math.max(a + 1, Math.floor(msAt(x + 1) / bucketMs));
+        let peak = 0;
+        for (let i = Math.max(0, a); i < Math.min(peaks.length, b); i++)
+          if (peaks[i] > peak) peak = peaks[i];
+        const h = Math.max(1, peak * (cssH - 2));
+        g.fillRect(x, mid - h / 2, 1, h);
+      }
+    }
+  }, [near, kind, filmstrip, waveform, fromMs, leftPx, widthPx, pxPerSec, color, redraw]);
+  return (
+    <div ref={slot} className="absolute top-0 h-full" style={{ left: leftPx, width: widthPx }}>
+      {near && <canvas ref={ref} className="absolute inset-0 w-full h-full" />}
     </div>
   );
 }
@@ -673,6 +857,10 @@ type TimelineTracksProps = {
   audioClips: ClipRow[];
   /** Clip thumbnails by thumbnailKey(clip). */
   thumbnails: Record<string, string>;
+  /** Filmstrips by file (storage path). */
+  filmstrips: Record<string, Filmstrip>;
+  /** Waveforms by file (storage path); null: no sound. */
+  waveforms: Record<string, Waveform | null>;
 };
 
 function TimelineTracks({
@@ -701,6 +889,8 @@ function TimelineTracks({
   captionPhrases,
   audioClips,
   thumbnails,
+  filmstrips,
+  waveforms,
 }: TimelineTracksProps) {
   // Clip being dragged to a new place (with how far the pointer moved).
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
@@ -1818,6 +2008,8 @@ function TimelineTracks({
                   clipStartMs={aLayout.offsets.get(c.id) ?? 0}
                   tone="primary"
                   thumbnail={thumbnails[thumbnailKey(c)]}
+                  filmstrip={filmstrips[c.storage_path]}
+                  waveform={waveforms[c.storage_path]}
                 />
               ))
             )}
@@ -1867,6 +2059,8 @@ function TimelineTracks({
                   clipStartMs={bLayout.offsets.get(c.id) ?? 0}
                   tone="teal"
                   thumbnail={thumbnails[thumbnailKey(c)]}
+                  filmstrip={filmstrips[c.storage_path]}
+                  waveform={waveforms[c.storage_path]}
                   cutAtMs={cutAtFor(c)}
                 />
               ))
@@ -2086,6 +2280,10 @@ export interface TimelinePanelProps {
   audioClips?: ClipRow[];
   /** Clip thumbnails by thumbnailKey(clip). */
   thumbnails?: Record<string, string>;
+  /** Filmstrips by file (storage path). */
+  filmstrips?: Record<string, Filmstrip>;
+  /** Waveforms by file (storage path); null: no sound. */
+  waveforms?: Record<string, Waveform | null>;
 }
 
 export function TimelinePanel({
@@ -2123,6 +2321,8 @@ export function TimelinePanel({
   captionPhrases = [],
   audioClips = [],
   thumbnails = {},
+  filmstrips = {},
+  waveforms = {},
 }: TimelinePanelProps) {
   // Length of the exported video: the A-roll, or the B-roll when there's no A-roll.
   const mainTrack = aRoll.length > 0 ? aRoll : bRoll;
@@ -2291,6 +2491,8 @@ export function TimelinePanel({
         captionPhrases={captionPhrases}
         audioClips={audioClips}
         thumbnails={thumbnails}
+        filmstrips={filmstrips}
+        waveforms={waveforms}
       />
     </div>
   );
