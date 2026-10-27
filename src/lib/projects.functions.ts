@@ -365,6 +365,29 @@ export const listAllClips = createServerFn({ method: "GET" })
     }));
   });
 
+/** The bell's notifications: exports that finished or failed in the last 30 days. */
+export const listNotifications = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await context.supabase
+      .from("render_jobs")
+      .select("id, project_id, status, error, updated_at, projects(title)")
+      .in("status", ["completed", "failed"])
+      .gte("updated_at", since)
+      .order("updated_at", { ascending: false })
+      .limit(30);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((j) => ({
+      id: j.id,
+      kind: j.status === "completed" ? ("export_done" as const) : ("export_failed" as const),
+      project_id: j.project_id,
+      project_title: (j.projects as unknown as { title: string } | null)?.title ?? "Untitled",
+      error: j.error,
+      at: j.updated_at,
+    }));
+  });
+
 /** Records where a clip's thumbnail was saved (only inside the user's own thumbs folder). */
 export const setClipThumbnail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

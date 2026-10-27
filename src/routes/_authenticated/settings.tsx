@@ -6,16 +6,27 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
+import { Switch } from "@/components/ui/switch";
+import { readPrefs, savePrefs, type NotificationPrefs } from "@/lib/notification-prefs";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { User, Palette, Bell, Shield, KeyRound } from "lucide-react";
 
+const TABS = ["profile", "brand", "notifications", "security", "api"] as const;
+
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Stuccord Motion" }] }),
+  // ?tab=notifications opens that tab (e.g. from the bell).
+  validateSearch: (s: Record<string, unknown>): { tab?: (typeof TABS)[number] } => ({
+    tab: TABS.includes(s.tab as (typeof TABS)[number])
+      ? (s.tab as (typeof TABS)[number])
+      : undefined,
+  }),
   component: SettingsPage,
 });
 
 function SettingsPage() {
+  const { tab } = Route.useSearch();
   const [email, setEmail] = useState<string>("");
   const [displayName, setDisplayName] = useState("");
 
@@ -34,7 +45,7 @@ function SettingsPage() {
 
   return (
     <AppShell title="Settings" subtitle="Personalise your workspace, brand and notifications.">
-      <Tabs defaultValue="profile" className="flex flex-col lg:flex-row gap-6">
+      <Tabs defaultValue={tab ?? "profile"} className="flex flex-col lg:flex-row gap-6">
         <TabsList className="flex flex-row lg:flex-col h-auto bg-transparent gap-1 lg:w-52 shrink-0 justify-start p-0">
           {[
             { value: "profile", label: "Profile", icon: User },
@@ -105,10 +116,12 @@ function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">Notifications</CardTitle>
-                <CardDescription>Choose what lands in your inbox.</CardDescription>
+                <CardDescription>
+                  What the bell (and a pop-up) tells you about while you&apos;re in the app.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <NotYet what="Notifications when an export finishes or fails, and choosing which ones you get" />
+                <NotificationSettings />
               </CardContent>
             </Card>
           </TabsContent>
@@ -141,6 +154,89 @@ function SettingsPage() {
         </div>
       </Tabs>
     </AppShell>
+  );
+}
+
+/** Which notifications to get, saved on the account as soon as they change. */
+function NotificationSettings() {
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(
+    "unsupported",
+  );
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setPrefs(readPrefs(data.user?.user_metadata)));
+    if (typeof Notification !== "undefined") setPermission(Notification.permission);
+  }, []);
+
+  async function change(next: NotificationPrefs) {
+    const before = prefs;
+    setPrefs(next);
+    try {
+      await savePrefs(next);
+    } catch (e) {
+      setPrefs(before);
+      toast.error(e instanceof Error ? e.message : "Couldn't save");
+    }
+  }
+
+  async function toggleDesktop(on: boolean) {
+    if (!prefs) return;
+    if (on && permission !== "granted") {
+      if (permission === "unsupported") return;
+      const result = await Notification.requestPermission();
+      setPermission(result);
+      if (result !== "granted") {
+        toast.error("Your browser blocked notifications for this site.", {
+          description: "Allow them in the browser's site settings, then try again.",
+        });
+        return;
+      }
+    }
+    await change({ ...prefs, desktop: on });
+  }
+
+  if (!prefs) return <div className="text-sm text-neutral-500 py-3">Loading…</div>;
+  const rows: { label: string; desc: string; on: boolean; set: (v: boolean) => void; disabled?: boolean }[] = [
+    {
+      label: "Export finished",
+      desc: "When a video is ready to watch or download.",
+      on: prefs.exportDone,
+      set: (v) => change({ ...prefs, exportDone: v }),
+    },
+    {
+      label: "Export failed",
+      desc: "So you can fix it and try again.",
+      on: prefs.exportFailed,
+      set: (v) => change({ ...prefs, exportFailed: v }),
+    },
+    {
+      label: "Desktop notifications",
+      desc:
+        permission === "unsupported"
+          ? "This browser doesn't support desktop notifications."
+          : permission === "denied"
+            ? "Blocked in your browser: allow notifications for this site in its settings."
+            : "Also tell me when the app is in another tab or window.",
+      on: prefs.desktop && permission === "granted",
+      set: (v) => void toggleDesktop(v),
+      disabled: permission === "unsupported" || permission === "denied",
+    },
+  ];
+  return (
+    <div className="divide-y divide-black/5">
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-center justify-between gap-4 py-3">
+          <div>
+            <div className="text-sm font-medium">{r.label}</div>
+            <div className="text-xs text-neutral-500 mt-0.5">{r.desc}</div>
+          </div>
+          <Switch checked={r.on} onCheckedChange={r.set} disabled={r.disabled} aria-label={r.label} />
+        </div>
+      ))}
+      <p className="pt-3 text-xs text-neutral-500">
+        Email notifications aren&apos;t available yet.
+      </p>
+    </div>
   );
 }
 

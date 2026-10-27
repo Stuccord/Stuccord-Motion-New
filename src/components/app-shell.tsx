@@ -26,14 +26,13 @@ import {
   Menu,
   X,
   Plus,
-  Search,
   ChevronDown,
   CreditCard,
-  Bell,
-  Command as CommandIcon,
   Gift,
 } from "lucide-react";
 import logoUrl from "@/assets/logo.png";
+import { NotificationsBell } from "@/components/notifications-bell";
+import { GlobalSearch } from "@/components/global-search";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -254,27 +253,14 @@ export function AppShell({
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
 
-            <div className="hidden md:flex items-center gap-2 flex-1 max-w-md">
-              <div className="relative w-full">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="search"
-                  placeholder="Search projects, templates, assets…"
-                  className="w-full h-9 pl-8 pr-16 text-[13px] bg-surface border border-border rounded-lg focus:bg-card focus:border-primary/50 focus:outline-none transition-all"
-                />
-                <div className="hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 items-center gap-0.5 text-[10px] text-muted-foreground font-mono">
-                  <kbd className="px-1.5 py-0.5 border border-border rounded bg-card"><CommandIcon className="w-2.5 h-2.5 inline" /></kbd>
-                  <kbd className="px-1.5 py-0.5 border border-border rounded bg-card">K</kbd>
-                </div>
-              </div>
+            <div className="flex md:flex-1 items-center md:max-w-md">
+              <GlobalSearch />
             </div>
 
-            <div className="flex-1 md:hidden" />
+            <div className="flex-1" />
 
             <div className="flex items-center gap-2">
-              <button className="p-2 rounded-lg hover:bg-surface relative text-muted-foreground hover:text-foreground transition-colors" aria-label="Notifications">
-                <Bell className="w-4 h-4" />
-              </button>
+              <NotificationsBell />
               <Button
                 size="sm"
                 onClick={() => navigate({ to: "/projects/new" })}
