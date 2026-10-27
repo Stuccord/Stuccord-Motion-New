@@ -27,6 +27,7 @@ export type Database = {
           size_bytes: number | null
           start_ms: number | null
           storage_path: string
+          thumbnail_path: string | null
           transform: Json | null
           trim_in_ms: number
           trim_out_ms: number | null
@@ -44,6 +45,7 @@ export type Database = {
           size_bytes?: number | null
           start_ms?: number | null
           storage_path: string
+          thumbnail_path?: string | null
           transform?: Json | null
           trim_in_ms?: number
           trim_out_ms?: number | null
@@ -61,6 +63,7 @@ export type Database = {
           size_bytes?: number | null
           start_ms?: number | null
           storage_path?: string
+          thumbnail_path?: string | null
           transform?: Json | null
           trim_in_ms?: number
           trim_out_ms?: number | null

@@ -1,11 +1,27 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Upload, Search, Film, Trash2, Loader2, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import {
+  Upload,
+  Search,
+  Film,
+  Trash2,
+  Loader2,
+  ExternalLink,
+  Music2,
+  Image as ImageIcon,
+} from "lucide-react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listAllClips, removeClip, getClipSignedUrl } from "@/lib/projects.functions";
+import {
+  listAllClips,
+  removeClip,
+  getClipSignedUrl,
+  setClipThumbnail,
+} from "@/lib/projects.functions";
+import { useThumbnailMaker } from "@/lib/clip-thumbnails";
+import { isImageFilename } from "@/lib/media-kind";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
@@ -33,6 +49,25 @@ function AssetsPage() {
     queryKey: ["all-clips"],
     queryFn: () => fetchClips(),
   });
+
+  // Videos and images without a thumbnail get one in the background (audio
+  // has no picture); the list refreshes as they come in.
+  const recordThumbFn = useServerFn(setClipThumbnail);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useThumbnailMaker(
+    (clips ?? []).filter(
+      (c) => c.has_thumbnail === false && c.role !== "music" && c.role !== "sfx",
+    ),
+    signFn,
+    recordThumbFn,
+    () => {
+      if (refreshTimer.current) return;
+      refreshTimer.current = setTimeout(() => {
+        refreshTimer.current = null;
+        void qc.invalidateQueries({ queryKey: ["all-clips"] });
+      }, 1500);
+    },
+  );
 
   const del = useMutation({
     mutationFn: (id: string) => removeFn({ data: { id } }),
@@ -117,8 +152,16 @@ function AssetsPage() {
         <ul className="rounded-2xl bg-white border border-black/5 divide-y divide-black/5 overflow-hidden">
           {filtered.map((c) => (
             <li key={c.id} className="flex items-center gap-3 p-3 hover:bg-neutral-50">
-              <div className="w-10 h-10 grid place-items-center rounded-lg bg-neutral-100 shrink-0">
-                <Film className="w-4 h-4 text-neutral-500" />
+              <div className="w-10 h-10 grid place-items-center rounded-lg bg-neutral-100 shrink-0 overflow-hidden">
+                {c.thumbnail_url ? (
+                  <img src={c.thumbnail_url} alt="" loading="lazy" className="w-full h-full object-cover" />
+                ) : c.role === "music" || c.role === "sfx" ? (
+                  <Music2 className="w-4 h-4 text-neutral-500" />
+                ) : isImageFilename(c.filename) ? (
+                  <ImageIcon className="w-4 h-4 text-neutral-500" />
+                ) : (
+                  <Film className="w-4 h-4 text-neutral-500" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{c.filename}</div>

@@ -1,8 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo } from "react";
-import { listProjects } from "@/lib/projects.functions";
+import { useMemo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { listProjects, getClipSignedUrl, setClipThumbnail } from "@/lib/projects.functions";
+import { useThumbnailMaker } from "@/lib/clip-thumbnails";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,20 +53,31 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function ProjectThumb({ ratio, title }: { ratio: string; title: string }) {
+/** A frame from the project's first clip; a coloured card until there is one. */
+function ProjectThumb({ ratio, title, src }: { ratio: string; title: string; src?: string | null }) {
   const seed = title.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const hue1 = (seed * 37) % 360;
   const hue2 = (hue1 + 60) % 360;
   const box = ratio === "9:16" ? "aspect-[9/16]" : ratio === "1:1" ? "aspect-square" : "aspect-video";
   return (
     <div
-      className={cn("relative w-full overflow-hidden rounded-lg", box)}
-      style={{ background: `linear-gradient(135deg, hsl(${hue1} 65% 58%), hsl(${hue2} 60% 44%))` }}
+      className={cn("relative w-full overflow-hidden rounded-lg bg-neutral-900", box)}
+      style={
+        src
+          ? undefined
+          : { background: `linear-gradient(135deg, hsl(${hue1} 65% 58%), hsl(${hue2} 60% 44%))` }
+      }
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.30),transparent_55%)]" />
-      <div className="absolute inset-0 grid place-items-center">
-        <Film className="w-5 h-5 text-white/70" />
-      </div>
+      {src ? (
+        <img src={src} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.30),transparent_55%)]" />
+          <div className="absolute inset-0 grid place-items-center">
+            <Film className="w-5 h-5 text-white/70" />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -75,6 +88,24 @@ function Home() {
   const { data, isLoading } = useQuery({ queryKey: ["projects"], queryFn: () => fetchProjects() });
 
   const recent = useMemo(() => (data ?? []).slice(0, 4), [data]);
+
+  // Recent projects without a thumbnail get one in the background.
+  const queryClient = useQueryClient();
+  const signFn = useServerFn(getClipSignedUrl);
+  const recordThumbFn = useServerFn(setClipThumbnail);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useThumbnailMaker(
+    recent.flatMap((p) => (p.thumbnail_source ? [p.thumbnail_source] : [])),
+    signFn,
+    recordThumbFn,
+    () => {
+      if (refreshTimer.current) return;
+      refreshTimer.current = setTimeout(() => {
+        refreshTimer.current = null;
+        void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      }, 1500);
+    },
+  );
 
   return (
     <AppShell>
@@ -313,7 +344,7 @@ function Home() {
                 >
                   <Card className="p-3 hover:border-primary/20 hover:shadow-md transition-all duration-150 cursor-pointer">
                     <CardContent className="p-0">
-                      <ProjectThumb ratio={p.aspect_ratio} title={p.title} />
+                      <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
                       <div className="mt-3">
                         <div className="text-sm font-medium truncate text-foreground">{p.title}</div>
                         <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">

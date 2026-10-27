@@ -13,6 +13,7 @@ import {
   attachClip,
   updateClipTrim,
   updateClipTransform,
+  setClipThumbnail,
   updateClipDuration,
   splitClip,
   duplicateClip,
@@ -37,6 +38,13 @@ import { usePreviewAudio } from "@/components/editor/usePreviewAudio";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
 import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
 import { parseTransform, type ClipTransform } from "@/lib/clip-transform";
+import {
+  claimThumbnail,
+  makeThumbnail,
+  saveThumbnail,
+  thumbnailTimeMs,
+  useThumbnailMaker,
+} from "@/lib/clip-thumbnails";
 import {
   FinalUploadError,
   UploadCancelled,
@@ -236,6 +244,7 @@ function EditorPage() {
   const attachFn = useServerFn(attachClip);
   const trimFn = useServerFn(updateClipTrim);
   const transformFn = useServerFn(updateClipTransform);
+  const recordThumbFn = useServerFn(setClipThumbnail);
   const durationFn = useServerFn(updateClipDuration);
   const splitFn = useServerFn(splitClip);
   const duplicateFn = useServerFn(duplicateClip);
@@ -632,6 +641,17 @@ function EditorPage() {
     })();
   }, [data, signClip]);
 
+  // Clips without a thumbnail yet (uploaded before thumbnails, or a split
+  // half or copy) get one in the background. Audio has no picture;
+  // thumbnail_path is missing (undefined) until its migration has run.
+  useThumbnailMaker(
+    (data?.clips ?? []).filter(
+      (c) => c.thumbnail_path === null && c.role !== "music" && c.role !== "sfx",
+    ),
+    signClip,
+    recordThumbFn,
+  );
+
   // Filmstrips and waveforms for the timeline's video clips, by file: made
   // once per file (once its length is known), one file at a time, after the
   // thumbnails above. null: the file has no sound to show.
@@ -959,6 +979,16 @@ function EditorPage() {
             trim_out_ms: image ? IMAGE_DEFAULT_MS : undefined,
           },
         });
+        // Its thumbnail (for the Projects and Assets pages), straight from
+        // the file on this computer; in the background, and it's fine if it fails.
+        if (image || f.type.startsWith("video/")) {
+          claimThumbnail(row.id);
+          const local = URL.createObjectURL(f);
+          void makeThumbnail(local, f.name, thumbnailTimeMs({ ...row, filename: f.name }))
+            .then((jpeg) => (jpeg ? saveThumbnail(row.id, jpeg, recordThumbFn) : undefined))
+            .catch((e) => console.warn("[thumbnails] Couldn't save a thumbnail:", f.name, e))
+            .finally(() => URL.revokeObjectURL(local));
+        }
         return row as ClipRow;
       } catch (e) {
         if (!(e instanceof UploadCancelled)) {

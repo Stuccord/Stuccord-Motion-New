@@ -45,6 +45,8 @@ async function insertClipAfter(
     ordinal: src.ordinal + 1,
     // Follows the clip it was split from or copied (no start of its own).
     ...("start_ms" in src ? { start_ms: null } : {}),
+    // Its own thumbnail (from its own first frame) is made when next shown.
+    ...("thumbnail_path" in src ? { thumbnail_path: null } : {}),
     parent_clip_id: src.parent_clip_id ?? src.id,
     created_at: new Date().toISOString(),
   };
@@ -149,6 +151,60 @@ export const createProject = createServerFn({ method: "POST" })
     return row;
   });
 
+/** Short-lived links to thumbnail pictures, by storage path (one request for all). */
+async function signThumbnails(
+  supabase: SupabaseClient<Database>,
+  paths: string[],
+): Promise<Map<string, string>> {
+  const unique = [...new Set(paths)];
+  const out = new Map<string, string>();
+  if (unique.length === 0) return out;
+  const { data, error } = await supabase.storage
+    .from("raw-clips")
+    .createSignedUrls(unique, 60 * 60);
+  if (error) {
+    console.error("[thumbnails] Could not sign links:", error.message);
+    return out;
+  }
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl && !row.error) out.set(row.path, row.signedUrl);
+  }
+  return out;
+}
+
+/**
+ * Where each clip's thumbnail is saved, by clip id. Read on its own and
+ * allowed to fail (e.g. before the clip_thumbnails migration has run): then
+ * there are simply no thumbnails yet.
+ */
+async function thumbnailPaths(
+  supabase: SupabaseClient<Database>,
+  clipIds: string[],
+): Promise<Map<string, string> | null> {
+  const out = new Map<string, string>();
+  if (clipIds.length === 0) return out;
+  const { data, error } = await supabase
+    .from("clips")
+    .select("id, thumbnail_path")
+    .in("id", clipIds);
+  if (error) {
+    console.error("[thumbnails] Could not read thumbnail paths:", error.message);
+    return null;
+  }
+  for (const row of data ?? []) if (row.thumbnail_path) out.set(row.id, row.thumbnail_path);
+  return out;
+}
+
+/** A clip a thumbnail can be made from (when it has none yet). */
+export type ThumbSource = {
+  id: string;
+  storage_path: string;
+  filename: string;
+  trim_in_ms: number | null;
+  trim_out_ms: number | null;
+  duration_ms: number | null;
+};
+
 export const listProjects = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -157,7 +213,50 @@ export const listProjects = createServerFn({ method: "GET" })
       .select("*")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return data ?? [];
+    const projects = data ?? [];
+    if (projects.length === 0) return [];
+
+    // Each project's picture: its first main-track clip (V1, or V2 when V1
+    // is empty), shown as its saved thumbnail.
+    const { data: clipRows, error: cErr } = await context.supabase
+      .from("clips")
+      .select("id, project_id, role, ordinal, storage_path, filename, trim_in_ms, trim_out_ms, duration_ms")
+      .in(
+        "project_id",
+        projects.map((p) => p.id),
+      )
+      .order("ordinal", { ascending: true });
+    if (cErr) throw new Error(cErr.message);
+    const firstClip = new Map<string, NonNullable<typeof clipRows>[number]>();
+    for (const c of clipRows ?? []) {
+      if (c.role === "music" || c.role === "sfx") continue;
+      const current = firstClip.get(c.project_id);
+      const isMain = c.role !== "broll";
+      if (!current || (isMain && current.role === "broll")) firstClip.set(c.project_id, c);
+    }
+    const saved = await thumbnailPaths(
+      context.supabase,
+      [...firstClip.values()].map((c) => c.id),
+    );
+    const urls = await signThumbnails(context.supabase, [...(saved?.values() ?? [])]);
+    return projects.map((p) => {
+      const c = firstClip.get(p.id);
+      const path = c ? saved?.get(c.id) : undefined;
+      const thumb = path ? (urls.get(path) ?? null) : null;
+      // Only offer to make one when thumbnails can be saved (saved != null).
+      const source: ThumbSource | null =
+        c && saved && !path
+          ? {
+              id: c.id,
+              storage_path: c.storage_path,
+              filename: c.filename,
+              trim_in_ms: c.trim_in_ms,
+              trim_out_ms: c.trim_out_ms,
+              duration_ms: c.duration_ms,
+            }
+          : null;
+      return { ...p, thumbnail_signed_url: thumb, thumbnail_source: source };
+    });
   });
 
 export const getUsageStats = createServerFn({ method: "GET" })
@@ -238,13 +337,24 @@ export const listAllClips = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("clips")
-      .select("id, filename, size_bytes, role, created_at, storage_path, project_id, projects!inner(title, aspect_ratio)")
+      .select("id, filename, size_bytes, role, created_at, storage_path, project_id, trim_in_ms, trim_out_ms, duration_ms, projects!inner(title, aspect_ratio)")
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
+    const saved = await thumbnailPaths(
+      context.supabase,
+      (data ?? []).map((c) => c.id),
+    );
+    const urls = await signThumbnails(context.supabase, [...(saved?.values() ?? [])]);
     return (data ?? []).map((c) => ({
       id: c.id,
       filename: c.filename,
+      trim_in_ms: c.trim_in_ms,
+      trim_out_ms: c.trim_out_ms,
+      duration_ms: c.duration_ms,
+      // false: none yet, so the page makes one; null: thumbnails can't be saved yet.
+      has_thumbnail: saved ? saved.has(c.id) : null,
+      thumbnail_url: saved?.has(c.id) ? (urls.get(saved.get(c.id)!) ?? null) : null,
       size_bytes: c.size_bytes,
       role: c.role,
       created_at: c.created_at,
@@ -253,6 +363,24 @@ export const listAllClips = createServerFn({ method: "GET" })
       project_title: (c.projects as unknown as { title: string })?.title ?? "Untitled",
       aspect_ratio: (c.projects as unknown as { aspect_ratio: string })?.aspect_ratio ?? "9:16",
     }));
+  });
+
+/** Records where a clip's thumbnail was saved (only inside the user's own thumbs folder). */
+export const setClipThumbnail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ id: z.string().uuid(), path: z.string().min(1).max(300) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    if (data.path !== `${context.userId}/thumbs/${data.id}.jpg`) {
+      throw new Error("Thumbnails are saved in your own folder");
+    }
+    const { error } = await context.supabase
+      .from("clips")
+      .update({ thumbnail_path: data.path })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const getProject = createServerFn({ method: "POST" })
@@ -286,8 +414,24 @@ export const deleteProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    // Its clips' thumbnail pictures go with it.
+    const { data: projectClips } = await context.supabase
+      .from("clips")
+      .select("id")
+      .eq("project_id", data.id);
+    const thumbs = [
+      ...((await thumbnailPaths(
+        context.supabase,
+        (projectClips ?? []).map((c) => c.id),
+      )) ?? new Map<string, string>()).values(),
+    ].map((thumbnail_path) => ({ thumbnail_path }));
     const { error } = await context.supabase.from("projects").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
+    const paths = (thumbs ?? []).flatMap((t) => (t.thumbnail_path ? [t.thumbnail_path] : []));
+    if (paths.length) {
+      const { error: rmErr } = await context.supabase.storage.from("raw-clips").remove(paths);
+      if (rmErr) console.error("[deleteProject] Failed to delete thumbnails:", rmErr.message);
+    }
     return { ok: true };
   });
 
@@ -343,9 +487,18 @@ export const removeClip = createServerFn({ method: "POST" })
       .maybeSingle();
     if (cErr) throw new Error(cErr.message);
     if (!clip) return { ok: true };
+    const thumbnailPath = (await thumbnailPaths(context.supabase, [data.id]))?.get(data.id);
 
     const { error } = await context.supabase.from("clips").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
+
+    // Its thumbnail picture is its own (one per clip).
+    if (thumbnailPath) {
+      const { error: thErr } = await context.supabase.storage
+        .from("raw-clips")
+        .remove([thumbnailPath]);
+      if (thErr) console.error("[removeClip] Failed to delete thumbnail:", thErr.message);
+    }
 
     // Split halves and duplicates share the uploaded file. Only delete it once
     // no clip references that storage path any more. parent_clip_id can't be

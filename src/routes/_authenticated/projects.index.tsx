@@ -1,8 +1,14 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
-import { listProjects, deleteProject } from "@/lib/projects.functions";
+import { useMemo, useRef, useState } from "react";
+import {
+  listProjects,
+  deleteProject,
+  getClipSignedUrl,
+  setClipThumbnail,
+} from "@/lib/projects.functions";
+import { useThumbnailMaker } from "@/lib/clip-thumbnails";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,16 +61,23 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function ProjectThumb({ ratio, title }: { ratio: string; title: string }) {
+/** A frame from the project's first clip; a coloured card until there is one. */
+function ProjectThumb({ ratio, title, src }: { ratio: string; title: string; src?: string | null }) {
   const seed = title.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const hue1 = (seed * 37) % 360;
   const hue2 = (hue1 + 60) % 360;
   const box = ratio === "9:16" ? "aspect-[9/16]" : ratio === "1:1" ? "aspect-square" : "aspect-video";
   return (
-    <div className={cn("relative w-full overflow-hidden rounded-lg", box)}
-      style={{ background: `linear-gradient(135deg, hsl(${hue1} 70% 55%), hsl(${hue2} 65% 40%))` }}>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.35),transparent_55%)]" />
-      <div className="absolute inset-0 grid place-items-center"><Film className="w-6 h-6 text-white/80" /></div>
+    <div className={cn("relative w-full overflow-hidden rounded-lg bg-neutral-900", box)}
+      style={src ? undefined : { background: `linear-gradient(135deg, hsl(${hue1} 70% 55%), hsl(${hue2} 65% 40%))` }}>
+      {src ? (
+        <img src={src} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.35),transparent_55%)]" />
+          <div className="absolute inset-0 grid place-items-center"><Film className="w-6 h-6 text-white/80" /></div>
+        </>
+      )}
       <div className="absolute bottom-1.5 right-1.5 rounded bg-black/40 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
         {ratio}
       </div>
@@ -79,6 +92,24 @@ function ProjectsPage() {
   const fetchProjects = useServerFn(listProjects);
   const removeProject = useServerFn(deleteProject);
   const { data, isLoading } = useQuery({ queryKey: ["projects"], queryFn: () => fetchProjects() });
+
+  // Projects without a thumbnail get one in the background; the list
+  // refreshes (at most every couple of seconds) as they come in.
+  const signFn = useServerFn(getClipSignedUrl);
+  const recordThumbFn = useServerFn(setClipThumbnail);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useThumbnailMaker(
+    (data ?? []).flatMap((p) => (p.thumbnail_source ? [p.thumbnail_source] : [])),
+    signFn,
+    recordThumbFn,
+    () => {
+      if (refreshTimer.current) return;
+      refreshTimer.current = setTimeout(() => {
+        refreshTimer.current = null;
+        void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      }, 1500);
+    },
+  );
 
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | StatusKey>("all");
@@ -196,7 +227,7 @@ function ProjectsPage() {
           {filtered.map((p) => (
             <div key={p.id} className="group relative bg-white border border-black/5 rounded-2xl p-4 hover:border-black/20 hover:shadow-[0_4px_20px_-8px_rgba(0,0,0,0.1)] transition-all">
               <Link to="/projects/$projectId" params={{ projectId: p.id }} className="absolute inset-0 rounded-2xl" aria-label={p.title} />
-              <ProjectThumb ratio={p.aspect_ratio} title={p.title} />
+              <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
               <div className="mt-4 flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-sm truncate">{p.title}</div>
@@ -241,7 +272,7 @@ function ProjectsPage() {
               <li key={p.id} className="group relative grid grid-cols-[1fr_auto] md:grid-cols-[1fr_120px_120px_140px_40px] gap-3 md:gap-4 items-center px-4 py-3 hover:bg-neutral-50 transition-colors">
                 <Link to="/projects/$projectId" params={{ projectId: p.id }} className="absolute inset-0" aria-label={p.title} />
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-md overflow-hidden shrink-0"><ProjectThumb ratio="1:1" title={p.title} /></div>
+                  <div className="w-10 h-10 rounded-md overflow-hidden shrink-0"><ProjectThumb ratio="1:1" title={p.title} src={p.thumbnail_signed_url} /></div>
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{p.title}</div>
                     <div className="text-[11px] text-neutral-500 truncate">{p.style_preset}</div>
