@@ -32,6 +32,7 @@ import {
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
 import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
+import { usePreviewAudio } from "@/components/editor/usePreviewAudio";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
 import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
 
@@ -1193,6 +1194,31 @@ function EditorPage() {
     selectedClipId,
   ]);
 
+  // Music and SFX for the live preview, mixed like the export and driven by
+  // the timeline player's clock.
+  const mainForHooks = hasMainTrackClips
+    ? videoClipsForHooks.filter((c) => c.role !== "broll")
+    : videoClipsForHooks;
+  const programEndForHooks = layoutTrack(mainForHooks, clipVisibleMs).endMs;
+  const previewAudioTick = usePreviewAudio({
+    audioClips: ((data?.clips ?? []) as ClipRow[]).filter(
+      (c) => c.role === "music" || c.role === "sfx",
+    ),
+    urls: clipUrls,
+    lengthMs: clipVisibleMs,
+    endMs: programEndForHooks,
+    cutsMs: mainForHooks.slice(1).map((c) => programOffsets.get(c.id) ?? 0),
+    enabled: musicEnabled,
+    volume: musicVolume,
+    muted,
+    // The voice: a main-track video (not an image) under the playhead.
+    voiceAt: (t) =>
+      mainForHooks.some((c) => {
+        const start = programOffsets.get(c.id) ?? 0;
+        return t >= start && t < start + clipVisibleMs(c) && !isImageFilename(c.filename);
+      }),
+  });
+
   if (isLoading || !data) {
     return (
       <div className="min-h-screen bg-neutral-950 grid place-items-center text-neutral-400">
@@ -1667,6 +1693,7 @@ function EditorPage() {
               bRoll,
               urls: clipUrls,
               lengthMs: clipVisibleMs,
+              onTick: previewAudioTick,
               // Captions (when on) and the last render's AI hook, like the export.
               renderOverlay: (timeMs) => (
                 <PreviewOverlay
