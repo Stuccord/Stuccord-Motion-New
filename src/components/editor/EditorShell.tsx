@@ -1,6 +1,14 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Film, SlidersHorizontal, Sparkles, PanelRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const TIMELINE_HEIGHT_KEY = "stuccord.timelineHeight";
+
+/** Keeps the timeline between 140px and 70% of the window. */
+function clampTimelineHeight(h: number) {
+  const max = typeof window === "undefined" ? 800 : window.innerHeight * 0.7;
+  return Math.round(Math.max(140, Math.min(max, h)));
+}
 
 interface EditorShellProps {
   topBar: React.ReactNode;
@@ -29,6 +37,46 @@ export function EditorShell({
   onToggleRightPanel,
   className,
 }: EditorShellProps) {
+  // Timeline height in px, or null to fit its tracks. Saved in this browser.
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const [timelineHeight, setTimelineHeight] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(TIMELINE_HEIGHT_KEY));
+      if (saved > 0) setTimelineHeight(clampTimelineHeight(saved));
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  const saveTimelineHeight = (h: number | null) => {
+    setTimelineHeight(h);
+    try {
+      if (h == null) localStorage.removeItem(TIMELINE_HEIGHT_KEY);
+      else localStorage.setItem(TIMELINE_HEIGHT_KEY, String(Math.round(h)));
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  const startTimelineResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = timelineRef.current;
+    if (!el || e.button !== 0) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = el.offsetHeight;
+    let h = startH;
+    const move = (ev: PointerEvent) => {
+      h = clampTimelineHeight(startH - (ev.clientY - startY));
+      setTimelineHeight(h);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (h !== startH) saveTimelineHeight(h);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   return (
     <div
       className={cn(
@@ -97,13 +145,28 @@ export function EditorShell({
         )}
       </div>
 
-      {/* 3. Bottom Timeline */}
+      {/* 3. Bottom Timeline: as tall as its tracks, or the height the user
+          dragged it to (remembered). The preview gets the rest. */}
       <div
+        ref={timelineRef}
         className={cn(
-          "h-64 sm:h-72 md:h-80 shrink-0 border-t border-white/[0.08] bg-[#0B0C13] flex flex-col z-20 min-h-0",
+          "relative shrink-0 border-t border-white/[0.08] bg-[#0B0C13] flex flex-col z-20 min-h-0",
+          timelineHeight == null && "max-h-[55vh]",
           mobileTab === "edit" ? "flex" : "hidden md:flex",
         )}
+        style={timelineHeight != null ? { height: timelineHeight } : undefined}
       >
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize the timeline (double-click to fit its tracks)"
+          title="Drag to resize · double-click to fit the tracks"
+          onPointerDown={startTimelineResize}
+          onDoubleClick={() => saveTimelineHeight(null)}
+          className="hidden md:block absolute -top-1.5 inset-x-0 h-3 z-30 cursor-row-resize group touch-none"
+        >
+          <div className="mx-auto mt-[5px] h-[3px] w-12 rounded-full bg-white/10 group-hover:bg-violet-400/70 transition-colors" />
+        </div>
         {bottomPanel}
       </div>
 

@@ -1475,6 +1475,10 @@ function EditorPage() {
               trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
             }}
             captions={captionsEnabled}
+            onCaptionsToggle={() =>
+              saveExportSwitches.mutate({ captions_enabled: !captionsEnabled })
+            }
+            onMusicToggle={() => saveExportSwitches.mutate({ music_enabled: !musicEnabled })}
             captionPhrases={captionPhrases}
             audioClips={audioClips}
             thumbnails={thumbnails}

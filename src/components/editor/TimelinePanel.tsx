@@ -11,6 +11,14 @@ import {
   Minus,
   Maximize2,
   Film,
+  Layers,
+  Type,
+  Mic,
+  Music2,
+  Eye,
+  EyeOff,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -120,10 +128,22 @@ function Divider() {
 // Video tracks hold clips; slim tracks (voice, captions, music) hold labels.
 const TRACK_HEIGHT = { clip: 56, slim: 34 } as const;
 
+/** An on/off button in a track's header (e.g. captions or music in the export). */
+type TrackToggle = {
+  on: boolean;
+  onToggle: () => void;
+  /** What the button turns on or off, e.g. "captions". */
+  what: string;
+  kind: "eye" | "sound";
+};
+
 function TrackRow({
   label,
   name,
   note,
+  icon: Icon,
+  toneClass,
+  toggle,
   size = "clip",
   innerWidth,
   contentHandlers,
@@ -134,6 +154,10 @@ function TrackRow({
   name: string;
   /** A short line under the track name, e.g. what the track is for. */
   note?: string;
+  icon: React.ElementType;
+  /** Text colour of the track's icon and label, matching its clips. */
+  toneClass: string;
+  toggle?: TrackToggle;
   size?: keyof typeof TRACK_HEIGHT;
   innerWidth: number;
   /** Pointer handlers for the track's content area (click/drag to seek). */
@@ -150,17 +174,59 @@ function TrackRow({
     >
       <div
         data-track-header
-        className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] px-2.5 flex flex-col justify-center sticky left-0 z-[25]"
+        className="w-[88px] sm:w-[100px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] pl-2 pr-1 flex flex-col justify-center sticky left-0 z-[25]"
       >
-        <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="text-[11px] font-mono font-bold text-violet-400">{label}</span>
-          <span className="text-[9px] text-neutral-500 uppercase tracking-wider truncate">
+        <div className="flex items-center gap-1 min-w-0">
+          <Icon className={cn("w-3 h-3 shrink-0", toneClass)} aria-hidden />
+          <span className={cn("text-[10px] font-mono font-bold", toneClass)}>{label}</span>
+          <span className="text-[8.5px] text-neutral-500 uppercase tracking-wider truncate">
             {name}
           </span>
         </div>
-        {note && <span className="text-[8.5px] text-neutral-600 truncate">{note}</span>}
+        {/* Second line: what the track is for (or that it's off), and its button */}
+        {(note || toggle) && (
+          <div className="flex items-center gap-1 min-w-0 h-4">
+            {toggle && !toggle.on ? (
+              <span className="text-[8.5px] text-rose-400/80 truncate">Off in export</span>
+            ) : (
+              note && <span className="text-[8.5px] text-neutral-600 truncate">{note}</span>
+            )}
+            {toggle && (
+              <button
+                type="button"
+                onClick={toggle.onToggle}
+                aria-pressed={toggle.on}
+                aria-label={`${toggle.on ? "Turn off" : "Turn on"} ${toggle.what} in the export`}
+                title={`${toggle.on ? "Turn off" : "Turn on"} ${toggle.what} in the export`}
+                className={cn(
+                  "ml-auto shrink-0 w-4 h-4 rounded flex items-center justify-center transition",
+                  toggle.on
+                    ? "text-neutral-400 hover:text-white hover:bg-white/[0.06]"
+                    : "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20",
+                )}
+              >
+                {toggle.kind === "eye" ? (
+                  toggle.on ? (
+                    <Eye className="w-3 h-3" />
+                  ) : (
+                    <EyeOff className="w-3 h-3" />
+                  )
+                ) : toggle.on ? (
+                  <Volume2 className="w-3 h-3" />
+                ) : (
+                  <VolumeX className="w-3 h-3" />
+                )}
+              </button>
+            )}
+          </div>
+        )}
       </div>
-      <div ref={contentRef} className="relative" style={{ width: innerWidth }} {...contentHandlers}>
+      <div
+        ref={contentRef}
+        className={cn("relative", toggle && !toggle.on && "opacity-35")}
+        style={{ width: innerWidth }}
+        {...contentHandlers}
+      >
         {children}
       </div>
     </div>
@@ -449,6 +515,10 @@ type TimelineTracksProps = {
   onTrim: (id: string, trimInMs: number, trimOutMs: number | null) => void;
   captions: boolean;
   music: boolean;
+  /** Turns captions in the export on or off (the V3 header button). */
+  onCaptionsToggle?: () => void;
+  /** Turns music and SFX in the export on or off (the A2 header button). */
+  onMusicToggle?: () => void;
   pxPerSec: number;
   snapEnabled: boolean;
   currentTimeMs: number;
@@ -478,6 +548,8 @@ function TimelineTracks({
   onTrim,
   captions,
   music,
+  onCaptionsToggle,
+  onMusicToggle,
   pxPerSec,
   snapEnabled,
   currentTimeMs,
@@ -694,7 +766,7 @@ function TimelineTracks({
     lastFollowedMs.current = currentTimeMs;
     const el = scrollRef.current;
     if (!el) return;
-    const gutter = el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 96;
+    const gutter = el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 88;
     const visibleWidth = el.clientWidth - gutter;
     if (visibleWidth <= 0) return;
     const margin = 24;
@@ -707,7 +779,7 @@ function TimelineTracks({
   // on screen: where the pointer was for Ctrl/⌘ + scroll, the start for Fit,
   // otherwise the playhead if it's in view, else the middle of the view.
   const gutterWidth = (el: HTMLElement) =>
-    el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 96;
+    el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 88;
   const zoomAnchor = useRef<{ ms: number; viewX: number } | null>(null);
   const prevPxPerSec = useRef(pxPerSec);
   const pxPerSecRef = useRef(pxPerSec);
@@ -900,7 +972,7 @@ function TimelineTracks({
     const autoScroll = () => {
       if (!scroller) return;
       const r = scroller.getBoundingClientRect();
-      const gutter = scroller.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 96;
+      const gutter = scroller.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 88;
       if (last.x < r.left + gutter + 40) scroller.scrollLeft -= 16;
       else if (last.x > r.right - 40) scroller.scrollLeft += 16;
     };
@@ -986,7 +1058,7 @@ function TimelineTracks({
     >
       {/* Ruler */}
       <div className="h-6 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
-        <div className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
+        <div className="w-[88px] sm:w-[100px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
           Time
         </div>
         <div
@@ -1023,7 +1095,7 @@ function TimelineTracks({
           aria-hidden
           data-video-end
           className="pointer-events-none absolute top-0 bottom-0 z-[32] border-l border-dashed border-white/30"
-          style={{ left: `calc(var(--tl-gutter, 96px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
+          style={{ left: `calc(var(--tl-gutter, 88px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
         >
           <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45 whitespace-nowrap">
             End {formatPlaybackTime(programEndMs / 1000)}
@@ -1039,21 +1111,24 @@ function TimelineTracks({
           "pointer-events-none absolute top-0 bottom-0 z-40 transition-[left] duration-75",
           playheadPx < scrollLeft - 1 && "hidden",
         )}
-        style={{ left: `calc(var(--tl-gutter, 96px) + ${playheadPx}px)` }}
+        style={{ left: `calc(var(--tl-gutter, 88px) + ${playheadPx}px)` }}
       >
         <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rotate-45 bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.7)]" />
         <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-violet-400/90 shadow-[0_0_6px_rgba(139,92,246,0.55)]" />
       </div>
 
       <style>{`
-        .tl-root { --tl-gutter: 96px; }
-        @media (min-width: 640px) { .tl-root { --tl-gutter: 112px; } }
+        .tl-root { --tl-gutter: 88px; }
+        @media (min-width: 640px) { .tl-root { --tl-gutter: 100px; } }
       `}</style>
       <div>
         {/* V1 A-Roll */}
         <TrackRow
           label="V1"
           name="A-Roll"
+          icon={Film}
+          toneClass="text-violet-400"
+          size={aRoll.length === 0 ? "slim" : "clip"}
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
           contentRef={(el) => {
@@ -1096,6 +1171,9 @@ function TimelineTracks({
         <TrackRow
           label="V2"
           name="B-Roll"
+          icon={Layers}
+          toneClass="text-teal-400"
+          size={bRoll.length === 0 ? "slim" : "clip"}
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
           contentRef={(el) => {
@@ -1136,36 +1214,47 @@ function TimelineTracks({
         </TrackRow>
 
         {/* V3 Captions: the phrases the export burns in */}
-        {captions && (
-          <TrackRow
-            label="V3"
-            name="Captions"
-            size="slim"
-            innerWidth={trackWidthPx}
-            contentHandlers={scrubHandlers}
-          >
-            {captionPhrases.length === 0 ? (
-              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
-                Captions appear here after a cloud render transcribes your clips
-              </div>
-            ) : (
-              captionPhrases.map((p) => (
-                <TrackLabel
-                  key={p.key}
-                  leftPx={(p.startMs / 1000) * pxPerSec}
-                  widthPx={((p.endMs - p.startMs) / 1000) * pxPerSec}
-                  text={p.text}
-                  className="bg-violet-400/15 border-violet-400/30 text-violet-200 font-medium"
-                />
-              ))
-            )}
-          </TrackRow>
-        )}
+        <TrackRow
+          label="V3"
+          name="Captions"
+          note="Burned in"
+          icon={Type}
+          toneClass="text-violet-300"
+          toggle={
+            onCaptionsToggle && {
+              on: captions,
+              onToggle: onCaptionsToggle,
+              what: "captions",
+              kind: "eye",
+            }
+          }
+          size="slim"
+          innerWidth={trackWidthPx}
+          contentHandlers={scrubHandlers}
+        >
+          {captionPhrases.length === 0 ? (
+            <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+              Captions appear here after a cloud render transcribes your clips
+            </div>
+          ) : (
+            captionPhrases.map((p) => (
+              <TrackLabel
+                key={p.key}
+                leftPx={(p.startMs / 1000) * pxPerSec}
+                widthPx={((p.endMs - p.startMs) / 1000) * pxPerSec}
+                text={p.text}
+                className="bg-violet-400/15 border-violet-400/30 text-violet-200 font-medium"
+              />
+            ))
+          )}
+        </TrackRow>
 
         {/* A1 Voice: the main track's own sound, which is what the export uses */}
         <TrackRow
           label="A1"
           name="Voice"
+          icon={Mic}
+          toneClass="text-emerald-400"
           note="From the A-roll"
           size="slim"
           innerWidth={trackWidthPx}
@@ -1186,45 +1275,53 @@ function TimelineTracks({
         {/* A2 Music: what the cloud export mixes in. Music plays from 0:00 and
             loops to the end of the video (ducked under the voice); an SFX
             plays at each cut between main clips, taking turns. */}
-        {music && (
-          <TrackRow
-            label="A2"
-            name="Music"
-            note="Ducked under voice"
-            size="slim"
-            innerWidth={trackWidthPx}
-            contentHandlers={scrubHandlers}
-          >
-            {audioClips.length === 0 ? (
-              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
-                No music or SFX uploaded
-              </div>
-            ) : (
-              <>
-                {musicBars.map((b) => (
-                  <TrackLabel
-                    key={b.key}
-                    leftPx={(b.startMs / 1000) * pxPerSec}
-                    widthPx={(b.lengthMs / 1000) * pxPerSec}
-                    text={`♪ ${baseName(b.clip.filename)}${b.loop ? " (loop)" : ""}`}
-                    title={`${b.clip.filename}: loops under the video, quieter while you speak`}
-                    className="bg-amber-500/10 border-amber-400/30 text-amber-200/80"
-                  />
-                ))}
-                {sfxMarks.map((m) => (
-                  <TrackLabel
-                    key={m.key}
-                    leftPx={(m.startMs / 1000) * pxPerSec}
-                    widthPx={(m.lengthMs / 1000) * pxPerSec}
-                    text="SFX"
-                    title={`${m.clip.filename} on the cut at ${formatPlaybackTime(m.cutMs / 1000)}`}
-                    className="bg-pink-500/20 border-pink-400/40 text-pink-100 z-[1]"
-                  />
-                ))}
-              </>
-            )}
-          </TrackRow>
-        )}
+        <TrackRow
+          label="A2"
+          name="Music"
+          icon={Music2}
+          toneClass="text-amber-400"
+          toggle={
+            onMusicToggle && {
+              on: music,
+              onToggle: onMusicToggle,
+              what: "music and SFX",
+              kind: "sound",
+            }
+          }
+          note="Ducked under voice"
+          size="slim"
+          innerWidth={trackWidthPx}
+          contentHandlers={scrubHandlers}
+        >
+          {audioClips.length === 0 ? (
+            <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+              No music or SFX uploaded
+            </div>
+          ) : (
+            <>
+              {musicBars.map((b) => (
+                <TrackLabel
+                  key={b.key}
+                  leftPx={(b.startMs / 1000) * pxPerSec}
+                  widthPx={(b.lengthMs / 1000) * pxPerSec}
+                  text={`♪ ${baseName(b.clip.filename)}${b.loop ? " (loop)" : ""}`}
+                  title={`${b.clip.filename}: loops under the video, quieter while you speak`}
+                  className="bg-amber-500/10 border-amber-400/30 text-amber-200/80"
+                />
+              ))}
+              {sfxMarks.map((m) => (
+                <TrackLabel
+                  key={m.key}
+                  leftPx={(m.startMs / 1000) * pxPerSec}
+                  widthPx={(m.lengthMs / 1000) * pxPerSec}
+                  text="SFX"
+                  title={`${m.clip.filename} on the cut at ${formatPlaybackTime(m.cutMs / 1000)}`}
+                  className="bg-pink-500/20 border-pink-400/40 text-pink-100 z-[1]"
+                />
+              ))}
+            </>
+          )}
+        </TrackRow>
       </div>
     </div>
   );
@@ -1241,6 +1338,10 @@ export interface TimelinePanelProps {
   onTrim: (id: string, trimInMs: number, trimOutMs: number | null) => void;
   captions: boolean;
   music: boolean;
+  /** Turns captions in the export on or off (the V3 header button). */
+  onCaptionsToggle?: () => void;
+  /** Turns music and SFX in the export on or off (the A2 header button). */
+  onMusicToggle?: () => void;
   snapEnabled: boolean;
   onSnapToggle: () => void;
   pxPerSec: number;
@@ -1282,6 +1383,8 @@ export function TimelinePanel({
   onTrim,
   captions,
   music,
+  onCaptionsToggle,
+  onMusicToggle,
   snapEnabled,
   onSnapToggle,
   pxPerSec,
@@ -1400,6 +1503,8 @@ export function TimelinePanel({
         onTrim={onTrim}
         captions={captions}
         music={music}
+        onCaptionsToggle={onCaptionsToggle}
+        onMusicToggle={onMusicToggle}
         pxPerSec={pxPerSec}
         snapEnabled={snapEnabled}
         currentTimeMs={currentTimeMs}
