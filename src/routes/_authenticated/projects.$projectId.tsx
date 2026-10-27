@@ -336,9 +336,14 @@ function EditorPage() {
   const clipUrlsSignedAt = useRef(new Map<string, number>());
   // Bumped every 10 minutes so links are renewed even without other changes.
   const [renewTick, setRenewTick] = useState(0);
+  // Links that couldn't be made are tried again a few seconds later.
+  const retrySigning = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const id = setInterval(() => setRenewTick((n) => n + 1), 10 * 60 * 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      if (retrySigning.current) clearTimeout(retrySigning.current);
+    };
   }, []);
   useEffect(() => {
     if (!data) return;
@@ -348,25 +353,30 @@ function EditorPage() {
     );
     if (paths.length === 0) return;
     for (const path of paths) clipUrlsSignedAt.current.set(path, now);
-    let cancelled = false;
+    // The links are always kept, even when the project data refreshes while
+    // they're being made: the paths are already marked as signed, so dropping
+    // them here would leave the preview on "Loading…" for 50 minutes.
     void Promise.all(
       paths.map(async (path) => {
         try {
           const { url } = await signClip({ data: { path } });
           return [path, url] as const;
-        } catch {
+        } catch (e) {
+          console.warn("[editor] Couldn't get a link to a clip's file:", e);
           clipUrlsSignedAt.current.delete(path);
           return null;
         }
       }),
     ).then((pairs) => {
-      if (cancelled) return;
       const fresh = Object.fromEntries(pairs.filter((x) => x != null));
-      setClipUrls((old) => ({ ...old, ...fresh }));
+      if (Object.keys(fresh).length > 0) setClipUrls((old) => ({ ...old, ...fresh }));
+      if (pairs.some((x) => x == null) && !retrySigning.current) {
+        retrySigning.current = setTimeout(() => {
+          retrySigning.current = null;
+          setRenewTick((n) => n + 1);
+        }, 5000);
+      }
     });
-    return () => {
-      cancelled = true;
-    };
   }, [data, signClip, renewTick]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);

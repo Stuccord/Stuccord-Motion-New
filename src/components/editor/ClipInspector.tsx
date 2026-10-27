@@ -32,8 +32,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { IMAGE_DEFAULT_MS, isImageFilename } from "@/lib/media-kind";
 import type { ClipRow } from "./types";
 import { clipVisibleMs } from "./TimelinePanel";
+import { formatTimecode } from "./PlaybackControls";
 
 export interface ClipInspectorProps {
   clip: ClipRow;
@@ -53,12 +55,18 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatTimecode(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const mm = String(Math.floor(s / 60)).padStart(2, "0");
-  const ss = String(s % 60).padStart(2, "0");
-  const ms = String(Math.floor((seconds % 1) * 10));
-  return `${mm}:${ss}.${ms}`;
+/** The clip's track, named as the timeline names it. */
+function trackBadge(role: string): { label: string; className: string } {
+  if (role === "broll")
+    return { label: "V2 · B-Roll", className: "bg-teal-950/40 border-teal-500/30 text-teal-300" };
+  if (role === "music")
+    return { label: "A2 · Music", className: "bg-amber-950/40 border-amber-500/30 text-amber-300" };
+  if (role === "sfx")
+    return { label: "A2 · SFX", className: "bg-amber-950/40 border-amber-500/30 text-amber-300" };
+  return {
+    label: "V1 · A-Roll",
+    className: "bg-violet-950/40 border-violet-500/30 text-violet-300",
+  };
 }
 
 export function ClipInspector({
@@ -78,12 +86,19 @@ export function ClipInspector({
   const trimOut = clip.trim_out_ms;
   const sourceDurationMs = clip.duration_ms;
   const effectiveMs = clipVisibleMs(clip);
-  const isTrimmed = trimIn > 0 || (trimOut != null && sourceDurationMs != null && trimOut < sourceDurationMs);
-  const isARoll = clip.role === "aroll" || clip.role === "auto";
+  const badge = trackBadge(clip.role);
+  // An image has no length of its own: it's shown for as long as it's
+  // stretched, and "untrimmed" means its default length, not the 60 s limit.
+  const isImage = isImageFilename(clip.filename);
+  const isTrimmed = isImage
+    ? trimIn > 0 || (trimOut ?? IMAGE_DEFAULT_MS) !== IMAGE_DEFAULT_MS
+    : trimIn > 0 || (trimOut != null && sourceDurationMs != null && trimOut < sourceDurationMs);
+  // Where the clip stops in its file: the trim, or the file's end.
+  const outMs = trimOut ?? sourceDurationMs ?? null;
 
   const handleResetTrim = () => {
     if (onTrim) {
-      onTrim(clip.id, 0, null);
+      onTrim(clip.id, 0, isImage ? IMAGE_DEFAULT_MS : null);
     }
   };
 
@@ -131,20 +146,18 @@ export function ClipInspector({
               <Badge
                 variant="outline"
                 className={cn(
-                  "text-[9px] px-1.5 py-0 border font-mono uppercase tracking-wider",
-                  isARoll
-                    ? "bg-violet-950/40 border-violet-500/30 text-violet-300"
-                    : "bg-cyan-950/40 border-cyan-500/30 text-cyan-300",
+                  "text-[9px] px-1.5 py-0 border font-mono uppercase tracking-wider shrink-0",
+                  badge.className,
                 )}
               >
-                {isARoll ? "A-Roll (Primary)" : "B-Roll (Cutaway)"}
+                {badge.label}
               </Badge>
             </div>
 
             <Tooltip>
               <TooltipTrigger asChild>
                 <div
-                  className="font-medium text-neutral-100 truncate text-xs hover:text-white transition cursor-default"
+                  className="font-medium text-neutral-100 line-clamp-2 break-words text-xs leading-snug hover:text-white transition cursor-default"
                   title={clip.filename}
                 >
                   {clip.filename}
@@ -163,7 +176,11 @@ export function ClipInspector({
               <div className="flex items-center gap-1.5">
                 <Clock className="w-3 h-3 text-neutral-500 shrink-0" />
                 <span>
-                  {sourceDurationMs ? formatTimecode(sourceDurationMs / 1000) : "—"}
+                  {isImage
+                    ? "Image"
+                    : sourceDurationMs
+                      ? formatTimecode(sourceDurationMs / 1000)
+                      : "—"}
                 </span>
               </div>
             </div>
@@ -197,7 +214,7 @@ export function ClipInspector({
               <div className="p-1.5 rounded bg-white/[0.02]">
                 <div className="text-[9px] text-neutral-500 uppercase">Trim Out</div>
                 <div className="text-xs font-semibold text-neutral-200 mt-0.5">
-                  {trimOut != null ? formatTimecode(trimOut / 1000) : "End"}
+                  {outMs != null ? formatTimecode(outMs / 1000) : "End"}
                 </div>
               </div>
               <div className="p-1.5 rounded bg-violet-950/20 border border-violet-500/20">
@@ -208,7 +225,8 @@ export function ClipInspector({
               </div>
             </div>
             <p className="text-[10px] text-neutral-500 leading-normal px-0.5">
-              Drag clip handles in the timeline to trim in and out points with live video preview.
+              Drag the clip&apos;s edges on the timeline to trim it, or press Alt+[ / Alt+] to trim
+              to the playhead.
             </p>
           </div>
 

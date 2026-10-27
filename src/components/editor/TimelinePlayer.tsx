@@ -16,6 +16,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IMAGE_ZOOM, isImageFilename } from "@/lib/media-kind";
 import { layoutTrack } from "@/lib/timeline-layout";
@@ -228,8 +229,8 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
         const fromVideo = m!.start + (el.currentTime * 1000 - (m!.clip.trim_in_ms ?? 0));
         // Ignore a video that hasn't caught up with a seek yet.
         t = Math.abs(fromVideo - t) < 400 ? Math.max(t, fromVideo) : t + dt * rateRef.current;
-      } else if (el && el.readyState < 2 && !el.ended) {
-        // Loading: wait for it.
+      } else if (el && el.readyState < 2 && !el.ended && !el.error) {
+        // Loading: wait for it. (One that can't play doesn't hold the playhead.)
       } else {
         t += dt * rateRef.current;
       }
@@ -313,7 +314,9 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
       })}
       {mainActive && !urls[mainActive.clip.storage_path] && (
         <div className="absolute inset-0 grid place-items-center text-[11px] text-neutral-500">
-          Loading…
+          <span className="flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
+          </span>
         </div>
       )}
       {renderOverlay?.(t)}
@@ -413,6 +416,8 @@ function VideoLayer({
 }) {
   const el = useRef<HTMLVideoElement | null>(null);
   const bg = useRef<HTMLCanvasElement>(null);
+  // Shown over the frame: still loading (or buffering), or the browser can't play it.
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   // The blurred copy: the video drawn small into a canvas each frame it shows.
   useEffect(() => {
     const video = el.current;
@@ -480,7 +485,26 @@ function VideoLayer({
           mismatched ? "object-contain" : "object-cover",
         )}
         onLoadedMetadata={(e) => onSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+        onLoadStart={() => setStatus("loading")}
+        onLoadedData={() => setStatus("ready")}
+        onCanPlay={() => setStatus("ready")}
+        onPlaying={() => setStatus("ready")}
+        onWaiting={() => setStatus("loading")}
+        onError={() => setStatus("error")}
       />
+      {status !== "ready" && (
+        <div className="absolute inset-0 z-10 grid place-items-center p-4 text-center pointer-events-none">
+          {status === "loading" ? (
+            <span className="flex items-center gap-1.5 text-[11px] text-neutral-400">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading video…
+            </span>
+          ) : (
+            <span className="text-[11px] leading-snug text-neutral-400 max-w-[16rem]">
+              This clip can&apos;t play in the browser preview. The export will still include it.
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
