@@ -141,6 +141,85 @@ export function planPlacement<T extends VideoClip>(
   return { placements, startMs: firstStart };
 }
 
+// ---------- V1: magnetic, like CapCut's main track ----------
+// V1 clips always sit back to back in order (no start of their own), so
+// moving one changes the order and the others close up around it. Placing
+// any clip on V1 also closes gaps left by older projects.
+
+/**
+ * Where something dropped at `ms` goes on a magnetic track: before the first
+ * clip whose middle is past `ms` (so the nearest gap between clips).
+ */
+export function insertIndexAt<T extends Placeable>(
+  clips: T[],
+  lengthMs: (c: T) => number,
+  ms: number,
+): number {
+  // Laid out back to back (as the track will be), ignoring old gaps.
+  const { starts } = layoutTrack(
+    clips.map((c) => ({ ...c, start_ms: null })),
+    lengthMs,
+  );
+  let i = 0;
+  for (const c of clips) {
+    if ((starts.get(c.id) ?? 0) + lengthMs(c) / 2 <= ms) i++;
+    else break;
+  }
+  return i;
+}
+
+/**
+ * Puts `moving` (from either track, or new) on V1 at `index` among the other
+ * V1 clips, all back to back. V2 clips stay where they are.
+ */
+export function planMagneticInsert<T extends VideoClip>(
+  aRoll: T[],
+  bRoll: T[],
+  moving: T[],
+  index: number,
+  lengthMs: (clip: T) => number,
+): ClipPlacement[] {
+  const ids = new Set(moving.map((c) => c.id));
+  const rest = aRoll.filter((c) => !ids.has(c.id));
+  const at = Math.max(0, Math.min(rest.length, index));
+  const a = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+  // A clip leaving V2 would pull the V2 clips after it forward: give them
+  // their current times so they stay put.
+  const bChanged = bRoll.some((c) => ids.has(c.id));
+  const { starts: bStarts } = layoutTrack(bRoll, lengthMs);
+  const b = bRoll.filter((c) => !ids.has(c.id));
+  return [
+    ...a.map((c, i) => ({
+      id: c.id,
+      ordinal: i,
+      role: c.role === "broll" ? "aroll" : c.role,
+      start_ms: null,
+    })),
+    ...b.map((c, i) => ({
+      id: c.id,
+      ordinal: a.length + i,
+      role: "broll",
+      start_ms: bChanged ? (bStarts.get(c.id) ?? 0) : (c.start_ms ?? null),
+    })),
+  ];
+}
+
+/**
+ * Puts a clip on V2 at about `wantMs` (where it fits, see planPlacement); V1
+ * closes up around the gap it leaves, if it came from there.
+ */
+export function planOverlayMove<T extends VideoClip>(
+  aRoll: T[],
+  bRoll: T[],
+  moving: T,
+  wantMs: number,
+  lengthMs: (clip: T) => number,
+): ClipPlacement[] {
+  const { placements } = planPlacement(aRoll, bRoll, [moving], "broll", wantMs, lengthMs);
+  if (!aRoll.some((c) => c.id === moving.id)) return placements;
+  return placements.map((p) => (p.role === "broll" ? p : { ...p, start_ms: null }));
+}
+
 /** "Close gaps" on the A-roll: its clips back to back again, in order. */
 export function closeGapsPlacements(aRoll: VideoClip[], bRoll: VideoClip[]): ClipPlacement[] {
   return [

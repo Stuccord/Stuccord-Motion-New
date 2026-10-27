@@ -58,15 +58,31 @@ import {
   currentAudioPlacements,
   currentPlacements,
   fitStart,
+  insertIndexAt,
   layoutTrack,
   musicBars as layoutMusicBars,
   musicStarts,
   planAudioPlacement,
-  planPlacement,
+  planMagneticInsert,
+  planOverlayMove,
   resetMusicPlacements,
   sfxPlays,
   type ClipPlacement,
 } from "@/lib/timeline-layout";
+
+/**
+ * How close (ms) a dragged edge must come to something to snap to it: 6
+ * screen pixels, but never more than a second (zoomed out, a few pixels
+ * can be several seconds). Holding Alt turns snapping off.
+ */
+const snapReachMs = (pxPerSec: number) => Math.min(1000, (6 / pxPerSec) * 1000);
+
+/** V1 clips as they sit once closed up (V1 is magnetic: back to back). */
+const closedUp = (clips: ClipRow[]) =>
+  layoutTrack(
+    clips.map((c) => ({ ...c, start_ms: null })),
+    clipVisibleMs,
+  );
 
 /* ---------- shared types ---------- */
 /** A track media can be added to, and when on it (null: after its last clip). */
@@ -320,6 +336,7 @@ function TimelineClip({
   filmstrip,
   waveform,
   cutAtMs,
+  sliding = false,
 }: {
   clip: ClipRow;
   index: number;
@@ -343,6 +360,8 @@ function TimelineClip({
   waveform?: Waveform | null;
   /** Where in this clip the exported video ends (ms); the rest is cut. */
   cutAtMs?: number | null;
+  /** A clip is being dragged: move to new places smoothly. */
+  sliding?: boolean;
 }) {
   const sourceMs = clipSourceMs(clip);
   const trimIn = clip.trim_in_ms ?? 0;
@@ -378,15 +397,15 @@ function TimelineClip({
       ? "from-violet-500/45 to-violet-500/20 border-violet-500/50"
       : "from-teal-500/40 to-cyan-500/20 border-teal-400/40";
 
-  function snapTo(valueMs: number): number {
-    if (snapBoundariesMs.length === 0) return valueMs;
-    const SNAP_THRESHOLD_PX = 8;
+  function snapTo(valueMs: number, free = false): number {
+    if (free || snapBoundariesMs.length === 0) return valueMs;
+    const reach = snapReachMs(pxPerSec);
     let closest = valueMs;
     let closestDist = Infinity;
     for (const boundary of snapBoundariesMs) {
       const relBoundary = boundary - clipStartMs + trimIn;
-      const dist = Math.abs(((relBoundary - valueMs) * pxPerSec) / 1000);
-      if (dist < SNAP_THRESHOLD_PX && dist < closestDist) {
+      const dist = Math.abs(relBoundary - valueMs);
+      if (dist < reach && dist < closestDist) {
         closestDist = dist;
         closest = relBoundary;
       }
@@ -414,10 +433,10 @@ function TimelineClip({
       const dx = ev.clientX - startClientX;
       const deltaMs = Math.round((dx / pxPerSec) * 1000);
       if (edge === "left") {
-        nextIn = snapTo(Math.max(0, Math.min(startOut - 200, startIn + deltaMs)));
+        nextIn = snapTo(Math.max(0, Math.min(startOut - 200, startIn + deltaMs)), ev.altKey);
         setLocalTrimIn(nextIn);
       } else {
-        nextOut = snapTo(Math.max(startIn + 200, Math.min(maxOut, startOut + deltaMs)));
+        nextOut = snapTo(Math.max(startIn + 200, Math.min(maxOut, startOut + deltaMs)), ev.altKey);
         setLocalTrimOut(nextOut);
       }
     }
@@ -473,13 +492,16 @@ function TimelineClip({
         top: 5,
         bottom: 5,
         transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
+        // While a clip is dragged, clips glide to their new places.
+        transition: sliding ? "left 160ms ease, transform 90ms ease-out" : undefined,
       }}
       className={cn(
         "rounded-md border bg-gradient-to-br cursor-grab overflow-hidden group select-none transition-shadow",
         gradient,
         selected && "ring-2 ring-violet-400 shadow-[0_0_20px_-4px_rgba(139,92,246,0.5)]",
+        // The dragged clip sits where it will land.
         dragOffset &&
-          "z-30 opacity-70 cursor-grabbing shadow-[0_8px_24px_rgba(0,0,0,0.5)] pointer-events-none",
+          "z-30 ring-2 ring-white/80 cursor-grabbing shadow-[0_8px_24px_rgba(0,0,0,0.5)] pointer-events-none",
       )}
     >
       {/* Trim handles: always shown on the selected clip, on hover otherwise.
@@ -892,10 +914,25 @@ function TimelineTracks({
   filmstrips,
   waveforms,
 }: TimelineTracksProps) {
-  // Clip being dragged to a new place (with how far the pointer moved).
-  const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
-  // Where the dragged clip would land: a track and a start time.
-  const [dropTarget, setDropTarget] = useState<{ track: Track; startMs: number } | null>(null);
+  // Clip being dragged to a new place: how far it's drawn from its place
+  // (to where it will land). `settling`: dropped, waiting for the save.
+  const [drag, setDrag] = useState<{
+    id: string;
+    dx: number;
+    dy: number;
+    settling?: boolean;
+  } | null>(null);
+  // Where the dragged clip would land: a track and a start time; on V1 its
+  // place in the order. `snapAt`: what it snapped to. `aOffsets`: where the
+  // other V1 clips go meanwhile (they close up or make room).
+  const [dropTarget, setDropTarget] = useState<{
+    track: Track;
+    startMs: number;
+    fromMs: number;
+    index: number | null;
+    snapAt: number | null;
+    aOffsets: Map<string, number> | null;
+  } | null>(null);
   const trackEls = useRef<Record<Track, HTMLDivElement | null>>({ aroll: null, broll: null });
   const musicTrackEl = useRef<HTMLDivElement | null>(null);
   // Files or a Media-panel clip being dragged over the tracks, and where
@@ -923,6 +960,24 @@ function TimelineTracks({
     audio: { clip: ClipRow; atMs: number; onCut: boolean } | null;
   } | null>(null);
   const lastPointerType = useRef<string>("mouse");
+  // A dropped clip waits in place until the saved order comes back.
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placementKey = JSON.stringify(
+    [...aRoll, ...bRoll].map((c) => [c.id, c.role, c.ordinal, c.start_ms ?? null]),
+  );
+  useEffect(() => {
+    if (!drag?.settling) return;
+    setDrag(null);
+    setDropTarget(null);
+    // Only when the saved placements change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placementKey]);
+  useEffect(
+    () => () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    },
+    [],
+  );
   // A drag ends with a click on whatever is under the pointer; don't let it
   // select a clip.
   const suppressClick = useRef(false);
@@ -1196,16 +1251,23 @@ function TimelineTracks({
   const trackClips = (track: Track) => (track === "aroll" ? aRoll : bRoll);
   const trackLayout = (track: Track) => (track === "aroll" ? aLayout : bLayout);
 
-  /** The video track row under the pointer, and the timeline time there (ms). */
-  function trackAt(clientX: number, clientY: number) {
+  /**
+   * The video track row under the pointer, and the timeline time there (ms).
+   * `nearest`: when between or past the rows, the closest one (a dragged
+   * clip always lands somewhere).
+   */
+  function trackAt(clientX: number, clientY: number, nearest = false) {
+    let best: { track: Track; ms: number; dist: number } | null = null;
     for (const track of ["aroll", "broll"] as const) {
       const el = trackEls.current[track];
       if (!el) continue;
       const r = el.getBoundingClientRect();
-      if (clientY < r.top || clientY > r.bottom) continue;
-      return { track, ms: Math.max(0, ((clientX - r.left) / pxPerSec) * 1000) };
+      const dist = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+      const ms = Math.max(0, ((clientX - r.left) / pxPerSec) * 1000);
+      if (dist === 0) return { track, ms };
+      if (nearest && (!best || dist < best.dist)) best = { track, ms, dist };
     }
-    return null;
+    return best && { track: best.track, ms: best.ms };
   }
 
   /** The other clips' spans on a track, for fitting a clip among them. */
@@ -1223,27 +1285,45 @@ function TimelineTracks({
    * the playhead or 0:00 when its start or end is near one, then moved to the
    * nearest spot where it fits (it stops at a neighbour's edge).
    */
-  function landingStart(c: ClipRow, track: Track, wantMs: number) {
+  function landingStart(c: ClipRow, track: Track, wantMs: number, free = false) {
     const len = clipVisibleMs(c);
-    let start = Math.max(0, wantMs);
-    if (snapEnabled) {
-      const threshold = (8 / pxPerSec) * 1000;
+    const want = Math.max(0, wantMs);
+    let start = want;
+    let snapAt: number | null = null;
+    if (snapEnabled && !free) {
       const points = [0, currentTimeMs];
       for (const t of ["aroll", "broll"] as const) {
         for (const sp of spansOn(t, c.id)) points.push(sp.start, sp.end);
       }
-      let best = threshold;
+      let best = snapReachMs(pxPerSec);
       for (const p of points) {
-        if (Math.abs(p - start) < best) {
-          best = Math.abs(p - start);
+        if (Math.abs(p - want) < best) {
+          best = Math.abs(p - want);
           start = p;
-        } else if (Math.abs(p - (start + len)) < best) {
-          best = Math.abs(p - (start + len));
+          snapAt = p;
+        } else if (Math.abs(p - (want + len)) < best) {
+          best = Math.abs(p - (want + len));
           start = p - len;
+          snapAt = p;
         }
       }
     }
-    return fitStart(spansOn(track, c.id), start, len);
+    const fitted = fitStart(spansOn(track, c.id), start, len);
+    // Pushed aside to fit: it isn't on the snap point any more.
+    return { start: fitted, snapAt: fitted === Math.max(0, Math.round(start)) ? snapAt : null };
+  }
+
+  /**
+   * Where a clip dragged to `wantMs` goes on V1, which is magnetic: its place
+   * among the other V1 clips (the nearest gap between them), and where every
+   * V1 clip then sits.
+   */
+  function v1Landing(c: ClipRow, wantMs: number) {
+    const others = aRoll.filter((x) => x.id !== c.id);
+    const index = insertIndexAt(others, clipVisibleMs, wantMs + clipVisibleMs(c) / 2);
+    const order = [...others.slice(0, index), c, ...others.slice(index)];
+    const { starts } = closedUp(order);
+    return { index, startMs: starts.get(c.id) ?? 0, offsets: starts };
   }
 
   /** Saves new clip placements, with undo. */
@@ -1253,24 +1333,29 @@ function TimelineTracks({
       !!b && a.ordinal === b.ordinal && a.role === b.role && a.start_ms === b.start_ms;
     const beforeById = new Map(before.map((p) => [p.id, p]));
     // Dropped back where it was: nothing to save or undo.
-    if (placements.every((p) => same(p, beforeById.get(p.id)))) return;
+    if (placements.every((p) => same(p, beforeById.get(p.id)))) return false;
     pushToHistory({
       description,
       undo: () => reorderMut.mutate({ order: before }),
       redo: () => reorderMut.mutate({ order: placements }),
     });
     reorderMut.mutate({ order: placements });
+    return true;
   }
 
   /**
-   * Moves a clip to a time on a track (changing its role if the track
-   * changes). Every other clip stays where it is.
+   * Moves a clip to about a time on a track (changing its role if the track
+   * changes). On V1 it goes in the nearest gap between clips and V1 closes
+   * up; on V2 it sits at that time, where it fits. Other V2 clips stay put.
    */
   function moveClipTo(id: string, toTrack: Track, wantMs: number) {
     const clip = videoClips.find((c) => c.id === id);
-    if (!clip) return;
-    const { placements } = planPlacement(aRoll, bRoll, [clip], toTrack, wantMs, clipVisibleMs);
-    savePlacements(placements, "Move clip");
+    if (!clip) return false;
+    const placements =
+      toTrack === "aroll"
+        ? planMagneticInsert(aRoll, bRoll, [clip], v1Landing(clip, wantMs).index, clipVisibleMs)
+        : planOverlayMove(aRoll, bRoll, clip, wantMs, clipVisibleMs);
+    return savePlacements(placements, "Move clip");
   }
 
   // Gaps between A-roll clips (black and silence in the export).
@@ -1328,15 +1413,16 @@ function TimelineTracks({
     const startScroll = scroller?.scrollLeft ?? 0;
     let active = false;
     let lastX = startX;
+    let free = false;
     const dxPx = () => lastX - startX + ((scroller?.scrollLeft ?? 0) - startScroll);
     // Where it would play: snapped to 0:00, the playhead, a cut, the end or
     // another song's start when close to one.
     const landing = () => {
       let ms = Math.max(0, originMs + (dxPx() / pxPerSec) * 1000);
-      if (snapEnabled) {
+      if (snapEnabled && !free) {
         const points = [0, currentTimeMs, programEndMs, ...cutsMs];
         for (const [id, at] of songStarts) if (id !== clip.id) points.push(at);
-        let best = (8 / pxPerSec) * 1000;
+        let best = snapReachMs(pxPerSec);
         for (const p of points) {
           if (Math.abs(p - ms) < best) {
             best = Math.abs(p - ms);
@@ -1367,6 +1453,7 @@ function TimelineTracks({
     function onMove(ev: PointerEvent) {
       if (ev.pointerId !== pointerId) return;
       lastX = ev.clientX;
+      free = ev.altKey;
       if (!active) {
         if (isTouch) {
           if (Math.abs(lastX - startX) > 8) finish(false);
@@ -1418,32 +1505,84 @@ function TimelineTracks({
 
     const fromTrack: Track = c.role === "broll" ? "broll" : "aroll";
     const fromStart = trackLayout(fromTrack).offsets.get(c.id) ?? 0;
-    // Where it would land: the track under the pointer, at its start moved
-    // by however far the pointer has moved along the timeline.
+    // Alt held: no snapping.
+    let free = false;
+    // Where it would land: the track nearest the pointer, at its start moved
+    // by however far the pointer has moved along the timeline. On V1 that
+    // picks its place in the order (the others make room).
     const landing = () => {
       const scrolled = (scroller?.scrollLeft ?? 0) - startScroll;
-      const over = trackAt(last.x, last.y);
+      const over = trackAt(last.x, last.y, true);
       if (!over) return null;
       const wantMs = fromStart + ((last.x - startX + scrolled) / pxPerSec) * 1000;
-      return { track: over.track, startMs: landingStart(c, over.track, wantMs) };
+      if (over.track === "aroll") {
+        const v1 = v1Landing(c, wantMs);
+        return {
+          track: "aroll" as const,
+          startMs: v1.startMs,
+          fromMs: fromStart,
+          index: v1.index,
+          snapAt: null,
+          aOffsets: v1.offsets,
+        };
+      }
+      const v2 = landingStart(c, "broll", wantMs, free);
+      return {
+        track: "broll" as const,
+        startMs: v2.start,
+        fromMs: fromStart,
+        index: null,
+        snapAt: v2.snapAt,
+        // Leaving V1: the clips after it close up.
+        aOffsets:
+          fromTrack === "aroll" ? closedUp(aRoll.filter((x) => x.id !== c.id)).starts : null,
+      };
     };
+    const rowTop = (t: Track) => trackEls.current[t]?.getBoundingClientRect().top ?? 0;
     const update = () => {
-      const scrolled = (scroller?.scrollLeft ?? 0) - startScroll;
-      setDrag({ id: c.id, dx: last.x - startX + scrolled, dy: last.y - startY });
-      setDropTarget(landing());
+      const target = landing();
+      setDropTarget(target);
+      if (!target) {
+        const scrolled = (scroller?.scrollLeft ?? 0) - startScroll;
+        setDrag({ id: c.id, dx: last.x - startX + scrolled, dy: last.y - startY });
+        return;
+      }
+      // Drawn exactly where it will land (not under the pointer).
+      setDrag({
+        id: c.id,
+        dx: ((target.startMs - fromStart) / 1000) * pxPerSec,
+        dy: rowTop(target.track) - rowTop(fromTrack),
+      });
+    };
+    // Scrolls the timeline while the pointer is held near its left or right
+    // edge (faster the closer it is), even when the pointer stops moving.
+    let scrollFrame = 0;
+    const scrollLoop = () => {
+      if (scroller) {
+        const r = scroller.getBoundingClientRect();
+        const gutter =
+          scroller.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 120;
+        const left = r.left + gutter + 48;
+        const right = r.right - 48;
+        const speed =
+          last.x < left
+            ? -Math.min(30, 4 + (left - last.x) / 2)
+            : last.x > right
+              ? Math.min(30, 4 + (last.x - right) / 2)
+              : 0;
+        if (speed) {
+          const before = scroller.scrollLeft;
+          scroller.scrollLeft += speed;
+          if (scroller.scrollLeft !== before) update();
+        }
+      }
+      scrollFrame = requestAnimationFrame(scrollLoop);
     };
     const begin = () => {
       active = true;
       suppressClick.current = true;
       update();
-    };
-    // Scroll the timeline while dragging near its left or right edge.
-    const autoScroll = () => {
-      if (!scroller) return;
-      const r = scroller.getBoundingClientRect();
-      const gutter = scroller.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 120;
-      if (last.x < r.left + gutter + 40) scroller.scrollLeft -= 16;
-      else if (last.x > r.right - 40) scroller.scrollLeft += 16;
+      scrollFrame = requestAnimationFrame(scrollLoop);
     };
 
     const holdTimer = isTouch ? setTimeout(begin, 300) : null;
@@ -1454,13 +1593,33 @@ function TimelineTracks({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
       window.removeEventListener("touchmove", blockTouchScroll);
+      cancelAnimationFrame(scrollFrame);
+      let saved = false;
       if (active && commit) {
         const target = landing();
-        if (target) moveClipTo(c.id, target.track, target.startMs);
+        if (target) {
+          const placements =
+            target.track === "aroll"
+              ? planMagneticInsert(aRoll, bRoll, [c], target.index ?? 0, clipVisibleMs)
+              : planOverlayMove(aRoll, bRoll, c, target.startMs, clipVisibleMs);
+          saved = savePlacements(placements, "Move clip");
+        }
       }
-      setDrag(null);
-      setDropTarget(null);
+      if (saved) {
+        // Stay where it was dropped until the saved order comes back, so the
+        // clips don't jump back for a moment.
+        setDrag((d) => d && { ...d, settling: true });
+        if (settleTimer.current) clearTimeout(settleTimer.current);
+        settleTimer.current = setTimeout(() => {
+          setDrag(null);
+          setDropTarget(null);
+        }, 5000);
+      } else {
+        setDrag(null);
+        setDropTarget(null);
+      }
       // The click that follows pointerup has been dispatched by now.
       setTimeout(() => {
         suppressClick.current = false;
@@ -1469,6 +1628,7 @@ function TimelineTracks({
     function onMove(ev: PointerEvent) {
       if (ev.pointerId !== pointerId) return;
       last = { x: ev.clientX, y: ev.clientY };
+      free = ev.altKey;
       if (!active) {
         const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
         // Touch: moving before the hold completes is a scroll, not a drag.
@@ -1479,7 +1639,6 @@ function TimelineTracks({
         if (dist < 4) return;
         begin();
       }
-      autoScroll();
       update();
     }
     function onUp(ev: PointerEvent) {
@@ -1490,6 +1649,12 @@ function TimelineTracks({
     }
     function onKey(ev: KeyboardEvent) {
       if (ev.key === "Escape") finish(false);
+      // Pressing or letting go of Alt mid-drag turns snapping off or on.
+      if (ev.key === "Alt" && active) {
+        ev.preventDefault();
+        free = ev.type === "keydown";
+        update();
+      }
     }
     // Once a touch drag has started, keep the finger from scrolling the page.
     function blockTouchScroll(ev: TouchEvent) {
@@ -1500,6 +1665,7 @@ function TimelineTracks({
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
     window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
     window.addEventListener("touchmove", blockTouchScroll, { passive: false });
   }
 
@@ -1507,21 +1673,38 @@ function TimelineTracks({
     if (!suppressClick.current) onSelect(id);
   };
 
-  // Where a dragged clip will land (a dashed outline), or where dropped
-  // media will start (a line).
+  // While a clip is dragged (it sits where it will land): when it will
+  // start, and the line it snapped to. Or where dropped media will go.
   const insertionLine = (track: Track) => {
     const dragged = drag ? videoClips.find((c) => c.id === drag.id) : undefined;
-    if (dragged && dropTarget?.track === track) {
+    if (dragged && !drag?.settling && dropTarget?.track === track) {
+      const t = dropTarget;
+      const moved = t.startMs - t.fromMs;
+      const label =
+        track === "aroll"
+          ? `V1 · ${(t.index ?? 0) + 1} of ${aRoll.filter((c) => c.id !== dragged.id).length + 1} · ${formatPlaybackTime(t.startMs / 1000)}`
+          : `${formatPlaybackTime(t.startMs / 1000)}${
+              Math.abs(moved) >= 50
+                ? ` · ${moved > 0 ? "+" : "−"}${formatPlaybackTime(Math.abs(moved) / 1000)}`
+                : ""
+            }`;
       return (
-        <div
-          aria-hidden
-          data-landing
-          className="absolute top-1 bottom-1 rounded-md border-2 border-dashed border-violet-300/80 bg-violet-400/10 z-20 pointer-events-none"
-          style={{
-            left: (dropTarget.startMs / 1000) * pxPerSec,
-            width: Math.max(4, (clipVisibleMs(dragged) / 1000) * pxPerSec),
-          }}
-        />
+        <>
+          {t.snapAt != null && (
+            <div
+              aria-hidden
+              className="absolute inset-y-0 w-px bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)] z-40 pointer-events-none"
+              style={{ left: (t.snapAt / 1000) * pxPerSec }}
+            />
+          )}
+          <div
+            data-drag-label
+            className="absolute top-1.5 z-50 ml-3.5 px-1.5 py-0.5 rounded bg-black/85 border border-white/15 text-[10px] font-mono tabular-nums text-white whitespace-nowrap pointer-events-none shadow"
+            style={{ left: (t.startMs / 1000) * pxPerSec }}
+          >
+            {label}
+          </div>
+        </>
       );
     }
     if (mediaDrop?.track === track && mediaDrop.startMs != null) {
@@ -1541,6 +1724,13 @@ function TimelineTracks({
   // (after its last file, for now).
   const mediaTargetAt = (clientX: number, clientY: number): AddMediaTarget | null => {
     const video = trackAt(clientX, clientY);
+    if (video?.track === "aroll") {
+      // V1 is magnetic: between the clips nearest the pointer.
+      const index = insertIndexAt(aRoll, clipVisibleMs, video.ms);
+      const { starts, endMs } = closedUp(aRoll);
+      const at = index < aRoll.length ? (starts.get(aRoll[index].id) ?? 0) : endMs;
+      return { track: "aroll", startMs: Math.round(at) };
+    }
     if (video) return { track: video.track, startMs: Math.round(video.ms) };
     const r = musicTrackEl.current?.getBoundingClientRect();
     if (r && clientY >= r.top && clientY <= r.bottom) return { track: "music", startMs: null };
@@ -1998,7 +2188,12 @@ function TimelineTracks({
                   clip={c}
                   index={i}
                   pxPerSec={pxPerSec}
-                  offsetMs={aLayout.offsets.get(c.id) ?? 0}
+                  offsetMs={
+                    drag?.id !== c.id && dropTarget?.aOffsets?.has(c.id)
+                      ? dropTarget.aOffsets.get(c.id)!
+                      : (aLayout.offsets.get(c.id) ?? 0)
+                  }
+                  sliding={!!drag}
                   selected={selectedClipId === c.id}
                   dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
                   onSelect={() => selectClip(c.id)}
@@ -2050,6 +2245,7 @@ function TimelineTracks({
                   index={i}
                   pxPerSec={pxPerSec}
                   offsetMs={bLayout.offsets.get(c.id) ?? 0}
+                  sliding={!!drag}
                   selected={selectedClipId === c.id}
                   dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
                   onSelect={() => selectClip(c.id)}

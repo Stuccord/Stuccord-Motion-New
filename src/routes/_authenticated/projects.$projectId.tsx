@@ -144,7 +144,13 @@ import {
 } from "@/components/editor";
 import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
 import { FPS, snapToFrame } from "@/components/editor/timecode";
-import { currentPlacements, layoutTrack, planPlacement } from "@/lib/timeline-layout";
+import {
+  currentPlacements,
+  insertIndexAt,
+  layoutTrack,
+  planMagneticInsert,
+  planPlacement,
+} from "@/lib/timeline-layout";
 import {
   IMAGE_DEFAULT_MS,
   IMAGE_MAX_MS,
@@ -1009,14 +1015,20 @@ function EditorPage() {
     const existing = (data.clips as ClipRow[]).filter(
       (c) => c.role !== "music" && c.role !== "sfx" && !addedIds.has(c.id),
     );
-    const { placements } = planPlacement(
-      existing.filter((c) => c.role !== "broll"),
-      existing.filter((c) => c.role === "broll"),
-      added,
-      target.track,
-      target.startMs,
-      clipVisibleMs,
-    );
+    const existingA = existing.filter((c) => c.role !== "broll");
+    const existingB = existing.filter((c) => c.role === "broll");
+    // V1 is magnetic: the clips go in at the nearest gap between clips.
+    const placements =
+      target.track === "aroll"
+        ? planMagneticInsert(
+            existingA,
+            existingB,
+            added,
+            insertIndexAt(existingA, clipVisibleMs, target.startMs),
+            clipVisibleMs,
+          )
+        : planPlacement(existingA, existingB, added, "broll", target.startMs, clipVisibleMs)
+            .placements;
     await reorder({ data: { project_id: projectId, order: placements } });
   }
 
@@ -1474,14 +1486,19 @@ function EditorPage() {
     const track = selectedClip.role === "broll" ? "broll" : "aroll";
     const want =
       edge === "start" ? timelinePlayheadMs : timelinePlayheadMs - clipVisibleMs(selectedClip);
-    const { placements } = planPlacement(
-      aRoll,
-      bRoll,
-      [selectedClip],
-      track,
-      Math.max(0, want),
-      clipVisibleMs,
-    );
+    // V1 is magnetic: the clip moves to the gap between clips nearest there.
+    const others = aRoll.filter((c) => c.id !== selectedClip.id);
+    const placements =
+      track === "aroll"
+        ? planMagneticInsert(
+            aRoll,
+            bRoll,
+            [selectedClip],
+            insertIndexAt(others, clipVisibleMs, Math.max(0, want) + clipVisibleMs(selectedClip) / 2),
+            clipVisibleMs,
+          )
+        : planPlacement(aRoll, bRoll, [selectedClip], track, Math.max(0, want), clipVisibleMs)
+            .placements;
     const before = currentPlacements(aRoll, bRoll);
     pushToHistory({
       description: "Move clip",
