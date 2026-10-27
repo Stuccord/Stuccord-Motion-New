@@ -38,6 +38,13 @@ import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration"
 import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
 import { parseTransform, type ClipTransform } from "@/lib/clip-transform";
 import {
+  FinalUploadError,
+  UploadCancelled,
+  uploadToSignedUrlWithProgress,
+} from "@/lib/upload-file";
+import { uploadSummary, useUploadQueue } from "@/components/editor/useUploadQueue";
+import { UploadList } from "@/components/editor/UploadList";
+import {
   captureFilmstrip,
   computeWaveform,
   type Filmstrip,
@@ -229,7 +236,6 @@ function EditorPage() {
   const finishBrowserRenderFn = useServerFn(finishBrowserRender);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
   const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
@@ -817,22 +823,15 @@ function EditorPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  function classifyFile(
-    file: File,
-    videoIndexInBatch: number,
-    hasAnyARoll: boolean,
-  ): "aroll" | "broll" | "music" | "sfx" | null {
+  function classifyFile(file: File): "aroll" | "music" | "sfx" | null {
     if (file.type.startsWith("audio/")) {
       // Short blips → sfx, longer files → music (heuristic on filename)
       if (/sfx|whoosh|impact|riser|swoosh|snap/i.test(file.name)) return "sfx";
       return "music";
     }
-    if (file.type.startsWith("video/") || isImageFile(file)) {
-      // First incoming video (or image) becomes A-roll if none exists yet;
-      // the rest become B-roll.
-      if (!hasAnyARoll && videoIndexInBatch === 0) return "aroll";
-      return "broll";
-    }
+    // Videos and images go on the main track (V1), one after another. To put
+    // one on top as B-roll, drop it on V2 or use V2's + button.
+    if (file.type.startsWith("video/") || isImageFile(file)) return "aroll";
     return null;
   }
 
@@ -842,12 +841,111 @@ function EditorPage() {
       ? f.type.startsWith("audio/")
       : f.type.startsWith("video/") || isImageFile(f);
 
+  type UploadMeta = {
+    role: "aroll" | "broll" | "music" | "sfx";
+    /** Its place in the project, fixed when picked so clips keep the picked order. */
+    ordinal: number;
+    target?: AddMediaTarget;
+  };
+  // The next free ordinal, counting files still uploading.
+  const nextOrdinal = useRef(0);
+
+  // Uploads run in the background, two at a time (see useUploadQueue).
+  const uploadQueue = useUploadQueue<UploadMeta, ClipRow>({
+    run: async (item, control) => {
+      const f = item.file;
+      const image = isImageFile(f);
+      const contentType = f.type || "video/mp4";
+      try {
+        const { data: authData } = await supabase.auth.getSession();
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        if (authData?.session?.access_token) {
+          headers["Authorization"] = `Bearer ${authData.session.access_token}`;
+        }
+        const presignRes = await fetch("/api/authenticated/uploads/presign", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ projectId, filename: f.name, contentType, size: f.size }),
+        });
+        if (!presignRes.ok) {
+          const text = await presignRes.text().catch(() => "");
+          const msg = text.trim().slice(0, 200) || `Upload failed (${presignRes.status})`;
+          // Wrong type, too big, no access: trying again won't help.
+          throw presignRes.status === 400 || presignRes.status === 404
+            ? new FinalUploadError(msg)
+            : new Error(msg);
+        }
+        const { bucket, path, token } = (await presignRes.json()) as {
+          bucket: string;
+          path: string;
+          token: string;
+        };
+
+        const upload = uploadToSignedUrlWithProgress(bucket, path, token, f, (loaded) =>
+          control.progress(loaded),
+        );
+        control.onAbort(upload.abort);
+        await upload.done;
+        control.saving();
+
+        // Record the clip's real length so the timeline draws it correctly
+        // before it's ever opened in the player.
+        // An image shows for 3 s and can be stretched to a minute (see media-kind).
+        const durationMs = image ? IMAGE_MAX_MS : await probeFileDurationMs(f);
+        const row = await attachFn({
+          data: {
+            project_id: projectId,
+            storage_path: path,
+            filename: f.name,
+            size_bytes: f.size,
+            role: item.meta.role,
+            ordinal: item.meta.ordinal,
+            duration_ms: durationMs ?? undefined,
+            trim_out_ms: image ? IMAGE_DEFAULT_MS : undefined,
+          },
+        });
+        return row as ClipRow;
+      } catch (e) {
+        if (!(e instanceof UploadCancelled)) {
+          const msg = e instanceof Error ? e.message : "Upload failed";
+          toast.error(`${f.name}: ${msg}`, {
+            description:
+              e instanceof FinalUploadError ? undefined : "You can retry it in the Media panel.",
+          });
+        }
+        throw e;
+      }
+    },
+    // Each clip shows up on the timeline as soon as it's in.
+    onDone: () => refetch(),
+    onBatchSettled: async (_batchId, finished) => {
+      const added = finished.map((f) => f.result);
+      const target = finished[0]?.item.meta.target;
+      try {
+        if (target && target.startMs != null) await placeOnTrack(added, target);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't place the clips");
+      }
+      const count = (role: UploadMeta["role"]) =>
+        finished.filter((f) => f.item.meta.role === role).length;
+      const parts = [
+        count("aroll") && `${count("aroll")} on V1`,
+        count("broll") && `${count("broll")} on V2`,
+        count("music") && `${count("music")} music`,
+        count("sfx") && `${count("sfx")} SFX`,
+      ].filter(Boolean);
+      toast.success(`Added ${parts.join(", ")}`);
+      refetch();
+    },
+  });
+
   /**
-   * Uploads files and adds them to the timeline. With a target they go on
-   * that track (at its position, or the end); otherwise each file's type
-   * picks the track.
+   * Queues files to upload and add to the timeline; they go up in the
+   * background while you keep editing. With a target they go on that track
+   * (at its position, or the end); otherwise videos and images go on V1 one
+   * after another, in the order picked, and audio on A2.
    */
-  async function handleUpload(files: FileList | File[], target?: AddMediaTarget) {
+  function handleUpload(files: FileList | File[], target?: AddMediaTarget) {
     const all = Array.from(files);
     if (all.some(isHeicFile)) {
       toast.error("iPhone HEIC photos can't be shown in browsers. Export them as JPG first.");
@@ -872,100 +970,32 @@ function EditorPage() {
       toast.info(`Skipped ${all.length - arr.length} file(s) that don't fit that track`);
     }
     if (!data) return;
-    setUploading(true);
-    const hasAnyARoll = data.clips.some((c) => c.role === "aroll" || c.role === "auto");
-    const summary = { aroll: 0, broll: 0, music: 0, sfx: 0 };
-    const added: ClipRow[] = [];
-    try {
-      const startOrdinal = data.clips.length;
-      let videoSeen = 0;
-      for (let i = 0; i < arr.length; i++) {
-        const f = arr[i];
-        const auto = classifyFile(f, videoSeen, hasAnyARoll);
-        const role = !target
-          ? auto
-          : target.track === "music"
-            ? auto === "sfx"
-              ? "sfx"
-              : "music"
-            : target.track;
-        if (!role) continue;
-        const image = isImageFile(f);
-        if (f.type.startsWith("video/") || image) videoSeen++;
-
-        // Client-side validations
-        const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
-        if (f.size > MAX_FILE_SIZE) {
-          throw new Error(`${f.name} exceeds 500 MB limit`);
-        }
-
-        const contentType = f.type || "video/mp4";
-        const { data: authData } = await supabase.auth.getSession();
-        const headers: Record<string, string> = { "content-type": "application/json" };
-        if (authData?.session?.access_token) {
-          headers["Authorization"] = `Bearer ${authData.session.access_token}`;
-        }
-
-        const presignRes = await fetch("/api/authenticated/uploads/presign", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            projectId,
-            filename: f.name,
-            contentType,
-            size: f.size,
-          }),
-        });
-
-        if (!presignRes.ok) {
-          const errText = await presignRes.text().catch(() => "Upload presign failed");
-          throw new Error(`${f.name}: ${errText}`);
-        }
-
-        const { bucket, path, token } = (await presignRes.json()) as {
-          bucket: string;
-          path: string;
-          token: string;
-        };
-
-        const { error: upErr } = await supabase.storage
-          .from(bucket)
-          .uploadToSignedUrl(path, token, f, { contentType, upsert: true });
-        if (upErr) throw new Error(`${f.name}: ${upErr.message}`);
-
-        // Record the clip's real length so the timeline draws it correctly
-        // before it's ever opened in the player.
-        // An image shows for 3 s and can be stretched to a minute (see media-kind).
-        const durationMs = image ? IMAGE_MAX_MS : await probeFileDurationMs(f);
-        const row = await attachFn({
-          data: {
-            project_id: projectId,
-            storage_path: path,
-            filename: f.name,
-            size_bytes: f.size,
-            role,
-            ordinal: startOrdinal + i,
-            duration_ms: durationMs ?? undefined,
-            trim_out_ms: image ? IMAGE_DEFAULT_MS : undefined,
-          },
-        });
-        added.push(row as ClipRow);
-        summary[role] += 1;
-      }
-      if (target && target.startMs != null) await placeOnTrack(added, target);
-      const parts = [
-        summary.aroll && `${summary.aroll} A-roll`,
-        summary.broll && `${summary.broll} B-roll`,
-        summary.music && `${summary.music} music`,
-        summary.sfx && `${summary.sfx} SFX`,
-      ].filter(Boolean);
-      toast.success(`Placed on tracks — ${parts.join(", ")}`);
-      refetch();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
+    const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
+    const lastOrdinal = Math.max(-1, ...data.clips.map((c) => c.ordinal));
+    let ordinal = Math.max(nextOrdinal.current, lastOrdinal + 1);
+    const entries = arr.flatMap((f) => {
+      const auto = classifyFile(f);
+      const role = !target
+        ? auto
+        : target.track === "music"
+          ? auto === "sfx"
+            ? "sfx"
+            : "music"
+          : target.track;
+      if (!role) return [];
+      const tooBig = f.size > MAX_FILE_SIZE;
+      return [
+        {
+          file: f,
+          meta: { role, ordinal: ordinal++, target },
+          error: tooBig
+            ? `Over the 500 MB limit (${(f.size / (1024 * 1024)).toFixed(0)} MB). Export a smaller copy first.`
+            : undefined,
+        },
+      ];
+    });
+    nextOrdinal.current = ordinal;
+    uploadQueue.add(entries);
   }
 
   /**
@@ -1758,6 +1788,7 @@ function EditorPage() {
             onRedo={redo}
             canUndo={history.past.length > 0}
             canRedo={history.future.length > 0}
+            uploads={uploadSummary(uploadQueue.items)}
           />
         }
         leftPanel={
@@ -1768,7 +1799,14 @@ function EditorPage() {
             onSelectClip={(id) => setSelectedClipId(id)}
             onRemoveClip={(id) => removeClipMut.mutate(id)}
             onUpload={(files) => handleUpload(files)}
-            isUploading={uploading}
+            uploads={
+              <UploadList
+                items={uploadQueue.items}
+                onCancel={uploadQueue.cancel}
+                onRetry={uploadQueue.retry}
+                onDismiss={uploadQueue.remove}
+              />
+            }
           />
         }
         centerPanel={

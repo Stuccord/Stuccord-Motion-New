@@ -19,6 +19,8 @@ interface EditorTopBarProps {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  /** Files still uploading: how many and overall percent. */
+  uploads?: { left: number; count: number; pct: number } | null;
 }
 
 export function EditorTopBar({
@@ -34,6 +36,7 @@ export function EditorTopBar({
   onRedo,
   canUndo = false,
   canRedo = false,
+  uploads = null,
 }: EditorTopBarProps) {
   const [localTitle, setLocalTitle] = useState(title);
 
@@ -88,6 +91,21 @@ export function EditorTopBar({
               placeholder="Untitled Project"
               aria-label="Project Title"
             />
+
+            {/* Uploads still going (the list is in the Media panel) */}
+            {uploads && (
+              <div
+                className="flex items-center gap-1.5 shrink-0 rounded-md border border-violet-500/30 bg-violet-950/30 px-2 py-0.5 text-[11px] font-mono text-violet-200"
+                title="Uploading in the background; see the Media panel"
+                role="status"
+              >
+                <Loader2 className="w-3 h-3 animate-spin text-violet-400" />
+                <span className="hidden sm:inline">
+                  Uploading {uploads.count - uploads.left + 1} of {uploads.count} ·
+                </span>
+                <span>{uploads.pct}%</span>
+              </div>
+            )}
 
             {/* Save indicator */}
             <div className="flex items-center gap-1 shrink-0 text-[11px] text-neutral-500 font-mono">

@@ -16,6 +16,8 @@ interface MediaLibraryProps {
   onRemoveClip: (clipId: string) => void;
   onUpload: (files: FileList | File[]) => void;
   isUploading?: boolean;
+  /** Files being uploaded, shown under the Import button. */
+  uploads?: React.ReactNode;
 }
 
 function formatBytes(bytes: number | null | undefined): string {
@@ -117,6 +119,7 @@ export function MediaLibrary({
   onRemoveClip,
   onUpload,
   isUploading = false,
+  uploads,
 }: MediaLibraryProps) {
   const [tab, setTab] = useState<"video" | "audio">("video");
   const totalClips = clips.length + audioClips.length;
@@ -191,6 +194,7 @@ export function MediaLibrary({
             compact
           />
         </div>
+        {uploads && <div className="shrink-0 max-h-56 overflow-y-auto">{uploads}</div>}
 
         {/* Clips List or Empty State */}
         <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 min-h-0">
