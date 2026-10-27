@@ -165,7 +165,7 @@ function Divider() {
 
 /* ---------- track row ---------- */
 // Video tracks hold clips; slim tracks (voice, captions, music) hold labels.
-const TRACK_HEIGHT = { clip: 56, slim: 34 } as const;
+const TRACK_HEIGHT = { clip: 72, slim: 44 } as const;
 
 /** An on/off button in a track's header (e.g. captions or music in the export). */
 type TrackToggle = {
@@ -225,12 +225,12 @@ function TrackRow({
     >
       <div
         data-track-header
-        className="w-[88px] sm:w-[100px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] pl-2 pr-1 flex flex-col justify-center sticky left-0 z-[25]"
+        className="w-[120px] sm:w-[136px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] pl-2 pr-1 flex flex-col justify-center sticky left-0 z-[25]"
       >
         <div className="flex items-center gap-1 min-w-0">
-          <Icon className={cn("w-3 h-3 shrink-0", toneClass)} aria-hidden />
-          <span className={cn("text-[10px] font-mono font-bold", toneClass)}>{label}</span>
-          <span className="text-[8.5px] text-neutral-500 uppercase tracking-wider truncate">
+          <Icon className={cn("w-4 h-4 shrink-0", toneClass)} aria-hidden />
+          <span className={cn("text-[12px] font-mono font-bold", toneClass)}>{label}</span>
+          <span className="text-[10.5px] text-neutral-400 uppercase tracking-wider truncate">
             {name}
           </span>
           {onAdd && (
@@ -239,7 +239,7 @@ function TrackRow({
               onClick={onAdd}
               aria-label={`Add ${addLabel}`}
               title={`Add ${addLabel}`}
-              className="ml-auto shrink-0 w-4 h-4 rounded flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.08] transition"
+              className="ml-auto shrink-0 w-5 h-5 rounded flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.08] transition"
             >
               <Plus className="w-3 h-3" />
             </button>
@@ -247,11 +247,11 @@ function TrackRow({
         </div>
         {/* Second line: what the track is for (or that it's off), and its button */}
         {(note || toggle) && (
-          <div className="flex items-center gap-1 min-w-0 h-4">
+          <div className="flex items-center gap-1 min-w-0 h-5">
             {toggle && !toggle.on ? (
-              <span className="text-[8.5px] text-rose-400/80 truncate">Off in export</span>
+              <span className="text-[10px] text-rose-400/80 truncate">Off in export</span>
             ) : (
-              note && <span className="text-[8.5px] text-neutral-600 truncate">{note}</span>
+              note && <span className="text-[10px] text-neutral-500 truncate">{note}</span>
             )}
             {toggle && (
               <button
@@ -261,7 +261,7 @@ function TrackRow({
                 aria-label={`${toggle.on ? "Turn off" : "Turn on"} ${toggle.what} in the export`}
                 title={`${toggle.on ? "Turn off" : "Turn on"} ${toggle.what} in the export`}
                 className={cn(
-                  "ml-auto shrink-0 w-4 h-4 rounded flex items-center justify-center transition",
+                  "ml-auto shrink-0 w-5 h-5 rounded flex items-center justify-center transition",
                   toggle.on
                     ? "text-neutral-400 hover:text-white hover:bg-white/[0.06]"
                     : "text-rose-400 bg-rose-500/10 hover:bg-rose-500/20",
@@ -519,12 +519,12 @@ function TimelineClip({
       )}
 
       {/* Label */}
-      <div className="absolute inset-0 px-4 py-1 flex flex-col justify-between text-[9px] pointer-events-none [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+      <div className="absolute inset-0 px-4 py-1.5 flex flex-col justify-between text-[11px] pointer-events-none [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
         <div className="flex items-center gap-1 text-white/95 font-mono font-semibold truncate">
           {isImageFilename(clip.filename) ? (
-            <ImageIcon className="w-2.5 h-2.5 shrink-0" />
+            <ImageIcon className="w-3 h-3 shrink-0" />
           ) : (
-            <Film className="w-2.5 h-2.5 shrink-0" />
+            <Film className="w-3 h-3 shrink-0" />
           )}
           <span className="truncate">
             {String(index + 1).padStart(2, "0")} · {baseName(clip.filename)}
@@ -561,7 +561,7 @@ function TrackLabel({
   return (
     <div
       className={cn(
-        "absolute top-1 bottom-1 rounded px-1.5 flex items-center text-[9.5px] leading-none truncate pointer-events-none border",
+        "absolute top-1 bottom-1 rounded px-1.5 flex items-center text-[11px] leading-none truncate pointer-events-none border",
         className,
       )}
       style={{ left: leftPx, width: Math.max(4, widthPx - 1) }}
@@ -613,7 +613,7 @@ function AudioBlock({
       onPointerDown={onPointerDown}
       onDragStart={(e) => e.preventDefault()}
       className={cn(
-        "absolute top-1 bottom-1 rounded px-1.5 flex items-center text-[9.5px] leading-none truncate border select-none cursor-grab active:cursor-grabbing hover:brightness-125",
+        "absolute top-1 bottom-1 rounded px-1.5 flex items-center text-[11px] leading-none truncate border select-none cursor-grab active:cursor-grabbing hover:brightness-125",
         shiftPx !== 0 && "z-10 ring-1 ring-white/60 shadow-lg",
         className,
       )}
@@ -926,7 +926,7 @@ function TimelineTracks({
     lastFollowedMs.current = currentTimeMs;
     const el = scrollRef.current;
     if (!el) return;
-    const gutter = el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 88;
+    const gutter = el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 120;
     const visibleWidth = el.clientWidth - gutter;
     if (visibleWidth <= 0) return;
     const margin = 24;
@@ -939,7 +939,7 @@ function TimelineTracks({
   // on screen: where the pointer was for Ctrl/⌘ + scroll, the start for Fit,
   // otherwise the playhead if it's in view, else the middle of the view.
   const gutterWidth = (el: HTMLElement) =>
-    el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 88;
+    el.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 120;
   const zoomAnchor = useRef<{ ms: number; viewX: number } | null>(null);
   const prevPxPerSec = useRef(pxPerSec);
   const pxPerSecRef = useRef(pxPerSec);
@@ -1251,7 +1251,7 @@ function TimelineTracks({
     const autoScroll = () => {
       if (!scroller) return;
       const r = scroller.getBoundingClientRect();
-      const gutter = scroller.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 88;
+      const gutter = scroller.querySelector<HTMLElement>("[data-track-header]")?.offsetWidth ?? 120;
       if (last.x < r.left + gutter + 40) scroller.scrollLeft -= 16;
       else if (last.x > r.right - 40) scroller.scrollLeft += 16;
     };
@@ -1476,9 +1476,9 @@ function TimelineTracks({
     window.addEventListener("pointerup", up);
   }
   const navigator = (
-    <div className="h-5 shrink-0 flex border-b border-white/[0.06] bg-[#08080e] select-none">
+    <div className="h-6 shrink-0 flex border-b border-white/[0.06] bg-[#08080e] select-none">
       <div
-        className="shrink-0 flex items-center px-2 text-[8px] font-mono uppercase tracking-widest text-neutral-600 border-r border-white/[0.06]"
+        className="shrink-0 flex items-center px-2 text-[10px] font-mono uppercase tracking-widest text-neutral-500 border-r border-white/[0.06]"
         style={{ width: view.gutter }}
       >
         Nav
@@ -1698,8 +1698,8 @@ function TimelineTracks({
           </DropdownMenuContent>
         </DropdownMenu>
         {/* Ruler */}
-        <div className="h-6 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
-          <div className="w-[88px] sm:w-[100px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
+        <div className="h-8 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
+          <div className="w-[120px] sm:w-[136px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[10px] font-mono text-neutral-500 uppercase tracking-widest">
             Time
           </div>
           <div
@@ -1723,7 +1723,7 @@ function TimelineTracks({
                 {t.label && (
                   <span
                     className={cn(
-                      "text-[9px] font-mono text-neutral-500 whitespace-nowrap",
+                      "text-[11px] font-mono text-neutral-400 whitespace-nowrap",
                       // 0:00 starts at the edge instead of half under the track names.
                       t.t === 0 ? "translate-x-0.5" : "-translate-x-1/2",
                     )}
@@ -1742,9 +1742,11 @@ function TimelineTracks({
             aria-hidden
             data-video-end
             className="pointer-events-none absolute top-0 bottom-0 z-[32] border-l border-dashed border-white/30"
-            style={{ left: `calc(var(--tl-gutter, 88px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
+            style={{
+              left: `calc(var(--tl-gutter, 120px) + ${(programEndMs / 1000) * pxPerSec}px)`,
+            }}
           >
-            <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45 whitespace-nowrap">
+            <span className="absolute top-1.5 left-1 text-[10px] font-mono uppercase tracking-wider text-white/55 whitespace-nowrap">
               End {formatPlaybackTime(programEndMs / 1000)}
             </span>
           </div>
@@ -1758,15 +1760,15 @@ function TimelineTracks({
             "pointer-events-none absolute top-0 bottom-0 z-40 transition-[left] duration-75",
             playheadPx < scrollLeft - 1 && "hidden",
           )}
-          style={{ left: `calc(var(--tl-gutter, 88px) + ${playheadPx}px)` }}
+          style={{ left: `calc(var(--tl-gutter, 120px) + ${playheadPx}px)` }}
         >
           <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rotate-45 bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.7)]" />
           <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-violet-400/90 shadow-[0_0_6px_rgba(139,92,246,0.55)]" />
         </div>
 
         <style>{`
-          .tl-root { --tl-gutter: 88px; }
-          @media (min-width: 640px) { .tl-root { --tl-gutter: 100px; } }
+          .tl-root { --tl-gutter: 120px; }
+          @media (min-width: 640px) { .tl-root { --tl-gutter: 136px; } }
         `}</style>
         <div>
           {/* V1 A-Roll */}
@@ -1790,7 +1792,7 @@ function TimelineTracks({
             {aRoll.length === 0 ? (
               <div
                 className={cn(
-                  "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
+                  "absolute inset-0 grid place-items-center text-[12px] italic pointer-events-none",
                   dropTarget?.track === "aroll" ? "text-violet-400" : "text-neutral-600",
                 )}
               >
@@ -1839,7 +1841,7 @@ function TimelineTracks({
             {bRoll.length === 0 ? (
               <div
                 className={cn(
-                  "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
+                  "absolute inset-0 grid place-items-center text-[12px] italic pointer-events-none",
                   dropTarget?.track === "broll" ? "text-teal-400" : "text-neutral-600",
                 )}
               >
@@ -1888,7 +1890,7 @@ function TimelineTracks({
             contentHandlers={scrubHandlers}
           >
             {captionPhrases.length === 0 ? (
-              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+              <div className="absolute inset-0 flex items-center px-3 text-[12px] italic text-neutral-500 pointer-events-none">
                 Captions appear here after a cloud render transcribes your clips
               </div>
             ) : (
@@ -1956,7 +1958,7 @@ function TimelineTracks({
             }}
           >
             {audioClips.length === 0 ? (
-              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+              <div className="absolute inset-0 flex items-center px-3 text-[12px] italic text-neutral-500 pointer-events-none">
                 Drop music or SFX here
               </div>
             ) : (
