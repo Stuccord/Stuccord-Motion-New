@@ -1721,7 +1721,13 @@ function TimelineTracks({
                   )}
                 />
                 {t.label && (
-                  <span className="text-[9px] font-mono text-neutral-500 -translate-x-1/2 whitespace-nowrap">
+                  <span
+                    className={cn(
+                      "text-[9px] font-mono text-neutral-500 whitespace-nowrap",
+                      // 0:00 starts at the edge instead of half under the track names.
+                      t.t === 0 ? "translate-x-0.5" : "-translate-x-1/2",
+                    )}
+                  >
                     {t.label}
                   </span>
                 )}

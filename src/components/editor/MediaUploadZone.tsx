@@ -90,7 +90,7 @@ export function MediaUploadZone({
           ) : (
             <>
               <Plus className="w-3.5 h-3.5 text-violet-400" />
-              <span>Import Video Clips</span>
+              <span>Import Media</span>
             </>
           )}
         </button>

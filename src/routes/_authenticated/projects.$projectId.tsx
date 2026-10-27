@@ -244,9 +244,9 @@ function EditorPage() {
   const [playing, setPlaying] = useState(false);
   // Play speed set with L (1×, 2×, 4×); K or a new file resets it.
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [viewMode, setViewMode] = useState<"program" | "source" | "compare">("program");
+  // Preview tab: the live edit (Timeline), the selected clip, or the render.
+  const [viewMode, setViewMode] = useState<ViewMode>("timeline");
   const [splitPct, setSplitPct] = useState(50);
-  const sourceVideoRef = useRef<HTMLVideoElement>(null);
   // Export switches, saved on the project (defaults until it has loaded, or
   // if the columns don't exist yet). The volume slider shows a draft while
   // dragging and saves when it's let go.
@@ -327,6 +327,45 @@ function EditorPage() {
   }, [latestJobKey, qc, projectId]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Signed links to every clip's file (they last an hour; renewed after 50
+  // minutes), for the live timeline player and its music.
+  const [clipUrls, setClipUrls] = useState<Record<string, string>>({});
+  const clipUrlsSignedAt = useRef(new Map<string, number>());
+  // Bumped every 10 minutes so links are renewed even without other changes.
+  const [renewTick, setRenewTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setRenewTick((n) => n + 1), 10 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    if (!data) return;
+    const now = Date.now();
+    const paths = [...new Set((data.clips as ClipRow[]).map((c) => c.storage_path))].filter(
+      (path) => now - (clipUrlsSignedAt.current.get(path) ?? 0) > 50 * 60 * 1000,
+    );
+    if (paths.length === 0) return;
+    for (const path of paths) clipUrlsSignedAt.current.set(path, now);
+    let cancelled = false;
+    void Promise.all(
+      paths.map(async (path) => {
+        try {
+          const { url } = await signClip({ data: { path } });
+          return [path, url] as const;
+        } catch {
+          clipUrlsSignedAt.current.delete(path);
+          return null;
+        }
+      }),
+    ).then((pairs) => {
+      if (cancelled) return;
+      const fresh = Object.fromEntries(pairs.filter((x) => x != null));
+      setClipUrls((old) => ({ ...old, ...fresh }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, signClip, renewTick]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
@@ -1053,22 +1092,23 @@ function EditorPage() {
     return new Map([...main.starts, ...broll.starts]);
   }, [videoClipsForHooks]);
 
-  // The main player shows either the rendered program or the selected clip's
-  // source file (see PreviewCanvas). currentTime means a position in whichever
-  // one it is showing, so every time conversion has to check this first.
-  const showingProgram = previewUrl != null && (viewMode !== "source" || !selectedClipUrl);
+  // The main player is the live timeline, the render, or the selected clip's
+  // file (see PreviewCanvas). currentTime means a position in whichever one it
+  // is showing, so every time conversion has to check this first. Render
+  // needs a render and Clip a selected clip; otherwise the live timeline.
+  const shownViewMode: ViewMode =
+    viewMode === "render" && previewUrl
+      ? "render"
+      : viewMode === "clip" && selectedClipUrl
+        ? "clip"
+        : "timeline";
+  // The timeline and the render share one clock: the player's time is a
+  // time on the timeline. A clip on its own is in its file's time instead.
+  const showingProgram = shownViewMode !== "clip";
   const selectedIsImage = useMemo(() => {
     const c = data?.clips.find((x) => x.id === selectedClipId);
     return !!c && isImageFilename(c.filename);
   }, [data, selectedClipId]);
-  // The view the preview actually shows: without a render there's no program,
-  // Source and Compare need a selected clip, and an image can't be compared
-  // against the render.
-  const shownViewMode: "program" | "source" | "compare" = !previewUrl
-    ? "source"
-    : !selectedClipUrl || (viewMode === "compare" && selectedIsImage)
-      ? "program"
-      : viewMode;
 
   // The part of the player's file that belongs to the edit: all of the render,
   // or the selected clip's trimmed part of its source file. Play, seek and the
@@ -1209,16 +1249,26 @@ function EditorPage() {
   const inProgress =
     latestJob && ["queued", "transcribing", "planning", "rendering"].includes(latestJob.status);
 
-  const activeVideoSrc =
-    viewMode === "source"
-      ? selectedClipUrl
-      : viewMode === "program"
-      ? previewUrl ?? selectedClipUrl
-      : previewUrl ?? selectedClipUrl;
-
   const selectedClip = selectedClipId
     ? (clips.find((c) => c.id === selectedClipId) as ClipRow | undefined)
     : undefined;
+
+  /**
+   * Selects a clip from the timeline. On the live timeline (or the render),
+   * the playhead also moves into it, like After Effects and Premiere.
+   */
+  function selectAndSeek(id: string) {
+    setSelectedClipId(id);
+    const c = clips.find((x) => x.id === id);
+    const v = videoRef.current;
+    if (!c || !v || !showingProgram || c.role === "music" || c.role === "sfx") return;
+    const start = programOffsets.get(id) ?? 0;
+    const end = start + clipVisibleMs(c);
+    if (timelinePlayheadMs < start || timelinePlayheadMs >= end) {
+      v.currentTime = start / 1000;
+      setCurrentTime(start / 1000);
+    }
+  }
 
   // ---- Timeline actions ----
   /**
@@ -1497,9 +1547,6 @@ function EditorPage() {
     if (!v) return;
     const target = Math.max(playRange.startS, Math.min(playRange.endS || v.duration || 0, time));
     v.currentTime = target;
-    if (shownViewMode === "compare" && sourceVideoRef.current) {
-      sourceVideoRef.current.currentTime = target;
-    }
     setCurrentTime(target);
   };
 
@@ -1610,6 +1657,7 @@ function EditorPage() {
             onViewModeChange={setViewMode}
             programUrl={previewUrl}
             sourceUrl={selectedClipUrl}
+            timeline={{ aRoll, bRoll, urls: clipUrls, lengthMs: clipVisibleMs }}
             sourceIsImage={selectedIsImage}
             imageLengthMs={selectedClip ? clipVisibleMs(selectedClip) : undefined}
             selectedClipFilename={selectedClip?.filename}
@@ -1635,7 +1683,6 @@ function EditorPage() {
             muted={muted}
             onToggleMute={() => setMuted((m) => !m)}
             videoRef={videoRef}
-            sourceVideoRef={sourceVideoRef}
             onTimeUpdate={(t) => setCurrentTime(t)}
             onLoadedMetadata={(d) => {
               setDuration(d);
@@ -1755,7 +1802,7 @@ function EditorPage() {
             bRoll={bRoll}
             videoClips={videoClips}
             selectedClipId={selectedClipId}
-            onSelect={(id) => setSelectedClipId(id)}
+            onSelect={selectAndSeek}
             onTrim={trimClip}
             captions={captionsEnabled}
             onCaptionsToggle={() =>

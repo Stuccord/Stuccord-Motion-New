@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { MonitorPlay, Sparkles, ChevronLeft, ChevronRight, Loader2, Film, SplitSquareVertical, X } from "lucide-react";
+import { MonitorPlay, Loader2, Film, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AspectRatio, ViewMode } from "./types";
+import type { AspectRatio, ClipRow, ViewMode } from "./types";
 import { PlaybackControls } from "./PlaybackControls";
+import { TimelinePlayer, type TimelinePlayerHandle } from "./TimelinePlayer";
 import { IMAGE_ZOOM } from "@/lib/media-kind";
 
 interface PreviewCanvasProps {
@@ -11,8 +12,19 @@ interface PreviewCanvasProps {
   onAspectRatioChange?: (ratio: AspectRatio) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  /** The finished cloud render (Render tab). */
   programUrl: string | null;
+  /** The selected clip's file (Clip tab). */
   sourceUrl: string | null;
+  /** The edit, for the Timeline tab's live player. */
+  timeline?: {
+    aRoll: ClipRow[];
+    bRoll: ClipRow[];
+    urls: Record<string, string>;
+    lengthMs: (clip: ClipRow) => number;
+    onTick?: (timeMs: number, playing: boolean, rate: number) => void;
+    renderOverlay?: (timeMs: number) => React.ReactNode;
+  };
   /** The selected clip is an image: Source shows it (slowly zooming) instead of a video. */
   sourceIsImage?: boolean;
   /** How long the selected image shows, for its slow zoom. */
@@ -36,8 +48,8 @@ interface PreviewCanvasProps {
   onSkipForward: () => void;
   muted: boolean;
   onToggleMute: () => void;
+  /** The player in use: a <video>, or the timeline player (which acts like one). */
   videoRef: React.RefObject<HTMLVideoElement | null>;
-  sourceVideoRef: React.RefObject<HTMLVideoElement | null>;
   onTimeUpdate?: (currentTime: number) => void;
   onLoadedMetadata?: (duration: number) => void;
 }
@@ -49,6 +61,7 @@ export function PreviewCanvas({
   onViewModeChange,
   programUrl,
   sourceUrl,
+  timeline,
   sourceIsImage = false,
   imageLengthMs = 3000,
   selectedClipFilename,
@@ -68,11 +81,9 @@ export function PreviewCanvas({
   muted,
   onToggleMute,
   videoRef,
-  sourceVideoRef,
   onTimeUpdate,
   onLoadedMetadata,
 }: PreviewCanvasProps) {
-  const [splitPct, setSplitPct] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // The frame is the largest box with the project's shape that fits the
@@ -112,13 +123,15 @@ export function PreviewCanvas({
     onLoadStart: () => onPlayingChange?.(false),
   };
 
-  // Determine active video source based on viewMode
-  const activeVideoSrc =
-    viewMode === "program"
-      ? programUrl || sourceUrl
-      : viewMode === "source"
-      ? sourceUrl || programUrl
-      : programUrl;
+  // The Timeline tab plays the edit live; Clip and Render show one file.
+  const showTimeline = viewMode === "timeline" && !!timeline && hasClips;
+  const activeVideoSrc = showTimeline
+    ? null
+    : viewMode === "render"
+      ? programUrl
+      : viewMode === "clip"
+        ? sourceUrl
+        : null;
 
   // The shown video's own shape (after phone rotation), once it has loaded.
   const [clipSize, setClipSize] = useState<{ src: string; w: number; h: number } | null>(null);
@@ -131,8 +144,8 @@ export function PreviewCanvas({
   // shown whole over a blurred copy.
   const mismatched = clipRatio != null && Math.abs(Math.log(clipRatio / ratio)) >= 0.03;
   // The selected image, shown in Source view.
-  const showImage = sourceIsImage && viewMode !== "compare" && activeVideoSrc === sourceUrl;
-  const blurBackground = mismatched && viewMode !== "compare" && !showImage;
+  const showImage = sourceIsImage && viewMode === "clip" && activeVideoSrc === sourceUrl;
+  const blurBackground = mismatched && !showImage;
 
   // The blurred copy: the video drawn into a tiny canvas every frame, then
   // stretched and blurred by CSS. Cheap, and always in step with the video.
@@ -200,12 +213,11 @@ export function PreviewCanvas({
   const showShapeHint =
     suggestedRatio != null &&
     suggestedRatio !== aspectRatio &&
-    viewMode !== "compare" &&
+    viewMode === "clip" &&
     !dismissedHints.includes(hintKey);
   const clipShapeWord =
     suggestedRatio === "9:16" ? "vertical" : suggestedRatio === "16:9" ? "horizontal" : "square";
 
-  const canCompare = Boolean(programUrl && sourceUrl && !sourceIsImage);
   const hasVideo = Boolean(activeVideoSrc);
 
   const toggleFullscreen = () => {
@@ -231,63 +243,64 @@ export function PreviewCanvas({
             Preview Monitor
           </span>
 
-          {/* View Mode Switcher */}
+          {/* Timeline: the edit, live. Clip: the selected clip. Render: the
+              finished cloud video. */}
           <div className="ml-2 flex items-center bg-white/[0.04] border border-white/[0.08] rounded-md p-0.5">
             <button
               type="button"
-              onClick={() => onViewModeChange("program")}
-              disabled={!programUrl}
-              title={programUrl ? "The rendered video" : "Render the video to see the program"}
+              onClick={() => onViewModeChange("timeline")}
+              disabled={!hasClips}
+              title={"Your edit, played live from the timeline"}
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
-                viewMode === "program"
+                viewMode === "timeline"
                   ? "bg-violet-600 text-white shadow-sm"
                   : "text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed",
               )}
             >
-              Program
+              Timeline
             </button>
             <button
               type="button"
-              onClick={() => onViewModeChange("source")}
+              onClick={() => onViewModeChange("clip")}
               disabled={!sourceUrl}
-              title={sourceUrl ? "The selected clip's trimmed part" : "Select a clip to see it"}
+              title={sourceUrl ? "The selected clip on its own" : "Select a clip to see it on its own"}
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
-                viewMode === "source"
+                viewMode === "clip"
                   ? "bg-violet-600 text-white shadow-sm"
                   : "text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed",
               )}
             >
-              Source
+              Clip
             </button>
             <button
               type="button"
-              onClick={() => onViewModeChange("compare")}
-              disabled={!canCompare}
+              onClick={() => onViewModeChange("render")}
+              disabled={!programUrl}
+              title={programUrl ? "The finished cloud render" : "Render the video to see it here"}
               className={cn(
-                "px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center gap-1",
-                viewMode === "compare"
+                "px-2 py-0.5 rounded text-[11px] font-medium transition",
+                viewMode === "render"
                   ? "bg-violet-600 text-white shadow-sm"
                   : "text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed",
               )}
             >
-              <SplitSquareVertical className="w-3 h-3" />
-              <span>Compare</span>
+              Render
             </button>
           </div>
         </div>
 
         {/* Right Info: Aspect ratio & clip status */}
         <div className="flex items-center gap-2">
-          {viewMode === "source" && selectedClipFilename && (
+          {viewMode === "clip" && selectedClipFilename && (
             <span className="text-[11px] text-neutral-400 font-mono truncate max-w-[150px] hidden sm:inline">
               {selectedClipFilename}
             </span>
           )}
-          {viewMode === "compare" && (
-            <span className="text-[11px] text-cyan-400 font-mono hidden sm:inline">
-              Source vs Program
+          {showTimeline && (
+            <span className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-neutral-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Live edit
             </span>
           )}
         </div>
@@ -298,76 +311,39 @@ export function PreviewCanvas({
         ref={stageRef}
         className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 relative bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.05),transparent_70%)]"
       >
-        {hasVideo ? (
+        {showTimeline ? (
+          <div
+            className="relative bg-black rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden max-w-full max-h-full shrink-0"
+            style={frameStyle}
+          >
+            <TimelinePlayer
+              ref={videoRef as unknown as React.Ref<TimelinePlayerHandle>}
+              aRoll={timeline!.aRoll}
+              bRoll={timeline!.bRoll}
+              urls={timeline!.urls}
+              lengthMs={timeline!.lengthMs}
+              frameRatio={ratio}
+              muted={muted}
+              onTime={onTimeUpdate}
+              onDuration={onLoadedMetadata}
+              onPlayingChange={onPlayingChange}
+              onTick={timeline!.onTick}
+              renderOverlay={timeline!.renderOverlay}
+            />
+            {/* A cloud render in progress: shown on top of the live edit. */}
+            {isRendering && (
+              <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 rounded-md bg-black/75 backdrop-blur border border-white/10 px-2 py-1 text-[10px] font-mono text-violet-200">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Rendering {renderProgress}%
+              </div>
+            )}
+          </div>
+        ) : hasVideo ? (
           <div
             className="relative bg-black rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden flex items-center justify-center max-w-full max-h-full shrink-0"
             style={frameStyle}
           >
-            {viewMode === "compare" && programUrl && sourceUrl ? (
-              <>
-                {/* Program video (Base) */}
-                <video
-                  ref={videoRef as React.RefObject<HTMLVideoElement>}
-                  key={`prog-${programUrl}`}
-                  src={programUrl}
-                  className="absolute inset-0 w-full h-full object-contain bg-black"
-                  {...playbackEvents}
-                  onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime)}
-                  onLoadedMetadata={(e) => onLoadedMetadata?.(e.currentTarget.duration || 0)}
-                  muted={muted}
-                  playsInline
-                />
-                {/* Source video (Clipped) */}
-                <div
-                  className="absolute inset-y-0 left-0 overflow-hidden"
-                  style={{ width: `${splitPct}%` }}
-                >
-                  <video
-                    ref={sourceVideoRef as React.RefObject<HTMLVideoElement>}
-                    key={`src-${sourceUrl}`}
-                    src={sourceUrl}
-                    className="absolute inset-0 h-full object-contain bg-black"
-                    style={{ width: `${(100 / splitPct) * 100}%` }}
-                    muted
-                    playsInline
-                  />
-                  <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-violet-950/80 backdrop-blur text-[10px] font-mono text-violet-300 border border-violet-500/40 uppercase">
-                    Source
-                  </div>
-                </div>
-                <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-cyan-950/80 backdrop-blur text-[10px] font-mono text-cyan-300 border border-cyan-500/40 uppercase">
-                  Program
-                </div>
-
-                {/* Draggable Divider Handle */}
-                <div
-                  className="absolute inset-y-0 z-20 cursor-ew-resize group"
-                  style={{ left: `calc(${splitPct}% - 12px)`, width: 24 }}
-                  onPointerDown={(e) => {
-                    const el = e.currentTarget.parentElement;
-                    if (!el) return;
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    const rect = el.getBoundingClientRect();
-                    const move = (ev: PointerEvent) => {
-                      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
-                      setSplitPct(Math.max(5, Math.min(95, pct)));
-                    };
-                    const up = () => {
-                      window.removeEventListener("pointermove", move);
-                      window.removeEventListener("pointerup", up);
-                    };
-                    window.addEventListener("pointermove", move);
-                    window.addEventListener("pointerup", up);
-                  }}
-                >
-                  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white text-black flex items-center justify-center shadow-lg">
-                    <ChevronLeft className="w-3 h-3 -mr-0.5" />
-                    <ChevronRight className="w-3 h-3 -ml-0.5" />
-                  </div>
-                </div>
-              </>
-            ) : showImage ? (
+            {showImage ? (
               <>
                 {/* Like the exports: a blurred copy behind when the shape
                     differs, and a slow push-in over the clip's length. */}
@@ -459,10 +435,7 @@ export function PreviewCanvas({
           </div>
         ) : (
           /* Empty / Idle State */
-          <div
-            className="relative bg-[#0E0F17] rounded-lg border border-white/[0.08] shadow-xl flex flex-col items-center justify-center p-6 text-center max-w-full max-h-full shrink-0 overflow-hidden"
-            style={frameStyle}
-          >
+          <div className="relative bg-[#0E0F17] rounded-lg border border-white/[0.08] shadow-xl flex flex-col items-center justify-center px-6 py-8 text-center w-full max-w-sm max-h-full overflow-auto">
             {isRendering ? (
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
@@ -487,11 +460,9 @@ export function PreviewCanvas({
                 <div className="w-10 h-10 rounded-xl bg-violet-950/40 border border-violet-500/20 flex items-center justify-center text-violet-400">
                   <Film className="w-5 h-5" />
                 </div>
-                <h3 className="text-xs font-semibold text-neutral-200">
-                  Ready to Preview
-                </h3>
-                <p className="text-[11px] text-neutral-500 max-w-[200px]">
-                  Select a clip in the media panel to inspect or render the video to generate program playback.
+                <h3 className="text-xs font-semibold text-neutral-200">Nothing to show here</h3>
+                <p className="text-[11px] text-neutral-500 max-w-[240px]">
+                  Choose Timeline to play your edit, or select a clip to see it on its own.
                 </p>
               </div>
             ) : (
@@ -502,8 +473,9 @@ export function PreviewCanvas({
                 <h3 className="text-xs font-semibold text-neutral-200">
                   No Clips Added
                 </h3>
-                <p className="text-[11px] text-neutral-500 max-w-[200px]">
-                  Upload video clips using the media library on the left to start editing.
+                <p className="text-[11px] text-neutral-500 max-w-[240px]">
+                  Add videos, images or music from the Media panel on the left, or drop them on the
+                  timeline.
                 </p>
               </div>
             )}
@@ -524,7 +496,7 @@ export function PreviewCanvas({
         muted={muted}
         onToggleMute={onToggleMute}
         onToggleFullscreen={toggleFullscreen}
-        disabled={!hasVideo || showImage}
+        disabled={showTimeline ? false : !hasVideo || showImage}
       />
     </div>
   );

@@ -49,4 +49,5 @@ export type RenderJobRow = {
   updated_at: string;
 };
 
-export type ViewMode = "program" | "source" | "compare";
+/** Preview monitor tabs: the live edit, the selected clip, the cloud render. */
+export type ViewMode = "timeline" | "clip" | "render";
