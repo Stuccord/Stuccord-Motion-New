@@ -3,7 +3,7 @@ import { Film, Music2, Image as ImageIcon, Trash2, Check, Clock, HardDrive, Spar
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { ClipRow } from "./types";
+import { CLIP_DRAG_TYPE, type ClipRow } from "./types";
 import { MediaUploadZone } from "./MediaUploadZone";
 
 interface MediaLibraryProps {
@@ -31,10 +31,21 @@ function formatDuration(durationMs?: number | null, durationSeconds?: number | n
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Drag a clip onto a timeline track to add another copy of it there.
+const startClipDrag = (clip: ClipRow) => (e: React.DragEvent) => {
+  e.dataTransfer.setData(CLIP_DRAG_TYPE, clip.id);
+  e.dataTransfer.effectAllowed = "copy";
+};
+
 function AudioClipRow({ clip, onRemove }: { clip: ClipRow; onRemove: () => void }) {
   const isSfx = clip.role === "sfx";
   return (
-    <div className="group relative flex flex-col gap-1.5 p-2.5 rounded-lg border bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/10 transition-all">
+    <div
+      draggable
+      onDragStart={startClipDrag(clip)}
+      title="Drag onto the A2 Music track to add it again"
+      className="group relative flex flex-col gap-1.5 p-2.5 rounded-lg border bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/10 transition-all cursor-grab active:cursor-grabbing"
+    >
       <div className="flex items-center justify-between gap-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-5 h-5 shrink-0 rounded bg-white/[0.06] text-neutral-400 flex items-center justify-center">
@@ -214,8 +225,11 @@ export function MediaLibrary({
                 <div
                   key={clip.id}
                   onClick={() => onSelectClip(clip.id)}
+                  draggable
+                  onDragStart={startClipDrag(clip)}
+                  title="Click to preview · drag onto a timeline track to add it there"
                   className={cn(
-                    "group relative flex flex-col gap-1.5 p-2.5 rounded-lg border transition-all cursor-pointer select-none",
+                    "group relative flex flex-col gap-1.5 p-2.5 rounded-lg border transition-all cursor-pointer active:cursor-grabbing select-none",
                     isSelected
                       ? "bg-violet-950/30 border-violet-500/50 shadow-md ring-1 ring-violet-500/20"
                       : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/10",

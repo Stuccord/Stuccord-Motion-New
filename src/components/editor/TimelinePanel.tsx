@@ -19,8 +19,19 @@ import {
   EyeOff,
   Volume2,
   VolumeX,
+  ArrowDownToLine,
+  ArrowUpToLine,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -28,12 +39,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { ClipRow } from "./types";
+import { CLIP_DRAG_TYPE, type ClipRow } from "./types";
 import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
 import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { thumbnailKey } from "@/lib/video-thumbnail";
 
 /* ---------- shared types ---------- */
+/** A track media can be added to, and where on it (null: at the end). */
+export type AddMediaTarget = { track: "aroll" | "broll" | "music"; index: number | null };
+/** What's being added: files from the computer, or a copy of a project clip. */
+export type AddMediaSource = { files: File[] } | { clipId: string };
+
 export interface HistoryItem {
   undo: () => void | Promise<void>;
   redo: () => void | Promise<void>;
@@ -144,6 +160,10 @@ function TrackRow({
   icon: Icon,
   toneClass,
   toggle,
+  onAdd,
+  addLabel,
+  trackKey,
+  dropHighlight = false,
   size = "clip",
   innerWidth,
   contentHandlers,
@@ -158,6 +178,14 @@ function TrackRow({
   /** Text colour of the track's icon and label, matching its clips. */
   toneClass: string;
   toggle?: TrackToggle;
+  /** Opens a file picker to add media to this track. */
+  onAdd?: () => void;
+  /** What the + button adds, e.g. "video to V1". */
+  addLabel?: string;
+  /** Identifies the track's content area for drops and the right-click menu. */
+  trackKey?: Track | "music";
+  /** Media is being dragged over this track. */
+  dropHighlight?: boolean;
   size?: keyof typeof TRACK_HEIGHT;
   innerWidth: number;
   /** Pointer handlers for the track's content area (click/drag to seek). */
@@ -182,6 +210,17 @@ function TrackRow({
           <span className="text-[8.5px] text-neutral-500 uppercase tracking-wider truncate">
             {name}
           </span>
+          {onAdd && (
+            <button
+              type="button"
+              onClick={onAdd}
+              aria-label={`Add ${addLabel}`}
+              title={`Add ${addLabel}`}
+              className="ml-auto shrink-0 w-4 h-4 rounded flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.08] transition"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          )}
         </div>
         {/* Second line: what the track is for (or that it's off), and its button */}
         {(note || toggle) && (
@@ -223,7 +262,12 @@ function TrackRow({
       </div>
       <div
         ref={contentRef}
-        className={cn("relative", toggle && !toggle.on && "opacity-35")}
+        data-track={trackKey}
+        className={cn(
+          "relative transition-colors",
+          toggle && !toggle.on && "opacity-35",
+          dropHighlight && "bg-violet-500/10 ring-1 ring-inset ring-violet-400/50",
+        )}
         style={{ width: innerWidth }}
         {...contentHandlers}
       >
@@ -384,6 +428,7 @@ function TimelineClip({
   return (
     <div
       data-timeline-clip
+      data-clip-id={clip.id}
       onPointerDown={onBodyPointerDown}
       onClick={onSelect}
       // Stop the browser's own image/text drag and the long-press menu.
@@ -519,6 +564,11 @@ type TimelineTracksProps = {
   onCaptionsToggle?: () => void;
   /** Turns music and SFX in the export on or off (the A2 header button). */
   onMusicToggle?: () => void;
+  /** Adds files or a copy of a project clip to a track. */
+  onAddMedia?: (target: AddMediaTarget, source: AddMediaSource) => void;
+  onSplit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
   pxPerSec: number;
   snapEnabled: boolean;
   currentTimeMs: number;
@@ -550,6 +600,10 @@ function TimelineTracks({
   music,
   onCaptionsToggle,
   onMusicToggle,
+  onAddMedia,
+  onSplit,
+  onDuplicate,
+  onDelete,
   pxPerSec,
   snapEnabled,
   currentTimeMs,
@@ -567,6 +621,29 @@ function TimelineTracks({
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ track: Track; index: number } | null>(null);
   const trackEls = useRef<Record<Track, HTMLDivElement | null>>({ aroll: null, broll: null });
+  const musicTrackEl = useRef<HTMLDivElement | null>(null);
+  // Files or a Media-panel clip being dragged over the tracks, and where
+  // they'd land.
+  const [mediaDrop, setMediaDrop] = useState<AddMediaTarget | null>(null);
+  // Hidden file picker for the + buttons and the right-click menu.
+  const fileInput = useRef<HTMLInputElement>(null);
+  const pickTarget = useRef<AddMediaTarget | null>(null);
+  const pickFiles = (target: AddMediaTarget) => {
+    const input = fileInput.current;
+    if (!input || !onAddMedia) return;
+    pickTarget.current = target;
+    input.accept = target.track === "music" ? "audio/*" : "video/*";
+    input.value = "";
+    input.click();
+  };
+  // Right-click menu: where it opens, and on what.
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    track: Track | "music" | null;
+    clip: ClipRow | null;
+  } | null>(null);
+  const lastPointerType = useRef<string>("mouse");
   // A drag ends with a click on whatever is under the pointer; don't let it
   // select a clip.
   const suppressClick = useRef(false);
@@ -1039,14 +1116,89 @@ function TimelineTracks({
   };
 
   // The violet line showing where a dragged clip will land on a track.
-  const insertionLine = (track: Track) =>
-    drag && dropTarget?.track === track ? (
+  const insertionLine = (track: Track) => {
+    const target =
+      drag && dropTarget?.track === track
+        ? dropTarget
+        : mediaDrop?.track === track && mediaDrop.index != null
+          ? { track, index: mediaDrop.index }
+          : null;
+    return target ? (
       <div
         aria-hidden
         className="absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(167,139,250,0.9)] z-20 pointer-events-none"
-        style={{ left: insertionPx(dropTarget, drag.id) }}
+        style={{ left: insertionPx(target, drag?.id ?? "") }}
       />
     ) : null;
+  };
+
+  // Where dragged-in media would land: a spot on a video track, or the
+  // music track (music plays one file after another, so it goes at the end).
+  const mediaTargetAt = (clientX: number, clientY: number): AddMediaTarget | null => {
+    const video = dropTargetAt(clientX, clientY, "");
+    if (video) return video;
+    const r = musicTrackEl.current?.getBoundingClientRect();
+    if (r && clientY >= r.top && clientY <= r.bottom) return { track: "music", index: null };
+    return null;
+  };
+  const isMediaDrag = (e: React.DragEvent) =>
+    !!onAddMedia &&
+    (e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes(CLIP_DRAG_TYPE));
+  const mediaDragHandlers = {
+    onDragOver: (e: React.DragEvent<HTMLDivElement>) => {
+      if (!isMediaDrag(e)) return;
+      const target = mediaTargetAt(e.clientX, e.clientY);
+      if (!target) {
+        setMediaDrop(null);
+        return;
+      }
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setMediaDrop((cur) =>
+        cur?.track === target.track && cur.index === target.index ? cur : target,
+      );
+    },
+    onDragLeave: (e: React.DragEvent<HTMLDivElement>) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setMediaDrop(null);
+    },
+    onDrop: (e: React.DragEvent<HTMLDivElement>) => {
+      setMediaDrop(null);
+      if (!isMediaDrag(e) || !onAddMedia) return;
+      const target = mediaTargetAt(e.clientX, e.clientY);
+      if (!target) return;
+      // Handled here: the page's own drop handler (upload anywhere) skips it.
+      e.preventDefault();
+      const clipId = e.dataTransfer.getData(CLIP_DRAG_TYPE);
+      if (clipId) onAddMedia(target, { clipId });
+      else if (e.dataTransfer.files.length) {
+        onAddMedia(target, { files: Array.from(e.dataTransfer.files) });
+      }
+    },
+  };
+
+  // Right-click on a clip or a track (not a touch long-press, which picks
+  // clips up instead).
+  const openMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (lastPointerType.current === "touch" || drag) {
+      e.preventDefault();
+      return;
+    }
+    const el = e.target as HTMLElement;
+    const trackEl = el.closest<HTMLElement>("[data-track]");
+    const clipId = el.closest<HTMLElement>("[data-clip-id]")?.dataset.clipId;
+    if (!trackEl && !clipId) return;
+    e.preventDefault();
+    const clip = clipId ? (videoClips.find((c) => c.id === clipId) ?? null) : null;
+    if (clip) onSelect(clip.id);
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      track: (trackEl?.dataset.track as Track | "music" | undefined) ?? null,
+      clip,
+    });
+  };
+  const trackName = (t: Track | "music") =>
+    t === "aroll" ? "V1 A-roll" : t === "broll" ? "V2 B-roll" : "A2 Music";
 
   return (
     // tl-root sets --tl-gutter (the track header width) on the whole scroll
@@ -1055,7 +1207,85 @@ function TimelineTracks({
       ref={scrollRef}
       className="relative flex-1 overflow-auto min-h-0 tl-scroll tl-root"
       onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+      onPointerDownCapture={(e) => {
+        lastPointerType.current = e.pointerType;
+      }}
+      onContextMenu={openMenu}
+      {...mediaDragHandlers}
     >
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.currentTarget.files ?? []);
+          if (files.length && pickTarget.current && onAddMedia) {
+            onAddMedia(pickTarget.current, { files });
+          }
+        }}
+      />
+      {/* Right-click menu, opened where the pointer was */}
+      <DropdownMenu open={!!menu} onOpenChange={(open) => !open && setMenu(null)}>
+        <DropdownMenuTrigger asChild>
+          <span
+            aria-hidden
+            className="fixed w-0 h-0"
+            style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }}
+          />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-52 text-xs">
+          {menu?.clip ? (
+            <>
+              <DropdownMenuLabel className="text-[11px] truncate">
+                {baseName(menu.clip.filename)}
+              </DropdownMenuLabel>
+              <DropdownMenuItem onSelect={onSplit}>
+                <Scissors className="w-3.5 h-3.5" /> Split at playhead
+                <DropdownMenuShortcut>S</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onDuplicate}>
+                <Copy className="w-3.5 h-3.5" /> Duplicate
+                <DropdownMenuShortcut>Ctrl+D</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              {menu.clip.role === "broll" ? (
+                <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "aroll", aRoll.length)}>
+                  <ArrowUpToLine className="w-3.5 h-3.5" /> Move to V1 A-roll
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "broll", bRoll.length)}>
+                  <ArrowDownToLine className="w-3.5 h-3.5" /> Move to V2 B-roll
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={onDelete}
+                className="text-rose-300 focus:text-rose-200 focus:bg-rose-500/15"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+                <DropdownMenuShortcut>Del</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            </>
+          ) : menu?.track ? (
+            <DropdownMenuItem
+              onSelect={() =>
+                pickFiles({
+                  track: menu.track!,
+                  index:
+                    menu.track === "music"
+                      ? null
+                      : (dropTargetAt(menu.x, menu.y, "")?.index ?? null),
+                })
+              }
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {menu.track === "music"
+                ? "Add music or SFX…"
+                : `Add video to ${trackName(menu.track)}…`}
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {/* Ruler */}
       <div className="h-6 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
         <div className="w-[88px] sm:w-[100px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
@@ -1129,6 +1359,10 @@ function TimelineTracks({
           icon={Film}
           toneClass="text-violet-400"
           size={aRoll.length === 0 ? "slim" : "clip"}
+          trackKey="aroll"
+          onAdd={onAddMedia && (() => pickFiles({ track: "aroll", index: null }))}
+          addLabel="video to V1"
+          dropHighlight={mediaDrop?.track === "aroll"}
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
           contentRef={(el) => {
@@ -1143,7 +1377,7 @@ function TimelineTracks({
                 dropTarget?.track === "aroll" ? "text-violet-400" : "text-neutral-600",
               )}
             >
-              Drop A-roll clips here
+              Drop or drag videos here
             </div>
           ) : (
             aRoll.map((c, i) => (
@@ -1174,6 +1408,10 @@ function TimelineTracks({
           icon={Layers}
           toneClass="text-teal-400"
           size={bRoll.length === 0 ? "slim" : "clip"}
+          trackKey="broll"
+          onAdd={onAddMedia && (() => pickFiles({ track: "broll", index: null }))}
+          addLabel="video to V2"
+          dropHighlight={mediaDrop?.track === "broll"}
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
           contentRef={(el) => {
@@ -1188,7 +1426,7 @@ function TimelineTracks({
                 dropTarget?.track === "broll" ? "text-teal-400" : "text-neutral-600",
               )}
             >
-              B-roll &amp; cutaways
+              B-roll &amp; cutaways: drop videos here
             </div>
           ) : (
             bRoll.map((c, i) => (
@@ -1290,12 +1528,19 @@ function TimelineTracks({
           }
           note="Ducked under voice"
           size="slim"
+          trackKey="music"
+          onAdd={onAddMedia && (() => pickFiles({ track: "music", index: null }))}
+          addLabel="music or SFX"
+          dropHighlight={mediaDrop?.track === "music"}
           innerWidth={trackWidthPx}
           contentHandlers={scrubHandlers}
+          contentRef={(el) => {
+            musicTrackEl.current = el;
+          }}
         >
           {audioClips.length === 0 ? (
             <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
-              No music or SFX uploaded
+              Drop music or SFX here
             </div>
           ) : (
             <>
@@ -1342,6 +1587,8 @@ export interface TimelinePanelProps {
   onCaptionsToggle?: () => void;
   /** Turns music and SFX in the export on or off (the A2 header button). */
   onMusicToggle?: () => void;
+  /** Adds files or a copy of a project clip to a track. */
+  onAddMedia?: (target: AddMediaTarget, source: AddMediaSource) => void;
   snapEnabled: boolean;
   onSnapToggle: () => void;
   pxPerSec: number;
@@ -1385,6 +1632,7 @@ export function TimelinePanel({
   music,
   onCaptionsToggle,
   onMusicToggle,
+  onAddMedia,
   snapEnabled,
   onSnapToggle,
   pxPerSec,
@@ -1505,6 +1753,10 @@ export function TimelinePanel({
         music={music}
         onCaptionsToggle={onCaptionsToggle}
         onMusicToggle={onMusicToggle}
+        onAddMedia={onAddMedia}
+        onSplit={onSplit}
+        onDuplicate={onDuplicate}
+        onDelete={onDelete}
         pxPerSec={pxPerSec}
         snapEnabled={snapEnabled}
         currentTimeMs={currentTimeMs}

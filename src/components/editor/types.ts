@@ -1,5 +1,8 @@
 export type AspectRatio = "9:16" | "16:9" | "1:1";
 
+/** Drag data type for a clip dragged from the Media panel onto the timeline. */
+export const CLIP_DRAG_TYPE = "application/x-stuccord-clip";
+
 export type ClipRow = {
   id: string;
   filename: string;

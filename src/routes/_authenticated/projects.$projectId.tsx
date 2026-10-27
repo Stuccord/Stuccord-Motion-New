@@ -122,6 +122,8 @@ import {
   type AspectRatio,
   type ViewMode,
   type CaptionPhrase,
+  type AddMediaTarget,
+  type AddMediaSource,
 } from "@/components/editor";
 import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
 
@@ -672,24 +674,53 @@ function EditorPage() {
     return null;
   }
 
-  async function handleUpload(files: FileList | File[]) {
-    const arr = Array.from(files).filter(
-      (f) => f.type.startsWith("video/") || f.type.startsWith("audio/"),
+  // Track a file can go on: video on V1/V2, audio on A2.
+  const fitsTrack = (f: File, track: AddMediaTarget["track"]) =>
+    track === "music" ? f.type.startsWith("audio/") : f.type.startsWith("video/");
+
+  /**
+   * Uploads files and adds them to the timeline. With a target they go on
+   * that track (at its position, or the end); otherwise each file's type
+   * picks the track.
+   */
+  async function handleUpload(files: FileList | File[], target?: AddMediaTarget) {
+    const all = Array.from(files);
+    const arr = all.filter((f) =>
+      target
+        ? fitsTrack(f, target.track)
+        : f.type.startsWith("video/") || f.type.startsWith("audio/"),
     );
     if (arr.length === 0) {
-      toast.error("Drop video or audio files");
+      toast.error(
+        target
+          ? target.track === "music"
+            ? "Only music and sound files go on A2"
+            : "Only videos go on V1 and V2"
+          : "Drop video or audio files",
+      );
       return;
+    }
+    if (target && arr.length < all.length) {
+      toast.info(`Skipped ${all.length - arr.length} file(s) that don't fit that track`);
     }
     if (!data) return;
     setUploading(true);
     const hasAnyARoll = data.clips.some((c) => c.role === "aroll" || c.role === "auto");
     const summary = { aroll: 0, broll: 0, music: 0, sfx: 0 };
+    const added: ClipRow[] = [];
     try {
       const startOrdinal = data.clips.length;
       let videoSeen = 0;
       for (let i = 0; i < arr.length; i++) {
         const f = arr[i];
-        const role = classifyFile(f, videoSeen, hasAnyARoll);
+        const auto = classifyFile(f, videoSeen, hasAnyARoll);
+        const role = !target
+          ? auto
+          : target.track === "music"
+            ? auto === "sfx"
+              ? "sfx"
+              : "music"
+            : target.track;
         if (!role) continue;
         if (f.type.startsWith("video/")) videoSeen++;
 
@@ -736,7 +767,7 @@ function EditorPage() {
         // Record the clip's real length so the timeline draws it correctly
         // before it's ever opened in the player.
         const durationMs = await probeFileDurationMs(f);
-        await attachFn({
+        const row = await attachFn({
           data: {
             project_id: projectId,
             storage_path: path,
@@ -747,8 +778,10 @@ function EditorPage() {
             duration_ms: durationMs ?? undefined,
           },
         });
+        added.push(row as ClipRow);
         summary[role] += 1;
       }
+      if (target && target.index != null) await placeOnTrack(added, target);
       const parts = [
         summary.aroll && `${summary.aroll} A-roll`,
         summary.broll && `${summary.broll} B-roll`,
@@ -763,6 +796,74 @@ function EditorPage() {
       setUploading(false);
     }
   }
+
+  /**
+   * Moves newly added video clips (already at the end of their track) to a
+   * position on that track, keeping every other clip where it was.
+   */
+  async function placeOnTrack(added: ClipRow[], target: AddMediaTarget) {
+    if (target.track === "music" || target.index == null || added.length === 0 || !data) return;
+    const addedIds = new Set(added.map((c) => c.id));
+    const existing = (data.clips as ClipRow[]).filter(
+      (c) => c.role !== "music" && c.role !== "sfx" && !addedIds.has(c.id),
+    );
+    const aTrack = existing.filter((c) => c.role !== "broll");
+    const bTrack = existing.filter((c) => c.role === "broll");
+    const dest = target.track === "broll" ? bTrack : aTrack;
+    dest.splice(Math.min(target.index, dest.length), 0, ...added);
+    await reorder({
+      data: {
+        project_id: projectId,
+        order: [
+          ...aTrack.map((c, i) => ({ id: c.id, ordinal: i, role: c.role })),
+          ...bTrack.map((c, i) => ({ id: c.id, ordinal: aTrack.length + i, role: "broll" })),
+        ],
+      },
+    });
+  }
+
+  /** Adds media to a track: uploaded files, or a copy of a project clip. */
+  async function addMedia(target: AddMediaTarget, source: AddMediaSource) {
+    if ("files" in source) {
+      await handleUpload(source.files, target);
+      return;
+    }
+    const src = data?.clips.find((c) => c.id === source.clipId) as ClipRow | undefined;
+    if (!src || !data) return;
+    const isAudio = src.role === "music" || src.role === "sfx";
+    if (isAudio !== (target.track === "music")) {
+      toast.error(isAudio ? "Music and SFX go on A2" : "Videos go on V1 or V2");
+      return;
+    }
+    // A new clip using the same uploaded file, at its full length.
+    try {
+      const row = await attachFn({
+        data: {
+          project_id: projectId,
+          storage_path: src.storage_path,
+          filename: src.filename,
+          size_bytes: src.size_bytes ?? 0,
+          role: target.track === "music" ? (src.role as "music" | "sfx") : target.track,
+          ordinal: data.clips.length,
+          duration_ms: src.duration_ms ?? undefined,
+          parent_clip_id: src.id,
+        },
+      });
+      await placeOnTrack([row as ClipRow], target);
+      const where =
+        target.track === "music"
+          ? "A2 Music"
+          : target.track === "broll"
+            ? "V2 B-roll"
+            : "V1 A-roll";
+      toast.success(`Added ${src.filename} to ${where}`);
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add the clip");
+      refetch();
+    }
+  }
+
   const [downloading, setDownloading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [renderMsg, setRenderMsg] = useState<string | null>(null);
@@ -1257,9 +1358,10 @@ function EditorPage() {
         if (e.currentTarget === e.target) setDragActive(false);
       }}
       onDrop={(e) => {
-        if (!e.dataTransfer.files.length) return;
-        e.preventDefault();
         setDragActive(false);
+        // Dropped on a track: the timeline already added it there.
+        if (e.defaultPrevented || !e.dataTransfer.files.length) return;
+        e.preventDefault();
         handleUpload(e.dataTransfer.files);
       }}
     >
@@ -1269,7 +1371,7 @@ function EditorPage() {
             <UploadCloud className="w-10 h-10 text-violet-400 mx-auto" />
             <div className="mt-3 text-sm font-semibold text-violet-300">Drop video files to add to project</div>
             <div className="mt-1 text-[11px] text-neutral-400 font-mono">
-              MP4, MOV, WebM · Auto-assigned to timeline
+              Drop here to auto-place · or on a track to choose where
             </div>
           </div>
         </div>
@@ -1479,6 +1581,7 @@ function EditorPage() {
               saveExportSwitches.mutate({ captions_enabled: !captionsEnabled })
             }
             onMusicToggle={() => saveExportSwitches.mutate({ music_enabled: !musicEnabled })}
+            onAddMedia={(target, source) => void addMedia(target, source)}
             captionPhrases={captionPhrases}
             audioClips={audioClips}
             thumbnails={thumbnails}
