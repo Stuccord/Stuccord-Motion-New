@@ -127,7 +127,7 @@ import {
 } from "@/components/editor";
 import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
 import { FPS, snapToFrame } from "@/components/editor/timecode";
-import { layoutTrack } from "@/lib/timeline-layout";
+import { currentPlacements, layoutTrack, planPlacement } from "@/lib/timeline-layout";
 import {
   IMAGE_DEFAULT_MS,
   IMAGE_MAX_MS,
@@ -429,8 +429,12 @@ function EditorPage() {
   });
 
   const trimMut = useMutation({
-    mutationFn: (v: { id: string; trim_in_ms: number; trim_out_ms: number | null }) =>
-      trimFn({ data: v }),
+    mutationFn: (v: {
+      id: string;
+      trim_in_ms: number;
+      trim_out_ms: number | null;
+      start_ms?: number | null;
+    }) => trimFn({ data: v }),
     onSuccess: () => refetch(),
     onError: (e: Error) => toast.error(e.message),
   });
@@ -586,6 +590,7 @@ function EditorPage() {
     stepFrames: (frames: number) => void;
     shuttle: (action: "back" | "stop" | "forward") => void;
     trimToPlayhead: (edge: "in" | "out") => void;
+    moveToPlayhead: (edge: "start" | "end") => void;
   }>({
     play: () => {},
     del: () => {},
@@ -599,13 +604,14 @@ function EditorPage() {
     stepFrames: () => {},
     shuttle: () => {},
     trimToPlayhead: () => {},
+    moveToPlayhead: () => {},
   });
 
   // Global keyboard shortcuts: Space play/pause, Del/Backspace delete,
   // S split at playhead, ⌘/Ctrl+D duplicate, +/- zoom, Ctrl+Z/Y undo/redo,
   // and After Effects-style ones: Page Up/Down step a frame (Shift: 10),
   // J/K/L back 1 s / stop / play (faster each press), Alt+[ / Alt+] trim the
-  // selected clip's start/end to the playhead.
+  // selected clip's start/end to the playhead, [ / ] move it to start/end there.
   useEffect(() => {
     function isTypingTarget(el: EventTarget | null) {
       if (!(el instanceof HTMLElement)) return false;
@@ -652,6 +658,10 @@ function EditorPage() {
         // By key position: Alt + [ types another character on some layouts.
         e.preventDefault();
         actionsRef.current.trimToPlayhead(e.code === "BracketLeft" ? "in" : "out");
+      } else if (!meta && !e.altKey && (e.code === "BracketLeft" || e.code === "BracketRight")) {
+        // [ / ]: move the selected clip to start (or end) at the playhead.
+        e.preventDefault();
+        actionsRef.current.moveToPlayhead(e.code === "BracketLeft" ? "start" : "end");
       } else if (e.key === "PageUp" || e.key === "PageDown") {
         e.preventDefault();
         const frames = e.shiftKey ? 10 : 1;
@@ -825,7 +835,7 @@ function EditorPage() {
         added.push(row as ClipRow);
         summary[role] += 1;
       }
-      if (target && target.index != null) await placeOnTrack(added, target);
+      if (target && target.startMs != null) await placeOnTrack(added, target);
       const parts = [
         summary.aroll && `${summary.aroll} A-roll`,
         summary.broll && `${summary.broll} B-roll`,
@@ -842,28 +852,25 @@ function EditorPage() {
   }
 
   /**
-   * Moves newly added video clips (already at the end of their track) to a
-   * position on that track, keeping every other clip where it was.
+   * Moves newly added video clips (already at the end of their track) to the
+   * time they were dropped at: the nearest spot there where they fit, one
+   * after another, keeping every other clip where it was.
    */
   async function placeOnTrack(added: ClipRow[], target: AddMediaTarget) {
-    if (target.track === "music" || target.index == null || added.length === 0 || !data) return;
+    if (target.track === "music" || target.startMs == null || added.length === 0 || !data) return;
     const addedIds = new Set(added.map((c) => c.id));
     const existing = (data.clips as ClipRow[]).filter(
       (c) => c.role !== "music" && c.role !== "sfx" && !addedIds.has(c.id),
     );
-    const aTrack = existing.filter((c) => c.role !== "broll");
-    const bTrack = existing.filter((c) => c.role === "broll");
-    const dest = target.track === "broll" ? bTrack : aTrack;
-    dest.splice(Math.min(target.index, dest.length), 0, ...added);
-    await reorder({
-      data: {
-        project_id: projectId,
-        order: [
-          ...aTrack.map((c, i) => ({ id: c.id, ordinal: i, role: c.role })),
-          ...bTrack.map((c, i) => ({ id: c.id, ordinal: aTrack.length + i, role: "broll" })),
-        ],
-      },
-    });
+    const { placements } = planPlacement(
+      existing.filter((c) => c.role !== "broll"),
+      existing.filter((c) => c.role === "broll"),
+      added,
+      target.track,
+      target.startMs,
+      clipVisibleMs,
+    );
+    await reorder({ data: { project_id: projectId, order: placements } });
   }
 
   /** Adds media to a track: uploaded files, or a copy of a project clip. */
@@ -1214,24 +1221,72 @@ function EditorPage() {
     : undefined;
 
   // ---- Timeline actions ----
-  /** Trims a clip, with undo. */
+  /**
+   * Trims a clip, with undo. A placed clip (one with its own start) keeps
+   * the rest of its frames where they are, so its start moves with its
+   * in-point, like a layer in After Effects.
+   */
   function trimClip(id: string, ti: number, to: number | null) {
     const c = clips.find((x) => x.id === id);
     if (!c) return;
     const prevIn = c.trim_in_ms ?? 0;
     const prevOut = c.trim_out_ms ?? null;
+    const placed = c.start_ms != null;
+    const prevStart = c.start_ms ?? null;
+    const start = placed ? Math.max(0, (c.start_ms ?? 0) + (ti - prevIn)) : undefined;
 
     pushToHistory({
       description: "Trim clip",
       undo: () => {
-        trimMut.mutate({ id, trim_in_ms: prevIn, trim_out_ms: prevOut });
+        trimMut.mutate({
+          id,
+          trim_in_ms: prevIn,
+          trim_out_ms: prevOut,
+          ...(placed ? { start_ms: prevStart } : {}),
+        });
       },
       redo: () => {
-        trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
+        trimMut.mutate({
+          id,
+          trim_in_ms: ti,
+          trim_out_ms: to,
+          ...(placed ? { start_ms: start } : {}),
+        });
       },
     });
 
-    trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
+    trimMut.mutate({
+      id,
+      trim_in_ms: ti,
+      trim_out_ms: to,
+      ...(placed ? { start_ms: start } : {}),
+    });
+  }
+
+  /** [ / ]: the selected clip starts (or ends) at the playhead, where it fits. */
+  function moveToPlayhead(edge: "start" | "end") {
+    if (!selectedClip || selectedClip.role === "music" || selectedClip.role === "sfx") {
+      toast("Select a clip on V1 or V2 first");
+      return;
+    }
+    const track = selectedClip.role === "broll" ? "broll" : "aroll";
+    const want =
+      edge === "start" ? timelinePlayheadMs : timelinePlayheadMs - clipVisibleMs(selectedClip);
+    const { placements } = planPlacement(
+      aRoll,
+      bRoll,
+      [selectedClip],
+      track,
+      Math.max(0, want),
+      clipVisibleMs,
+    );
+    const before = currentPlacements(aRoll, bRoll);
+    pushToHistory({
+      description: "Move clip",
+      undo: () => reorderMut.mutate({ order: before }),
+      redo: () => reorderMut.mutate({ order: placements }),
+    });
+    reorderMut.mutate({ order: placements });
   }
 
   /** Alt+[ / Alt+]: the selected clip starts or ends at the playhead. */
@@ -1472,6 +1527,7 @@ function EditorPage() {
     stepFrames,
     shuttle,
     trimToPlayhead,
+    moveToPlayhead,
   };
 
   return (

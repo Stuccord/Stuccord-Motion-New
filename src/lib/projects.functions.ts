@@ -386,6 +386,9 @@ export const updateClipOrder = createServerFn({ method: "POST" })
             id: z.string().uuid(),
             ordinal: z.number().int().nonnegative(),
             role: z.enum(["auto", "aroll", "broll", "music", "sfx"]).optional(),
+            // Where it starts on the timeline; null follows the clip before it.
+            // Left out: unchanged.
+            start_ms: z.number().int().nonnegative().nullable().optional(),
           })
         ),
       })
@@ -406,7 +409,12 @@ export const updateClipOrder = createServerFn({ method: "POST" })
     const byId = new Map(data.order.map((item) => [item.id, item]));
     const updated = (rows ?? []).map((row) => {
       const item = byId.get(row.id)!;
-      return { ...row, ordinal: item.ordinal, role: item.role ?? row.role };
+      return {
+        ...row,
+        ordinal: item.ordinal,
+        role: item.role ?? row.role,
+        ...(item.start_ms !== undefined ? { start_ms: item.start_ms } : {}),
+      };
     });
     if (updated.length > 0) {
       const { error } = await context.supabase.from("clips").upsert(updated, { onConflict: "id" });
@@ -424,13 +432,19 @@ export const updateClipTrim = createServerFn({ method: "POST" })
         id: z.string().uuid(),
         trim_in_ms: z.number().int().nonnegative(),
         trim_out_ms: z.number().int().nonnegative().nullable(),
+        // A placed clip's start moves with its in-point (left out: unchanged).
+        start_ms: z.number().int().nonnegative().nullable().optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { data: updated, error } = await context.supabase
       .from("clips")
-      .update({ trim_in_ms: data.trim_in_ms, trim_out_ms: data.trim_out_ms })
+      .update({
+        trim_in_ms: data.trim_in_ms,
+        trim_out_ms: data.trim_out_ms,
+        ...(data.start_ms !== undefined ? { start_ms: data.start_ms } : {}),
+      })
       .eq("id", data.id)
       .select("project_id")
       .maybeSingle();

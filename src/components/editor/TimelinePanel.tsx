@@ -23,6 +23,7 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   Keyboard,
+  FoldHorizontal,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -48,11 +49,18 @@ import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { FPS, formatFrameTimecode } from "./timecode";
 import { thumbnailKey } from "@/lib/video-thumbnail";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
-import { layoutTrack } from "@/lib/timeline-layout";
+import {
+  closeGapsPlacements,
+  currentPlacements,
+  fitStart,
+  layoutTrack,
+  planPlacement,
+  type ClipPlacement,
+} from "@/lib/timeline-layout";
 
 /* ---------- shared types ---------- */
-/** A track media can be added to, and where on it (null: at the end). */
-export type AddMediaTarget = { track: "aroll" | "broll" | "music"; index: number | null };
+/** A track media can be added to, and when on it (null: after its last clip). */
+export type AddMediaTarget = { track: "aroll" | "broll" | "music"; startMs: number | null };
 /** What's being added: files from the computer, or a copy of a project clip. */
 export type AddMediaSource = { files: File[] } | { clipId: string };
 
@@ -584,7 +592,9 @@ type TimelineTracksProps = {
   currentTimeMs: number;
   onSeekMs: (clipId: string, absMs: number, atTimelineMs: number) => void;
   reorderMut: {
-    mutate: (data: { order: { id: string; ordinal: number; role?: string }[] }) => void;
+    mutate: (data: {
+      order: { id: string; ordinal: number; role?: string; start_ms?: number | null }[];
+    }) => void;
   };
   pushToHistory: (item: HistoryItem) => void;
   /** Sets the zoom (px per second). */
@@ -626,10 +636,10 @@ function TimelineTracks({
   audioClips,
   thumbnails,
 }: TimelineTracksProps) {
-  // Clip being dragged to a new position (with how far the pointer moved),
-  // and the track and position among that track's other clips it would land.
+  // Clip being dragged to a new place (with how far the pointer moved).
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
-  const [dropTarget, setDropTarget] = useState<{ track: Track; index: number } | null>(null);
+  // Where the dragged clip would land: a track and a start time.
+  const [dropTarget, setDropTarget] = useState<{ track: Track; startMs: number } | null>(null);
   const trackEls = useRef<Record<Track, HTMLDivElement | null>>({ aroll: null, broll: null });
   const musicTrackEl = useRef<HTMLDivElement | null>(null);
   // Files or a Media-panel clip being dragged over the tracks, and where
@@ -948,97 +958,91 @@ function TimelineTracks({
   const trackClips = (track: Track) => (track === "aroll" ? aRoll : bRoll);
   const trackLayout = (track: Track) => (track === "aroll" ? aLayout : bLayout);
 
-  /**
-   * Where a dragged clip would land under the pointer: the track row it's
-   * over, and its position among that track's other clips, decided by which
-   * side of each clip's midpoint the pointer is on. Null outside the tracks.
-   */
-  function dropTargetAt(clientX: number, clientY: number, draggedId: string) {
+  /** The video track row under the pointer, and the timeline time there (ms). */
+  function trackAt(clientX: number, clientY: number) {
     for (const track of ["aroll", "broll"] as const) {
       const el = trackEls.current[track];
       if (!el) continue;
       const r = el.getBoundingClientRect();
       if (clientY < r.top || clientY > r.bottom) continue;
-      const ms = ((clientX - r.left) / pxPerSec) * 1000;
-      const layout = trackLayout(track);
-      let index = 0;
-      for (const c of trackClips(track)) {
-        if (c.id === draggedId) continue;
-        if (ms > (layout.offsets.get(c.id) ?? 0) + clipVisibleMs(c) / 2) index++;
-      }
-      return { track, index };
+      return { track, ms: Math.max(0, ((clientX - r.left) / pxPerSec) * 1000) };
     }
     return null;
   }
 
-  /** Timeline x (px) of the insertion line for a drop target. */
-  function insertionPx(target: { track: Track; index: number }, draggedId: string) {
-    const layout = trackLayout(target.track);
-    const others = trackClips(target.track).filter((c) => c.id !== draggedId);
-    if (others.length === 0) return 0;
-    const ms =
-      target.index < others.length
-        ? (layout.offsets.get(others[target.index].id) ?? 0)
-        : (layout.offsets.get(others[others.length - 1].id) ?? 0) +
-          clipVisibleMs(others[others.length - 1]);
-    return (ms / 1000) * pxPerSec;
+  /** The other clips' spans on a track, for fitting a clip among them. */
+  const spansOn = (track: Track, exceptId: string) =>
+    trackClips(track)
+      .filter((c) => c.id !== exceptId)
+      .map((c) => {
+        const start = trackLayout(track).offsets.get(c.id) ?? 0;
+        return { start, end: start + clipVisibleMs(c) };
+      })
+      .sort((a, b) => a.start - b.start);
+
+  /**
+   * Where a clip dragged to `wantMs` on `track` lands: snapped to a clip edge,
+   * the playhead or 0:00 when its start or end is near one, then moved to the
+   * nearest spot where it fits (it stops at a neighbour's edge).
+   */
+  function landingStart(c: ClipRow, track: Track, wantMs: number) {
+    const len = clipVisibleMs(c);
+    let start = Math.max(0, wantMs);
+    if (snapEnabled) {
+      const threshold = (8 / pxPerSec) * 1000;
+      const points = [0, currentTimeMs];
+      for (const t of ["aroll", "broll"] as const) {
+        for (const sp of spansOn(t, c.id)) points.push(sp.start, sp.end);
+      }
+      let best = threshold;
+      for (const p of points) {
+        if (Math.abs(p - start) < best) {
+          best = Math.abs(p - start);
+          start = p;
+        } else if (Math.abs(p - (start + len)) < best) {
+          best = Math.abs(p - (start + len));
+          start = p - len;
+        }
+      }
+    }
+    return fitStart(spansOn(track, c.id), start, len);
   }
 
-  /** Moves a clip to a position on a track (changing its role if the track changes). */
-  function moveClip(draggedId: string, toTrack: Track, index: number) {
-    const draggedClip = videoClips.find((c) => c.id === draggedId);
-    if (!draggedClip) return;
-
-    const newRole =
-      toTrack === "broll" ? "broll" : draggedClip.role === "broll" ? "aroll" : draggedClip.role;
-
-    const newARoll = aRoll.filter((c) => c.id !== draggedId);
-    const newBRoll = bRoll.filter((c) => c.id !== draggedId);
-    const dest = toTrack === "aroll" ? newARoll : newBRoll;
-    dest.splice(Math.min(index, dest.length), 0, { ...draggedClip, role: newRole });
-
+  /** Saves new clip placements, with undo. */
+  function savePlacements(placements: ClipPlacement[], description: string) {
+    const before = currentPlacements(aRoll, bRoll);
+    const same = (a: ClipPlacement, b?: ClipPlacement) =>
+      !!b && a.ordinal === b.ordinal && a.role === b.role && a.start_ms === b.start_ms;
+    const beforeById = new Map(before.map((p) => [p.id, p]));
     // Dropped back where it was: nothing to save or undo.
-    const same = (a: ClipRow[], b: ClipRow[]) =>
-      a.length === b.length && a.every((c, i) => c.id === b[i].id);
-    if (same(newARoll, aRoll) && same(newBRoll, bRoll)) return;
-
-    const combined = [
-      ...newARoll.map((c, i) => ({
-        id: c.id,
-        ordinal: i,
-        role: c.role as string,
-      })),
-      ...newBRoll.map((c, i) => ({
-        id: c.id,
-        ordinal: newARoll.length + i,
-        role: "broll" as string,
-      })),
-    ];
-
-    const prevOrder = videoClips.map((c) => ({
-      id: c.id,
-      ordinal: c.ordinal,
-      role: c.role as string,
-    }));
-
+    if (placements.every((p) => same(p, beforeById.get(p.id)))) return;
     pushToHistory({
-      description: "Reorder clip",
-      undo: () => {
-        reorderMut.mutate({
-          order: prevOrder,
-        });
-      },
-      redo: () => {
-        reorderMut.mutate({
-          order: combined,
-        });
-      },
+      description,
+      undo: () => reorderMut.mutate({ order: before }),
+      redo: () => reorderMut.mutate({ order: placements }),
     });
-
-    reorderMut.mutate({
-      order: combined,
-    });
+    reorderMut.mutate({ order: placements });
   }
+
+  /**
+   * Moves a clip to a time on a track (changing its role if the track
+   * changes). Every other clip stays where it is.
+   */
+  function moveClipTo(id: string, toTrack: Track, wantMs: number) {
+    const clip = videoClips.find((c) => c.id === id);
+    if (!clip) return;
+    const { placements } = planPlacement(aRoll, bRoll, [clip], toTrack, wantMs, clipVisibleMs);
+    savePlacements(placements, "Move clip");
+  }
+
+  // Gaps between A-roll clips (black and silence in the export).
+  const aRollHasGaps = aRoll.some((c, i) => {
+    const start = aLayout.offsets.get(c.id) ?? 0;
+    const prevEnd =
+      i === 0 ? 0 : (aLayout.offsets.get(aRoll[i - 1].id) ?? 0) + clipVisibleMs(aRoll[i - 1]);
+    return start - prevEnd > 1;
+  });
+  const closeGaps = () => savePlacements(closeGapsPlacements(aRoll, bRoll), "Close gaps");
 
   /**
    * Press on a clip body. With a mouse or pen the clip is picked up once the
@@ -1057,10 +1061,21 @@ function TimelineTracks({
     let active = false;
     let last = { x: startX, y: startY };
 
+    const fromTrack: Track = c.role === "broll" ? "broll" : "aroll";
+    const fromStart = trackLayout(fromTrack).offsets.get(c.id) ?? 0;
+    // Where it would land: the track under the pointer, at its start moved
+    // by however far the pointer has moved along the timeline.
+    const landing = () => {
+      const scrolled = (scroller?.scrollLeft ?? 0) - startScroll;
+      const over = trackAt(last.x, last.y);
+      if (!over) return null;
+      const wantMs = fromStart + ((last.x - startX + scrolled) / pxPerSec) * 1000;
+      return { track: over.track, startMs: landingStart(c, over.track, wantMs) };
+    };
     const update = () => {
       const scrolled = (scroller?.scrollLeft ?? 0) - startScroll;
       setDrag({ id: c.id, dx: last.x - startX + scrolled, dy: last.y - startY });
-      setDropTarget(dropTargetAt(last.x, last.y, c.id));
+      setDropTarget(landing());
     };
     const begin = () => {
       active = true;
@@ -1086,8 +1101,8 @@ function TimelineTracks({
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("touchmove", blockTouchScroll);
       if (active && commit) {
-        const target = dropTargetAt(last.x, last.y, c.id);
-        if (target) moveClip(c.id, target.track, target.index);
+        const target = landing();
+        if (target) moveClipTo(c.id, target.track, target.startMs);
       }
       setDrag(null);
       setDropTarget(null);
@@ -1137,30 +1152,43 @@ function TimelineTracks({
     if (!suppressClick.current) onSelect(id);
   };
 
-  // The violet line showing where a dragged clip will land on a track.
+  // Where a dragged clip will land (a dashed outline), or where dropped
+  // media will start (a line).
   const insertionLine = (track: Track) => {
-    const target =
-      drag && dropTarget?.track === track
-        ? dropTarget
-        : mediaDrop?.track === track && mediaDrop.index != null
-          ? { track, index: mediaDrop.index }
-          : null;
-    return target ? (
-      <div
-        aria-hidden
-        className="absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(167,139,250,0.9)] z-20 pointer-events-none"
-        style={{ left: insertionPx(target, drag?.id ?? "") }}
-      />
-    ) : null;
+    const dragged = drag ? videoClips.find((c) => c.id === drag.id) : undefined;
+    if (dragged && dropTarget?.track === track) {
+      return (
+        <div
+          aria-hidden
+          data-landing
+          className="absolute top-1 bottom-1 rounded-md border-2 border-dashed border-violet-300/80 bg-violet-400/10 z-20 pointer-events-none"
+          style={{
+            left: (dropTarget.startMs / 1000) * pxPerSec,
+            width: Math.max(4, (clipVisibleMs(dragged) / 1000) * pxPerSec),
+          }}
+        />
+      );
+    }
+    if (mediaDrop?.track === track && mediaDrop.startMs != null) {
+      return (
+        <div
+          aria-hidden
+          className="absolute inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(167,139,250,0.9)] z-20 pointer-events-none"
+          style={{ left: (mediaDrop.startMs / 1000) * pxPerSec }}
+        />
+      );
+    }
+    return null;
   };
 
-  // Where dragged-in media would land: a spot on a video track, or the
-  // music track (music plays one file after another, so it goes at the end).
+  // Where dragged-in media would land: the time under the pointer on a video
+  // track (moved to the nearest spot it fits once added), or the music track
+  // (after its last file, for now).
   const mediaTargetAt = (clientX: number, clientY: number): AddMediaTarget | null => {
-    const video = dropTargetAt(clientX, clientY, "");
-    if (video) return video;
+    const video = trackAt(clientX, clientY);
+    if (video) return { track: video.track, startMs: Math.round(video.ms) };
     const r = musicTrackEl.current?.getBoundingClientRect();
-    if (r && clientY >= r.top && clientY <= r.bottom) return { track: "music", index: null };
+    if (r && clientY >= r.top && clientY <= r.bottom) return { track: "music", startMs: null };
     return null;
   };
   const isMediaDrag = (e: React.DragEvent) =>
@@ -1177,7 +1205,7 @@ function TimelineTracks({
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
       setMediaDrop((cur) =>
-        cur?.track === target.track && cur.index === target.index ? cur : target,
+        cur?.track === target.track && cur.startMs === target.startMs ? cur : target,
       );
     },
     onDragLeave: (e: React.DragEvent<HTMLDivElement>) => {
@@ -1402,12 +1430,21 @@ function TimelineTracks({
                   <Copy className="w-3.5 h-3.5" /> Duplicate
                   <DropdownMenuShortcut>Ctrl+D</DropdownMenuShortcut>
                 </DropdownMenuItem>
+                {/* Same time on the other track, or the nearest spot it fits. */}
                 {menu.clip.role === "broll" ? (
-                  <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "aroll", aRoll.length)}>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      moveClipTo(menu.clip!.id, "aroll", bLayout.offsets.get(menu.clip!.id) ?? 0)
+                    }
+                  >
                     <ArrowUpToLine className="w-3.5 h-3.5" /> Move to V1 A-roll
                   </DropdownMenuItem>
                 ) : (
-                  <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "broll", bRoll.length)}>
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      moveClipTo(menu.clip!.id, "broll", aLayout.offsets.get(menu.clip!.id) ?? 0)
+                    }
+                  >
                     <ArrowDownToLine className="w-3.5 h-3.5" /> Move to V2 B-roll
                   </DropdownMenuItem>
                 )}
@@ -1421,22 +1458,29 @@ function TimelineTracks({
                 </DropdownMenuItem>
               </>
             ) : menu?.track ? (
-              <DropdownMenuItem
-                onSelect={() =>
-                  pickFiles({
-                    track: menu.track!,
-                    index:
-                      menu.track === "music"
-                        ? null
-                        : (dropTargetAt(menu.x, menu.y, "")?.index ?? null),
-                  })
-                }
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {menu.track === "music"
-                  ? "Add music or SFX…"
-                  : `Add video or image to ${trackName(menu.track)}…`}
-              </DropdownMenuItem>
+              <>
+                <DropdownMenuItem
+                  onSelect={() =>
+                    pickFiles({
+                      track: menu.track!,
+                      startMs:
+                        menu.track === "music"
+                          ? null
+                          : Math.round(trackAt(menu.x, menu.y)?.ms ?? 0),
+                    })
+                  }
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {menu.track === "music"
+                    ? "Add music or SFX…"
+                    : `Add video or image to ${trackName(menu.track)}…`}
+                </DropdownMenuItem>
+                {menu.track === "aroll" && (
+                  <DropdownMenuItem onSelect={closeGaps} disabled={!aRollHasGaps}>
+                    <FoldHorizontal className="w-3.5 h-3.5" /> Close gaps
+                  </DropdownMenuItem>
+                )}
+              </>
             ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1514,7 +1558,7 @@ function TimelineTracks({
             toneClass="text-violet-400"
             size={aRoll.length === 0 ? "slim" : "clip"}
             trackKey="aroll"
-            onAdd={onAddMedia && (() => pickFiles({ track: "aroll", index: null }))}
+            onAdd={onAddMedia && (() => pickFiles({ track: "aroll", startMs: null }))}
             addLabel="video or image to V1"
             dropHighlight={mediaDrop?.track === "aroll"}
             innerWidth={trackWidthPx}
@@ -1563,7 +1607,7 @@ function TimelineTracks({
             toneClass="text-teal-400"
             size={bRoll.length === 0 ? "slim" : "clip"}
             trackKey="broll"
-            onAdd={onAddMedia && (() => pickFiles({ track: "broll", index: null }))}
+            onAdd={onAddMedia && (() => pickFiles({ track: "broll", startMs: null }))}
             addLabel="video or image to V2"
             dropHighlight={mediaDrop?.track === "broll"}
             innerWidth={trackWidthPx}
@@ -1683,7 +1727,7 @@ function TimelineTracks({
             note="Ducked under voice"
             size="slim"
             trackKey="music"
-            onAdd={onAddMedia && (() => pickFiles({ track: "music", index: null }))}
+            onAdd={onAddMedia && (() => pickFiles({ track: "music", startMs: null }))}
             addLabel="music or SFX"
             dropHighlight={mediaDrop?.track === "music"}
             innerWidth={trackWidthPx}
@@ -1739,6 +1783,8 @@ const SHORTCUTS: [string, string][] = [
   ["Home / End", "Start / end"],
   ["S", "Split the selected clip at the playhead"],
   ["Alt + [  /  Alt + ]", "Trim the selected clip's start / end to the playhead"],
+  ["[  /  ]", "Move the selected clip to start / end at the playhead"],
+  ["Drag a clip", "Place it at any time (it stops at a neighbour's edge)"],
   ["Ctrl + D", "Duplicate the selected clip"],
   ["Del", "Delete the selected clip"],
   ["Ctrl + Z / Ctrl + Shift + Z", "Undo / redo"],
@@ -1772,7 +1818,9 @@ export interface TimelinePanelProps {
   currentTimeMs: number;
   onSeekMs: (clipId: string, absMs: number, atTimelineMs: number) => void;
   reorderMut: {
-    mutate: (data: { order: { id: string; ordinal: number; role?: string }[] }) => void;
+    mutate: (data: {
+      order: { id: string; ordinal: number; role?: string; start_ms?: number | null }[];
+    }) => void;
   };
   pushToHistory: (item: HistoryItem) => void;
   onSplit: () => void;
