@@ -5,6 +5,7 @@ import type { AspectRatio, ClipRow, ViewMode } from "./types";
 import { PlaybackControls } from "./PlaybackControls";
 import { TimelinePlayer, type TimelinePlayerHandle } from "./TimelinePlayer";
 import { IMAGE_ZOOM } from "@/lib/media-kind";
+import type { ClipTransform } from "@/lib/clip-transform";
 
 interface PreviewCanvasProps {
   aspectRatio: AspectRatio;
@@ -24,6 +25,11 @@ interface PreviewCanvasProps {
     lengthMs: (clip: ClipRow) => number;
     onTick?: (timeMs: number, playing: boolean, rate: number) => void;
     renderOverlay?: (timeMs: number) => React.ReactNode;
+    /** The selected clip, which gets a box with handles in the picture. */
+    selectedClipId?: string | null;
+    onSelectClip?: (id: string) => void;
+    /** A clip was moved, resized or rotated in the picture (null: default fit). */
+    onTransform?: (id: string, transform: ClipTransform | null) => void;
   };
   /** The selected clip is an image: Source shows it (slowly zooming) instead of a video. */
   sourceIsImage?: boolean;
@@ -429,7 +435,9 @@ export function PreviewCanvas({
         {showTimeline ? (
           <div
             className={cn(
-              "relative m-auto bg-black rounded-md shadow-2xl ring-1 ring-white/10 overflow-hidden shrink-0",
+              // Not clipped: the player clips the picture itself, and a
+              // selected clip's handles may reach past the frame's edge.
+              "relative m-auto bg-black rounded-md shadow-2xl ring-1 ring-white/10 shrink-0",
               frameFit,
             )}
             style={frameStyle}
@@ -448,6 +456,9 @@ export function PreviewCanvas({
               onPlayingChange={onPlayingChange}
               onTick={timeline!.onTick}
               renderOverlay={timeline!.renderOverlay}
+              selectedClipId={timeline!.selectedClipId}
+              onSelectClip={timeline!.onSelectClip}
+              onTransform={timeline!.onTransform}
             />
             {/* A cloud render in progress: shown on top of the live edit. */}
             {isRendering && (

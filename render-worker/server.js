@@ -233,6 +233,82 @@ function fitFilter(w, h, src) {
   return blurFillFilter(w, h);
 }
 
+// A clip moved, resized or rotated in the editor's preview, matching the app
+// (src/lib/clip-transform.ts): { x, y, scale, rotation } or null for the
+// default fit. x, y: the clip's centre from the frame's centre, as a share of
+// the frame; scale: size compared with the default fit; rotation: degrees,
+// clockwise. Kept within the app's limits.
+function clipTransform(clip) {
+  const t = clip?.transform;
+  if (!t || typeof t !== "object") return null;
+  const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const out = {
+    x: clamp(num(t.x, 0), -1.5, 1.5),
+    y: clamp(num(t.y, 0), -1.5, 1.5),
+    scale: clamp(num(t.scale, 1), 0.05, 4),
+    rotation: ((((num(t.rotation, 0) + 180) % 360) + 360) % 360) - 180,
+  };
+  const identity = out.x === 0 && out.y === 0 && out.scale === 1 && out.rotation === 0;
+  return identity ? null : out;
+}
+
+// The clip's box in a w x h frame: its default fit (the frame for a clip of
+// the frame's shape, otherwise the whole clip as large as fits), scaled, with
+// its centre moved. Even sizes, for H.264.
+function transformedBox(w, h, src, t) {
+  let fitW = w;
+  let fitH = h;
+  if (src?.width && src?.height) {
+    const off = Math.abs(Math.log(src.width / src.height / (w / h)));
+    if (off >= 0.03) {
+      const s = Math.min(w / src.width, h / src.height);
+      fitW = src.width * s;
+      fitH = src.height * s;
+    }
+  }
+  const even = (v) => Math.max(2, Math.round(v / 2) * 2);
+  return {
+    bw: even(fitW * t.scale),
+    bh: even(fitH * t.scale),
+    cx: w / 2 + t.x * w,
+    cy: h / 2 + t.y * h,
+  };
+}
+
+// The clip filling its box (cropped to the box's shape, which only trims a
+// clip of the frame's shape), an image slowly zooming inside it.
+function boxFillFilter(bw, bh, imageLengthS) {
+  let f = `scale=w=${bw}:h=${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},setsar=1,fps=30`;
+  if (imageLengthS != null) {
+    const len = Math.max(0.1, imageLengthS).toFixed(3);
+    f += `,scale=w='trunc(${bw}*(1+${IMAGE_ZOOM}*t/${len})/2)*2':h=-2:eval=frame,crop=${bw}:${bh}`;
+  }
+  return f;
+}
+
+// Turns the picture clockwise by `deg`, growing it to fit, with the new
+// corners see-through.
+function rotateFilter(deg) {
+  const rad = ((deg * Math.PI) / 180).toFixed(6);
+  return `format=rgba,rotate=${rad}:ow=rotw(${rad}):oh=roth(${rad}):c=none`;
+}
+
+// A main-track clip that's been moved, resized or rotated: its blurred copy
+// fills the frame and the clip sits in its box on top (as in the preview).
+function transformedMainFilter(w, h, src, t, imageLengthS) {
+  const { bw, bh, cx, cy } = transformedBox(w, h, src, t);
+  const blurW = Math.round(w / 20) * 2;
+  const blurH = Math.round(h / 20) * 2;
+  const fg = boxFillFilter(bw, bh, imageLengthS) + (t.rotation ? `,${rotateFilter(t.rotation)}` : "");
+  return [
+    "split=2[bg][fg]",
+    `[bg]scale=w=${blurW}:h=${blurH}:force_original_aspect_ratio=increase,crop=${blurW}:${blurH},boxblur=6:2,scale=${w}:${h},eq=brightness=-0.08,fps=30[bgb]`,
+    `[fg]${fg}[fgb]`,
+    `[bgb][fgb]overlay=x='${cx.toFixed(2)}-w/2':y='${cy.toFixed(2)}-h/2',setsar=1,fps=30,format=yuv420p`,
+  ].join(";");
+}
+
 // Images (photos, screenshots) as clips, matching the app (src/lib/media-kind.ts):
 // a clip shows for its trimmed length and slowly zooms in by IMAGE_ZOOM.
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif)$/i;
@@ -816,16 +892,30 @@ async function runRender(job) {
       const trimInMs = Math.max(0, Number(clips[i].trim_in_ms ?? 0));
       const trimOutMs = clips[i].trim_out_ms;
       const args = ["-y"];
-      let vf = fitFilter(w, h, probe);
+      // Moved, resized or rotated in the editor: the main track gets its
+      // blurred copy behind it; a B-roll clip is kept to its box and placed
+      // over the main video when the tracks are combined (4b).
+      const transform = clipTransform(clips[i]);
+      const onTop = i >= mainClips.length;
+      const imageLengthS = image
+        ? Math.max(100, Number(trimOutMs ?? IMAGE_DEFAULT_MS) - trimInMs) / 1000
+        : null;
+      let vf;
+      if (!transform) {
+        vf = fitFilter(w, h, probe);
+        if (image) vf = `${vf},${kenBurnsFilter(w, h, imageLengthS)}`;
+      } else if (onTop) {
+        const { bw, bh } = transformedBox(w, h, probe, transform);
+        vf = boxFillFilter(bw, bh, imageLengthS);
+      } else {
+        vf = transformedMainFilter(w, h, probe, transform, imageLengthS);
+      }
       if (image) {
         // A still: repeat it for its length on the timeline, slowly zooming.
         // A GIF plays its animation on a loop for that length instead.
-        const lengthS =
-          Math.max(100, Number(trimOutMs ?? IMAGE_DEFAULT_MS) - trimInMs) / 1000;
         if (/\.gif$/i.test(sources[i])) args.push("-ignore_loop", "0");
         else args.push("-f", "image2", "-loop", "1", "-framerate", "30");
-        args.push("-t", lengthS.toFixed(3), "-i", sources[i]);
-        vf = `${vf},${kenBurnsFilter(w, h, lengthS)}`;
+        args.push("-t", imageLengthS.toFixed(3), "-i", sources[i]);
       } else {
         // Per-clip trim: -ss (in) and -to (out) as INPUT-side seek so audio stays in sync.
         if (trimInMs > 0) args.push("-ss", (trimInMs / 1000).toFixed(3));
@@ -1030,9 +1120,16 @@ async function runRender(job) {
         inputs.push("-i", file);
         const startS = (brollStartsMs[i] / 1000).toFixed(3);
         const endS = ((brollStartsMs[i] + brollLengthsMs[i]) / 1000).toFixed(3);
-        graph.push(`[${i + 1}:v]setpts=PTS-STARTPTS+${startS}/TB[b${i}]`);
+        // A moved, resized or rotated clip was kept to its box: turn it and
+        // put its centre where it belongs. Others fill the frame.
+        const t = clipTransform(brollClips[i]);
+        const turn = t?.rotation ? `,${rotateFilter(t.rotation)}` : "";
+        graph.push(`[${i + 1}:v]setpts=PTS-STARTPTS+${startS}/TB${turn}[b${i}]`);
+        const at = t
+          ? `x='${(w / 2 + t.x * w).toFixed(2)}-w/2':y='${(h / 2 + t.y * h).toFixed(2)}-h/2':`
+          : "";
         graph.push(
-          `[${last}][b${i}]overlay=eof_action=pass:enable='between(t,${startS},${endS})'[v${i}]`,
+          `[${last}][b${i}]overlay=${at}eof_action=pass:enable='between(t,${startS},${endS})'[v${i}]`,
         );
         last = `v${i}`;
       });

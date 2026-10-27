@@ -20,6 +20,8 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { IMAGE_ZOOM, isImageFilename } from "@/lib/media-kind";
 import { layoutTrack } from "@/lib/timeline-layout";
+import { parseTransform, transformedBox, type ClipTransform } from "@/lib/clip-transform";
+import { TransformBox, type BoxTarget } from "./TransformBox";
 import type { ClipRow } from "./types";
 
 /** What the editor can do with the player (a subset of HTMLVideoElement). */
@@ -52,6 +54,12 @@ type Props = {
   onTick?: (timeMs: number, playing: boolean, rate: number) => void;
   /** Drawn over the picture at the current time (captions, hook). */
   renderOverlay?: (timeMs: number) => React.ReactNode;
+  /** The selected clip: gets a box with handles when it's on screen. */
+  selectedClipId?: string | null;
+  /** A clip was pressed in the picture. */
+  onSelectClip?: (id: string) => void;
+  /** A clip was moved, resized or rotated (null: back to its default fit). */
+  onTransform?: (id: string, transform: ClipTransform | null) => void;
 };
 
 type Placed = { clip: ClipRow; start: number; end: number; track: "main" | "over" };
@@ -71,15 +79,25 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     onPlayingChange,
     onTick,
     renderOverlay,
+    selectedClipId = null,
+    onSelectClip,
+    onTransform,
   },
   ref,
 ) {
   // The tracks as the export plays them: the main track, and B-roll on top.
-  // Laid out again only when a clip's place, length or file changes (the
-  // editor hands over new arrays on every render).
+  // Laid out again only when a clip's place, length, file or transform
+  // changes (the editor hands over new arrays on every render).
   const layoutKey = JSON.stringify(
     [aRoll, bRoll].map((list) =>
-      list.map((c) => [c.id, c.start_ms ?? null, lengthMs(c), c.storage_path, c.filename]),
+      list.map((c) => [
+        c.id,
+        c.start_ms ?? null,
+        lengthMs(c),
+        c.storage_path,
+        c.filename,
+        c.transform ?? null,
+      ]),
     ),
   );
   const placed = useMemo(() => {
@@ -290,39 +308,135 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   const layers = [...withNext(placed.main), ...withNext(placed.over)];
   const mainActive = activeAt(placed.main, t);
 
+  // Each file's own size, for its box in the frame.
+  const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
+  // A transform being dragged (shown, not saved yet), or just saved and not
+  // back from the server yet.
+  const [draft, setDraft] = useState<{ id: string; t: ClipTransform | null } | null>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    },
+    [],
+  );
+  const transformOf = (clip: ClipRow) =>
+    draft?.id === clip.id ? draft.t : parseTransform(clip.transform);
+  // The saved transform came back: stop showing the draft.
+  const draftClip = draft
+    ? [...placed.main, ...placed.over].find((p) => p.clip.id === draft.id)?.clip
+    : undefined;
+  const savedKey = JSON.stringify(parseTransform(draftClip?.transform));
+  useEffect(() => {
+    if (draft && JSON.stringify(draft.t) === savedKey) setDraft(null);
+    // Only when the saved value changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+
+  // What the box can grab: the clips showing now, top-most first.
+  const targets: BoxTarget[] = [activeAt(placed.over, t), mainActive]
+    .filter((p): p is Placed => p != null && Boolean(urls[p.clip.storage_path]))
+    .map((p) => {
+      const size = sizes[p.clip.storage_path];
+      const tr = transformOf(p.clip);
+      const fitsDifferently =
+        size != null && Math.abs(Math.log(size.w / size.h / frameRatio)) >= 0.03;
+      return {
+        id: p.clip.id,
+        srcW: size?.w ?? 0,
+        srcH: size?.h ?? 0,
+        transform: tr,
+        // An untransformed clip over its blurred copy covers the whole frame.
+        fillsFrame: !tr && fitsDifferently,
+      };
+    });
+
   return (
-    <div className="absolute inset-0 bg-black overflow-hidden">
-      {layers.map((p) => {
-        const active = t >= p.start && t < p.end;
-        const url = urls[p.clip.storage_path];
-        if (!url) return null;
-        return (
-          <Layer
-            key={`${p.track}:${p.clip.id}`}
-            placed={p}
-            url={url}
-            active={active}
-            timeMs={t}
-            frameRatio={frameRatio}
-            videoRef={(el) => {
-              if (el) videos.current.set(p.clip.id, el);
-              else videos.current.delete(p.clip.id);
-            }}
-            onReady={() => sync(timeRef.current)}
-          />
-        );
-      })}
-      {mainActive && !urls[mainActive.clip.storage_path] && (
-        <div className="absolute inset-0 grid place-items-center text-[11px] text-neutral-500">
-          <span className="flex items-center gap-1.5">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
-          </span>
-        </div>
+    // The picture is clipped to the frame (with its rounded corners); the
+    // handles aren't.
+    <div className="absolute inset-0 rounded-[inherit]">
+      <div className="absolute inset-0 bg-black overflow-hidden rounded-[inherit]">
+        {layers.map((p) => {
+          const active = t >= p.start && t < p.end;
+          const url = urls[p.clip.storage_path];
+          if (!url) return null;
+          return (
+            <Layer
+              key={`${p.track}:${p.clip.id}`}
+              placed={p}
+              url={url}
+              active={active}
+              timeMs={t}
+              frameRatio={frameRatio}
+              transform={transformOf(p.clip)}
+              videoRef={(el) => {
+                if (el) videos.current.set(p.clip.id, el);
+                else videos.current.delete(p.clip.id);
+              }}
+              onSize={(w, h) =>
+                setSizes((old) =>
+                  old[p.clip.storage_path]?.w === w && old[p.clip.storage_path]?.h === h
+                    ? old
+                    : { ...old, [p.clip.storage_path]: { w, h } },
+                )
+              }
+              onReady={() => sync(timeRef.current)}
+            />
+          );
+        })}
+        {mainActive && !urls[mainActive.clip.storage_path] && (
+          <div className="absolute inset-0 grid place-items-center text-[11px] text-neutral-500">
+            <span className="flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
+            </span>
+          </div>
+        )}
+        {renderOverlay?.(t)}
+      </div>
+      {onTransform && (
+        <TransformBox
+          targets={targets}
+          selectedId={selectedClipId}
+          enabled={!playing}
+          onSelect={(id) => onSelectClip?.(id)}
+          onDraft={(id, tr) => {
+            if (draftTimer.current) clearTimeout(draftTimer.current);
+            setDraft({ id, t: tr });
+          }}
+          onCommit={(id, tr) => {
+            setDraft({ id, t: tr });
+            // If the save fails, show the saved value again after a while.
+            if (draftTimer.current) clearTimeout(draftTimer.current);
+            draftTimer.current = setTimeout(() => setDraft(null), 8000);
+            onTransform(id, tr);
+          }}
+        />
       )}
-      {renderOverlay?.(t)}
     </div>
   );
 });
+
+/**
+ * Where a clip's picture goes in the frame (CSS). Untransformed: the whole
+ * frame, as before. Moved, resized or rotated: its box (see clip-transform).
+ */
+function boxStyle(
+  transform: ClipTransform | null,
+  size: { w: number; h: number } | null,
+  frameRatio: number,
+): React.CSSProperties {
+  if (!transform) return { inset: 0 };
+  // In units of the frame's height (the frame is frameRatio wide).
+  const b = transformedBox(size?.w ?? 0, size?.h ?? 0, frameRatio, 1, transform);
+  return {
+    left: `${((b.cx - b.w / 2) / frameRatio) * 100}%`,
+    top: `${(b.cy - b.h / 2) * 100}%`,
+    width: `${(b.w / frameRatio) * 100}%`,
+    height: `${b.h * 100}%`,
+    transform: b.rotation ? `rotate(${b.rotation}deg)` : undefined,
+    overflow: "hidden",
+  };
+}
 
 /** One clip in the player: a video or an image, fitted to the frame. */
 function Layer({
@@ -331,7 +445,9 @@ function Layer({
   active,
   timeMs,
   frameRatio,
+  transform,
   videoRef,
+  onSize,
   onReady,
 }: {
   placed: Placed;
@@ -339,10 +455,17 @@ function Layer({
   active: boolean;
   timeMs: number;
   frameRatio: number;
+  /** Moved, resized or rotated; null: the default fit. */
+  transform: ClipTransform | null;
   videoRef: (el: HTMLVideoElement | null) => void;
+  onSize: (w: number, h: number) => void;
   onReady: () => void;
 }) {
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [size, setSizeState] = useState<{ w: number; h: number } | null>(null);
+  const setSize = (next: { w: number; h: number }) => {
+    setSizeState(next);
+    onSize(next.w, next.h);
+  };
   const mismatched =
     size != null &&
     size.w > 0 &&
@@ -350,6 +473,13 @@ function Layer({
     Math.abs(Math.log(size.w / size.h / frameRatio)) >= 0.03;
   const zIndex = p.track === "over" ? 2 : 1;
   const style: React.CSSProperties = { zIndex, visibility: active ? "visible" : "hidden" };
+  // Behind the picture: its blurred copy, filling the frame. A main clip
+  // keeps it when moved or resized; a B-roll clip that's been moved or
+  // resized shows the main video around it instead.
+  const blurBehind = transform ? p.track === "main" : mismatched;
+  const box = boxStyle(transform, size, frameRatio);
+  // In its own box the picture fills it (the box has the right shape).
+  const fit = transform || !mismatched ? "object-cover" : "object-contain";
 
   if (isImage(p.clip)) {
     // The slow push-in, by where the playhead is in the clip.
@@ -357,7 +487,7 @@ function Layer({
     const zoom = 1 + IMAGE_ZOOM * progress;
     return (
       <div className="absolute inset-0" style={style}>
-        {mismatched && (
+        {blurBehind && (
           <img
             src={url}
             alt=""
@@ -365,18 +495,17 @@ function Layer({
             className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl brightness-75"
           />
         )}
-        <img
-          src={url}
-          alt=""
-          className={cn(
-            "absolute inset-0 w-full h-full",
-            mismatched ? "object-contain" : "object-cover",
-          )}
-          style={{ transform: `scale(${zoom})` }}
-          onLoad={(e) =>
-            setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
-          }
-        />
+        <div className="absolute" style={box}>
+          <img
+            src={url}
+            alt=""
+            className={cn("absolute inset-0 w-full h-full", fit)}
+            style={{ transform: `scale(${zoom})` }}
+            onLoad={(e) =>
+              setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+            }
+          />
+        </div>
       </div>
     );
   }
@@ -384,7 +513,9 @@ function Layer({
     <VideoLayer
       url={url}
       style={style}
-      mismatched={mismatched}
+      blurBehind={blurBehind}
+      box={box}
+      fit={fit}
       frameRatio={frameRatio}
       active={active}
       videoRef={videoRef}
@@ -396,11 +527,13 @@ function Layer({
   );
 }
 
-/** A video in the player, with the blurred copy behind it when its shape differs. */
+/** A video in the player, in its box, with its blurred copy behind it when asked. */
 function VideoLayer({
   url,
   style,
-  mismatched,
+  blurBehind,
+  box,
+  fit,
   frameRatio,
   active,
   videoRef,
@@ -408,7 +541,9 @@ function VideoLayer({
 }: {
   url: string;
   style: React.CSSProperties;
-  mismatched: boolean;
+  blurBehind: boolean;
+  box: React.CSSProperties;
+  fit: string;
   frameRatio: number;
   active: boolean;
   videoRef: (el: HTMLVideoElement | null) => void;
@@ -423,7 +558,7 @@ function VideoLayer({
     const video = el.current;
     const canvas = bg.current;
     const g = canvas?.getContext("2d");
-    if (!mismatched || !active || !video || !canvas || !g) return;
+    if (!blurBehind || !active || !video || !canvas || !g) return;
     const draw = () => {
       if (video.readyState < 2 || !video.videoWidth) return;
       const s = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
@@ -458,11 +593,11 @@ function VideoLayer({
       cancelAnimationFrame(raf);
       video.removeEventListener("seeked", onSeeked);
     };
-  }, [mismatched, active]);
+  }, [blurBehind, active]);
 
   return (
     <div className="absolute inset-0" style={style}>
-      {mismatched && (
+      {blurBehind && (
         <canvas
           ref={bg}
           aria-hidden
@@ -471,27 +606,26 @@ function VideoLayer({
           className="absolute inset-0 w-full h-full scale-110 blur-xl brightness-75"
         />
       )}
-      <video
-        ref={(v) => {
-          el.current = v;
-          videoRef(v);
-        }}
-        src={url}
-        preload="auto"
-        playsInline
-        muted
-        className={cn(
-          "absolute inset-0 w-full h-full",
-          mismatched ? "object-contain" : "object-cover",
-        )}
-        onLoadedMetadata={(e) => onSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-        onLoadStart={() => setStatus("loading")}
-        onLoadedData={() => setStatus("ready")}
-        onCanPlay={() => setStatus("ready")}
-        onPlaying={() => setStatus("ready")}
-        onWaiting={() => setStatus("loading")}
-        onError={() => setStatus("error")}
-      />
+      <div className="absolute" style={box}>
+        <video
+          ref={(v) => {
+            el.current = v;
+            videoRef(v);
+          }}
+          src={url}
+          preload="auto"
+          playsInline
+          muted
+          className={cn("absolute inset-0 w-full h-full", fit)}
+          onLoadedMetadata={(e) => onSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+          onLoadStart={() => setStatus("loading")}
+          onLoadedData={() => setStatus("ready")}
+          onCanPlay={() => setStatus("ready")}
+          onPlaying={() => setStatus("ready")}
+          onWaiting={() => setStatus("loading")}
+          onError={() => setStatus("error")}
+        />
+      </div>
       {status !== "ready" && (
         <div className="absolute inset-0 z-10 grid place-items-center p-4 text-center pointer-events-none">
           {status === "loading" ? (

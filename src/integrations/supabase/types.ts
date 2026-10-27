@@ -27,6 +27,7 @@ export type Database = {
           size_bytes: number | null
           start_ms: number | null
           storage_path: string
+          transform: Json | null
           trim_in_ms: number
           trim_out_ms: number | null
           user_id: string
@@ -43,6 +44,7 @@ export type Database = {
           size_bytes?: number | null
           start_ms?: number | null
           storage_path: string
+          transform?: Json | null
           trim_in_ms?: number
           trim_out_ms?: number | null
           user_id: string
@@ -59,6 +61,7 @@ export type Database = {
           size_bytes?: number | null
           start_ms?: number | null
           storage_path?: string
+          transform?: Json | null
           trim_in_ms?: number
           trim_out_ms?: number | null
           user_id?: string

@@ -8,6 +8,7 @@
 
 import { IMAGE_DEFAULT_MS, IMAGE_ZOOM, isImageFilename } from "@/lib/media-kind";
 import { layoutTrack } from "@/lib/timeline-layout";
+import { parseTransform, transformedBox, type ClipTransform } from "@/lib/clip-transform";
 
 export type BrowserClipInput = {
   id: string;
@@ -20,6 +21,8 @@ export type BrowserClipInput = {
   duration_ms: number | null;
   /** Where it starts on its track (ms); null follows the clip before it. */
   start_ms?: number | null;
+  /** Moved, resized or rotated in the editor's preview (clips.transform). */
+  transform?: unknown;
 };
 
 /** A clip's length on the timeline, from its trims. */
@@ -79,9 +82,11 @@ function pickMimeType(): { mimeType: string; ext: "mp4" | "webm" } {
 
 // A loaded clip: a video, or an image shown for targetMs (slowly zooming in
 // from shownAt, when it went on screen).
-type LoadedClip =
+// `transform`: moved, resized or rotated in the editor (null: the default fit).
+type LoadedClip = { transform: ClipTransform | null } & (
   | { kind: "video"; video: HTMLVideoElement; outSec: number; targetMs: number }
-  | { kind: "image"; image: HTMLImageElement; targetMs: number; shownAt: number | null };
+  | { kind: "image"; image: HTMLImageElement; targetMs: number; shownAt: number | null }
+);
 
 async function loadImageClip(c: BrowserClipInput, label: string): Promise<LoadedClip> {
   const image = new Image();
@@ -93,7 +98,13 @@ async function loadImageClip(c: BrowserClipInput, label: string): Promise<Loaded
     throw new Error(`Failed to load ${label}`);
   }
   const lengthMs = (c.trim_out_ms ?? IMAGE_DEFAULT_MS) - (c.trim_in_ms ?? 0);
-  return { kind: "image", image, targetMs: Math.max(100, lengthMs), shownAt: null };
+  return {
+    kind: "image",
+    image,
+    targetMs: Math.max(100, lengthMs),
+    shownAt: null,
+    transform: parseTransform(c.transform),
+  };
 }
 
 async function loadClip(c: BrowserClipInput, label: string, muted: boolean): Promise<LoadedClip> {
@@ -138,7 +149,13 @@ async function loadClip(c: BrowserClipInput, label: string, muted: boolean): Pro
     });
   }
 
-  return { kind: "video", video, outSec, targetMs: Math.max(80, (outSec - inSec) * 1000) };
+  return {
+    kind: "video",
+    video,
+    outSec,
+    targetMs: Math.max(80, (outSec - inSec) * 1000),
+    transform: parseTransform(c.transform),
+  };
 }
 
 /** Plays a loaded clip until its out point (or a stop request); resolves with wall-clock ms. */
@@ -279,10 +296,30 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   blurCanvas.width = Math.max(2, Math.round(width / 10));
   blurCanvas.height = Math.max(2, Math.round(height / 10));
   const blurCtx = blurCanvas.getContext("2d");
+  // A blurred, darker copy of the picture, filling the frame.
+  const drawBlur = (picture: CanvasImageSource, vw: number, vh: number) => {
+    if (!blurCtx) return;
+    const bw = blurCanvas.width;
+    const bh = blurCanvas.height;
+    const small = Math.max(bw / vw, bh / vh);
+    blurCtx.drawImage(
+      picture,
+      (bw - vw * small) / 2,
+      (bh - vh * small) / 2,
+      vw * small,
+      vh * small,
+    );
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(blurCanvas, 0, 0, width, height);
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillRect(0, 0, width, height);
+  };
   // Like the cloud export: clips (nearly) the frame's shape fill it; others
-  // are shown whole over a blurred, darker copy of themselves.
-  // An image also zooms in slowly over its time on screen.
-  const drawFit = (clip: LoadedClip) => {
+  // are shown whole over a blurred, darker copy of themselves. A clip moved,
+  // resized or rotated in the editor fills its box instead; on the main
+  // track its blurred copy stays behind it, on top (B-roll) the main video
+  // shows around it. An image also zooms in slowly over its time on screen.
+  const drawFit = (clip: LoadedClip, onTop: boolean) => {
     const video = clip.kind === "video" ? clip.video : clip.image;
     const vw = (clip.kind === "video" ? clip.video.videoWidth : clip.image.naturalWidth) || width;
     const vh =
@@ -293,26 +330,27 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
         : 1;
     const cover = Math.max(width / vw, height / vh) * zoom;
     try {
+      if (clip.transform) {
+        if (!onTop) drawBlur(video, vw, vh);
+        const b = transformedBox(vw, vh, width, height, clip.transform);
+        ctx.save();
+        ctx.translate(b.cx, b.cy);
+        ctx.rotate((b.rotation * Math.PI) / 180);
+        ctx.beginPath();
+        ctx.rect(-b.w / 2, -b.h / 2, b.w, b.h);
+        ctx.clip();
+        const fill = Math.max(b.w / vw, b.h / vh) * zoom;
+        ctx.drawImage(video, (-vw * fill) / 2, (-vh * fill) / 2, vw * fill, vh * fill);
+        ctx.restore();
+        return;
+      }
       if (Math.abs(Math.log(vw / vh / (width / height))) < 0.03 || !blurCtx) {
         const dw = vw * cover;
         const dh = vh * cover;
         ctx.drawImage(video, (width - dw) / 2, (height - dh) / 2, dw, dh);
         return;
       }
-      const bw = blurCanvas.width;
-      const bh = blurCanvas.height;
-      const small = Math.max(bw / vw, bh / vh);
-      blurCtx.drawImage(
-        video,
-        (bw - vw * small) / 2,
-        (bh - vh * small) / 2,
-        vw * small,
-        vh * small,
-      );
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(blurCanvas, 0, 0, width, height);
-      ctx.fillStyle = "rgba(0,0,0,0.25)";
-      ctx.fillRect(0, 0, width, height);
+      drawBlur(video, vw, vh);
       const contain = Math.min(width / vw, height / vh) * zoom;
       const dw = vw * contain;
       const dh = vh * contain;
@@ -332,9 +370,9 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
     } else if (currentMain && isReady(currentMain)) {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, width, height);
-      drawFit(currentMain);
+      drawFit(currentMain, false);
     }
-    if (currentBroll && isReady(currentBroll)) drawFit(currentBroll);
+    if (currentBroll && isReady(currentBroll)) drawFit(currentBroll, true);
     requestAnimationFrame(draw);
   };
   requestAnimationFrame(draw);

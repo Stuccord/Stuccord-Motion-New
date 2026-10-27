@@ -33,6 +33,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { IMAGE_DEFAULT_MS, isImageFilename } from "@/lib/media-kind";
+import {
+  cleanTransform,
+  IDENTITY_TRANSFORM,
+  isIdentity,
+  parseTransform,
+  type ClipTransform,
+} from "@/lib/clip-transform";
 import type { ClipRow } from "./types";
 import { clipVisibleMs } from "./TimelinePanel";
 import { formatTimecode } from "./PlaybackControls";
@@ -44,6 +51,8 @@ export interface ClipInspectorProps {
   onDuplicate?: () => void;
   onDelete?: () => void;
   onTrim?: (id: string, trimInMs: number, trimOutMs: number | null) => void;
+  /** Moves, resizes or rotates the clip in the frame (null: its default fit). */
+  onTransform?: (transform: ClipTransform | null) => void;
   isSplitting?: boolean;
   isDuplicating?: boolean;
   isDeleting?: boolean;
@@ -69,6 +78,92 @@ function trackBadge(role: string): { label: string; className: string } {
   };
 }
 
+/**
+ * Position X/Y (share of the frame from its centre, in %), Scale (% of the
+ * default fit) and Rotation (°), each saved when you press Enter or leave
+ * the box.
+ */
+function TransformFields({
+  transform,
+  onChange,
+}: {
+  transform: ClipTransform | null;
+  onChange: (transform: ClipTransform | null) => void;
+}) {
+  const t = transform ?? IDENTITY_TRANSFORM;
+  const fields = [
+    { key: "x", label: "X", unit: "%", value: t.x * 100, toValue: (n: number) => n / 100 },
+    { key: "y", label: "Y", unit: "%", value: t.y * 100, toValue: (n: number) => n / 100 },
+    {
+      key: "scale",
+      label: "Scale",
+      unit: "%",
+      value: t.scale * 100,
+      toValue: (n: number) => n / 100,
+    },
+    { key: "rotation", label: "Rotate", unit: "°", value: t.rotation, toValue: (n: number) => n },
+  ] as const;
+  const save = (key: (typeof fields)[number]["key"], typed: string) => {
+    const field = fields.find((f) => f.key === key)!;
+    const n = Number(typed.replace(/[%°\s]/g, ""));
+    if (!Number.isFinite(n) || Math.abs(n - field.value) < 0.005) return;
+    const next = cleanTransform({ ...t, [key]: field.toValue(n) });
+    onChange(isIdentity(next) ? null : next);
+  };
+  return (
+    <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold font-mono">
+          Transform
+        </span>
+        {transform && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="text-[10px] text-violet-400 hover:text-violet-300 flex items-center gap-1 font-mono transition"
+          >
+            <RotateCcw className="w-2.5 h-2.5" />
+            Reset
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {fields.map((f) => (
+          <label key={f.key} className="flex flex-col gap-0.5">
+            <span className="text-[9px] text-neutral-500 uppercase font-mono">{f.label}</span>
+            <div className="relative">
+              <input
+                // A fresh box when the saved value changes (e.g. after a drag).
+                key={`${f.key}:${f.value.toFixed(2)}`}
+                defaultValue={Number(f.value.toFixed(1))}
+                inputMode="decimal"
+                aria-label={`${f.label} (${f.unit})`}
+                onBlur={(e) => save(f.key, e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") {
+                    e.currentTarget.value = String(Number(f.value.toFixed(1)));
+                    e.currentTarget.blur();
+                  }
+                  // Typing here shouldn't trigger the editor's shortcuts.
+                  e.stopPropagation();
+                }}
+                className="w-full h-7 rounded bg-white/[0.04] border border-white/[0.08] pl-1.5 pr-4 text-[11px] font-mono text-neutral-200 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
+              />
+              <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-neutral-500 pointer-events-none">
+                {f.unit}
+              </span>
+            </div>
+          </label>
+        ))}
+      </div>
+      <p className="text-[10px] text-neutral-500 leading-normal px-0.5">
+        Or drag the clip in the preview: corners resize it, the round arrow rotates it.
+      </p>
+    </div>
+  );
+}
+
 export function ClipInspector({
   clip,
   onDeselect,
@@ -76,6 +171,7 @@ export function ClipInspector({
   onDuplicate,
   onDelete,
   onTrim,
+  onTransform,
   isSplitting = false,
   isDuplicating = false,
   isDeleting = false,
@@ -229,6 +325,15 @@ export function ClipInspector({
               to the playhead.
             </p>
           </div>
+
+          {/* Transform: where the clip sits in the frame (also in the preview's box) */}
+          {onTransform && clip.role !== "music" && clip.role !== "sfx" && (
+            <TransformFields
+              key={clip.id}
+              transform={parseTransform(clip.transform)}
+              onChange={onTransform}
+            />
+          )}
 
           {/* Real Actions Section */}
           <div className="space-y-2 pt-2 border-t border-white/[0.06]">

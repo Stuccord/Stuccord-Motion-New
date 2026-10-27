@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import { parseTransform } from "@/lib/clip-transform";
 
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
@@ -453,6 +454,38 @@ export const updateClipTrim = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Where a clip sits in the frame (moved, resized, rotated); null: its default fit. */
+export const updateClipTransform = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        transform: z
+          .object({
+            x: z.number().finite(),
+            y: z.number().finite(),
+            scale: z.number().finite().positive(),
+            rotation: z.number().finite(),
+          })
+          .nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    // Kept within limits; the default fit is saved as null.
+    const transform = data.transform ? parseTransform(data.transform) : null;
+    const { data: updated, error } = await context.supabase
+      .from("clips")
+      .update({ transform })
+      .eq("id", data.id)
+      .select("project_id")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (updated?.project_id) await markProjectEdited(context.supabase, updated.project_id);
+    return { ok: true, transform };
+  });
+
 export const updateClipDuration = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -845,6 +878,8 @@ export const submitRender = createServerFn({ method: "POST" })
             // Where it starts on the timeline; null follows the clip before it.
             start_ms: c.start_ms ?? null,
             parent_clip_id: c.parent_clip_id ?? null,
+            // Moved, resized or rotated in the preview; null: the default fit.
+            transform: parseTransform(c.transform),
             // Words in source-file time, or null when not transcribed yet.
             transcript_words: savedWords.get(c.storage_path) ?? null,
           };

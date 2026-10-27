@@ -17,6 +17,8 @@ export type ClipRow = {
   parent_clip_id?: string | null;
   /** Where the clip starts on the timeline (ms); null: right after the clip before it. */
   start_ms?: number | null;
+  /** Moved, resized or rotated in the preview; read it with parseTransform. */
+  transform?: unknown;
 };
 
 export type ProjectRow = {

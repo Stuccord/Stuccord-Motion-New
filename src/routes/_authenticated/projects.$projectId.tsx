@@ -12,6 +12,7 @@ import {
   updateProjectSettings,
   attachClip,
   updateClipTrim,
+  updateClipTransform,
   updateClipDuration,
   splitClip,
   duplicateClip,
@@ -35,6 +36,7 @@ import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
 import { usePreviewAudio } from "@/components/editor/usePreviewAudio";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
 import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
+import { parseTransform, type ClipTransform } from "@/lib/clip-transform";
 import {
   captureFilmstrip,
   computeWaveform,
@@ -188,6 +190,8 @@ type ClipRow = {
   trim_out_ms?: number | null;
   parent_clip_id?: string | null;
   start_ms?: number | null;
+  /** Moved, resized or rotated in the preview; read it with parseTransform. */
+  transform?: unknown;
 };
 
 /** Effective visible length of a clip in ms (falls back to a display default) */
@@ -217,6 +221,7 @@ function EditorPage() {
   const updateSettings = useServerFn(updateProjectSettings);
   const attachFn = useServerFn(attachClip);
   const trimFn = useServerFn(updateClipTrim);
+  const transformFn = useServerFn(updateClipTransform);
   const durationFn = useServerFn(updateClipDuration);
   const splitFn = useServerFn(splitClip);
   const duplicateFn = useServerFn(duplicateClip);
@@ -492,6 +497,12 @@ function EditorPage() {
       trim_out_ms: number | null;
       start_ms?: number | null;
     }) => trimFn({ data: v }),
+    onSuccess: () => refetch(),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const transformMut = useMutation({
+    mutationFn: (v: { id: string; transform: ClipTransform | null }) => transformFn({ data: v }),
     onSuccess: () => refetch(),
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1078,6 +1089,7 @@ function EditorPage() {
             trim_out_ms: c.trim_out_ms,
             duration_ms: c.duration_ms,
             start_ms: c.start_ms ?? null,
+            transform: c.transform ?? null,
           })),
           width: dims.w * scale,
           height: dims.h * scale,
@@ -1407,6 +1419,20 @@ function EditorPage() {
       trim_out_ms: to,
       ...(placed ? { start_ms: start } : {}),
     });
+  }
+
+  /** Moves, resizes or rotates a clip in the frame (null: its default fit), with undo. */
+  function transformClip(id: string, next: ClipTransform | null) {
+    const c = clips.find((x) => x.id === id);
+    if (!c) return;
+    const prev = parseTransform(c.transform);
+    if (JSON.stringify(prev) === JSON.stringify(next)) return;
+    pushToHistory({
+      description: next ? "Move clip in frame" : "Reset clip position",
+      undo: () => transformMut.mutate({ id, transform: prev }),
+      redo: () => transformMut.mutate({ id, transform: next }),
+    });
+    transformMut.mutate({ id, transform: next });
   }
 
   /** [ / ]: the selected clip starts (or ends) at the playhead, where it fits. */
@@ -1767,6 +1793,9 @@ function EditorPage() {
                   hook={renderHook}
                 />
               ),
+              selectedClipId,
+              onSelectClip: (id) => setSelectedClipId(id),
+              onTransform: transformClip,
             }}
             sourceIsImage={selectedIsImage}
             imageLengthMs={selectedClip ? clipVisibleMs(selectedClip) : undefined}
@@ -1866,6 +1895,7 @@ function EditorPage() {
                   onTrim={(id, trimInMs, trimOutMs) =>
                     trimMut.mutate({ id, trim_in_ms: trimInMs, trim_out_ms: trimOutMs })
                   }
+                  onTransform={(next) => transformClip(selectedClip.id, next)}
                   isSplitting={splitMut.isPending}
                   isDuplicating={duplicateMut.isPending}
                   isDeleting={removeClipMut.isPending}
