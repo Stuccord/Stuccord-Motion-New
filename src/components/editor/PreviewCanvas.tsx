@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { MonitorPlay, Loader2, Film, X } from "lucide-react";
+import { MonitorPlay, Loader2, Film, X, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AspectRatio, ClipRow, ViewMode } from "./types";
 import { PlaybackControls } from "./PlaybackControls";
@@ -52,6 +52,72 @@ interface PreviewCanvasProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   onTimeUpdate?: (currentTime: number) => void;
   onLoadedMetadata?: (duration: number) => void;
+}
+
+const MONITOR_ZOOM_KEY = "stuccord.monitorZoom";
+const MONITOR_GUIDES_KEY = "stuccord.monitorGuides";
+/** The export's size for each shape (what 100% zoom shows). */
+const EXPORT_SIZE: Record<AspectRatio, { w: number; h: number }> = {
+  "9:16": { w: 1080, h: 1920 },
+  "16:9": { w: 1920, h: 1080 },
+  "1:1": { w: 1080, h: 1080 },
+};
+
+/** A setting kept in this browser (falls back to `initial`). */
+function useStoredState<T extends string>(key: string, initial: T, allowed: T[]) {
+  const [value, setValue] = useState<T>(initial);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(key) as T | null;
+      if (saved && allowed.includes(saved)) setValue(saved);
+    } catch {
+      /* storage unavailable */
+    }
+    // Read once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const set = (next: T) => {
+    setValue(next);
+    try {
+      localStorage.setItem(key, next);
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  return [value, set] as const;
+}
+
+/**
+ * Safe-area guides over the frame. Vertical video: the areas TikTok, Reels
+ * and Shorts cover with their own top bar, side buttons and caption/name
+ * block. Other shapes: the classic title-safe (90%) and action-safe (95%)
+ * boxes.
+ */
+function SafeAreaGuides({ aspectRatio }: { aspectRatio: AspectRatio }) {
+  const label = "absolute text-[9px] font-mono uppercase tracking-wider text-amber-200/80";
+  if (aspectRatio === "9:16") {
+    return (
+      <div className="absolute inset-0 z-30 pointer-events-none" aria-hidden>
+        <div className="absolute inset-x-0 top-0 h-[10%] bg-amber-400/15 border-b border-dashed border-amber-300/70">
+          <span className={`${label} left-1.5 bottom-0.5`}>App top bar</span>
+        </div>
+        <div className="absolute right-0 top-[38%] h-[42%] w-[15%] bg-amber-400/15 border-l border-dashed border-amber-300/70">
+          <span className={`${label} right-1 top-1 [writing-mode:vertical-rl]`}>Buttons</span>
+        </div>
+        <div className="absolute inset-x-0 bottom-0 h-[20%] bg-amber-400/15 border-t border-dashed border-amber-300/70">
+          <span className={`${label} left-1.5 top-0.5`}>Caption &amp; name</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="absolute inset-0 z-30 pointer-events-none" aria-hidden>
+      <div className="absolute inset-[2.5%] border border-dashed border-amber-300/40" />
+      <div className="absolute inset-[5%] border border-dashed border-amber-300/70">
+        <span className={`${label} left-1 top-0.5`}>Title safe</span>
+      </div>
+    </div>
+  );
 }
 
 export function PreviewCanvas({
@@ -108,11 +174,29 @@ export function PreviewCanvas({
   }, []);
   const [arW, arH] = aspectRatio.split(":").map(Number);
   const ratio = arW / arH;
-  const frameW = Math.max(0, Math.min(stage.w, stage.h * ratio));
+  // Monitor zoom, like After Effects' composition panel: fit the stage, or
+  // a share of the export's real size (scrolls when it's bigger). Remembered.
+  const [zoom, setZoom] = useStoredState<"fit" | "0.5" | "1">(MONITOR_ZOOM_KEY, "fit", [
+    "fit",
+    "0.5",
+    "1",
+  ]);
+  // Safe-area guides: where phone apps put their own buttons and captions.
+  const [guides, setGuides] = useStoredState<"on" | "off">(MONITOR_GUIDES_KEY, "off", [
+    "on",
+    "off",
+  ]);
+  const exportSize = EXPORT_SIZE[aspectRatio];
+  const fitW = Math.max(0, Math.min(stage.w, stage.h * ratio));
+  const frameW = zoom === "fit" ? fitW : exportSize.w * Number(zoom);
   const frameStyle: React.CSSProperties =
-    stage.w > 0 && stage.h > 0
+    zoom !== "fit"
       ? { width: frameW, height: frameW / ratio }
-      : { aspectRatio: `${arW} / ${arH}`, height: "100%" };
+      : stage.w > 0 && stage.h > 0
+        ? { width: frameW, height: frameW / ratio }
+        : { aspectRatio: `${arW} / ${arH}`, height: "100%" };
+  // When fitted the frame never exceeds the stage; zoomed in it may (and scrolls).
+  const frameFit = zoom === "fit" ? "max-w-full max-h-full" : "";
 
   // Keep the play button in step with the video element.
   const playbackEvents = {
@@ -236,7 +320,7 @@ export function PreviewCanvas({
       className="flex-1 flex flex-col min-h-0 bg-[#090A0F] select-none text-neutral-200 overflow-hidden"
     >
       {/* Monitor Header */}
-      <div className="h-9 px-3 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0 bg-[#0C0D15]">
+      <div className="h-8 px-2.5 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0 bg-[#0C0D15]">
         <div className="flex items-center gap-2">
           <MonitorPlay className="w-3.5 h-3.5 text-violet-400" />
           <span className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
@@ -299,23 +383,58 @@ export function PreviewCanvas({
             </span>
           )}
           {showTimeline && (
-            <span className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-neutral-500">
+            <span className="hidden md:flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-neutral-500">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Live edit
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setGuides(guides === "on" ? "off" : "on")}
+            aria-pressed={guides === "on"}
+            title="Safe-area guides: where phone apps cover the video"
+            className={cn(
+              "h-6 px-1.5 rounded flex items-center gap-1 text-[11px] transition",
+              guides === "on"
+                ? "bg-violet-600/25 text-violet-200"
+                : "text-neutral-400 hover:text-white hover:bg-white/[0.06]",
+            )}
+          >
+            <ScanLine className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Guides</span>
+          </button>
+          <select
+            value={zoom}
+            onChange={(e) => setZoom(e.target.value as typeof zoom)}
+            aria-label="Monitor zoom"
+            title="Monitor zoom (100% is the export's real size)"
+            className="h-6 rounded bg-white/[0.04] border border-white/[0.08] px-1 text-[11px] font-mono text-neutral-300 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
+          >
+            <option value="fit">Fit</option>
+            <option value="0.5">50%</option>
+            <option value="1">100%</option>
+          </select>
         </div>
       </div>
 
       {/* Center Video Stage */}
       <div
         ref={stageRef}
-        className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 relative bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.05),transparent_70%)]"
+        className={cn(
+          "flex-1 min-h-0 flex p-1.5 sm:p-2.5 relative bg-[#050508]",
+          // Zoomed past the stage: scroll. (m-auto on the frame centres it
+          // while still letting every edge scroll into view.)
+          zoom === "fit" ? "overflow-hidden" : "overflow-auto",
+        )}
       >
         {showTimeline ? (
           <div
-            className="relative bg-black rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden max-w-full max-h-full shrink-0"
+            className={cn(
+              "relative m-auto bg-black rounded-md shadow-2xl ring-1 ring-white/10 overflow-hidden shrink-0",
+              frameFit,
+            )}
             style={frameStyle}
           >
+            {guides === "on" && <SafeAreaGuides aspectRatio={aspectRatio} />}
             <TimelinePlayer
               ref={videoRef as unknown as React.Ref<TimelinePlayerHandle>}
               aRoll={timeline!.aRoll}
@@ -340,9 +459,13 @@ export function PreviewCanvas({
           </div>
         ) : hasVideo ? (
           <div
-            className="relative bg-black rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden flex items-center justify-center max-w-full max-h-full shrink-0"
+            className={cn(
+              "relative m-auto bg-black rounded-md shadow-2xl ring-1 ring-white/10 overflow-hidden flex items-center justify-center shrink-0",
+              frameFit,
+            )}
             style={frameStyle}
           >
+            {guides === "on" && <SafeAreaGuides aspectRatio={aspectRatio} />}
             {showImage ? (
               <>
                 {/* Like the exports: a blurred copy behind when the shape
@@ -435,7 +558,7 @@ export function PreviewCanvas({
           </div>
         ) : (
           /* Empty / Idle State */
-          <div className="relative bg-[#0E0F17] rounded-lg border border-white/[0.08] shadow-xl flex flex-col items-center justify-center px-6 py-8 text-center w-full max-w-sm max-h-full overflow-auto">
+          <div className="relative m-auto bg-[#0E0F17] rounded-lg border border-white/[0.08] shadow-xl flex flex-col items-center justify-center px-6 py-8 text-center w-full max-w-sm max-h-full overflow-auto">
             {isRendering ? (
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-violet-400" />

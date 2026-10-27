@@ -69,37 +69,9 @@ export function PlaybackControls({
   return (
     <TooltipProvider delayDuration={250}>
       <div className="w-full bg-[#0D0E16]/95 border-t border-white/[0.08] select-none text-neutral-300 shrink-0">
-        {/* Progress Scrubber */}
-        <div className="px-3 pt-2 pb-1">
-          <div
-            role="slider"
-            aria-label="Seek timeline"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(playheadPct)}
-            tabIndex={disabled ? -1 : 0}
-            onPointerDown={handlePointerDown}
-            className={cn(
-              "relative h-1.5 rounded-full bg-white/[0.08] cursor-pointer group touch-none transition-all",
-              disabled && "cursor-not-allowed opacity-40",
-            )}
-          >
-            {/* Filled track with violet gradient */}
-            <div
-              className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-600 to-indigo-500 shadow-[0_0_8px_rgba(124,58,237,0.5)]"
-              style={{ width: `${playheadPct}%` }}
-            />
-            {/* Scrubber thumb */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-white ring-2 ring-violet-500 shadow-md opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity pointer-events-none"
-              style={{ left: `calc(${playheadPct}% - 7px)` }}
-            />
-          </div>
-        </div>
-
-        {/* Buttons & Timecode row */}
-        <div className="h-10 px-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
+        {/* One compact row: buttons and time, the seek bar, volume and fullscreen */}
+        <div className="h-10 px-2 sm:px-3 flex items-center gap-2">
+          <div className="flex items-center gap-1 shrink-0">
             {/* Skip to start */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -163,8 +135,36 @@ export function PlaybackControls({
             )}
           </div>
 
+          {/* Seek bar: takes the room between the time and the right buttons. */}
+          <div className="flex-1 min-w-[60px] py-2">
+            <div
+              role="slider"
+              aria-label="Seek timeline"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(playheadPct)}
+              tabIndex={disabled ? -1 : 0}
+              onPointerDown={handlePointerDown}
+              className={cn(
+                "relative h-1.5 rounded-full bg-white/[0.08] cursor-pointer group touch-none transition-all",
+                disabled && "cursor-not-allowed opacity-40",
+              )}
+            >
+              {/* Filled track with violet gradient */}
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-600 to-indigo-500 shadow-[0_0_8px_rgba(124,58,237,0.5)]"
+                style={{ width: `${playheadPct}%` }}
+              />
+              {/* Scrubber thumb */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-white ring-2 ring-violet-500 shadow-md opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity pointer-events-none"
+                style={{ left: `calc(${playheadPct}% - 7px)` }}
+              />
+            </div>
+          </div>
+
           {/* Right Controls: Volume & Fullscreen */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
