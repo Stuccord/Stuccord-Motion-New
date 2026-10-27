@@ -227,3 +227,39 @@
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   border: 1px solid var(--color-hairline);
 }
+
+/* Editor scrollbars: thin, dark and rounded, no arrow buttons; violet on
+   hover. Chrome, Edge and Safari use the ::-webkit-scrollbar rules (they
+   ignore them once scrollbar-width is set, and would draw arrow buttons),
+   so the standard properties are only for browsers without them (Firefox). */
+@supports not selector(::-webkit-scrollbar) {
+  .editor-scrollbars,
+  .editor-scrollbars * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+  }
+  .editor-scrollbars *:hover {
+    scrollbar-color: rgb(167 139 250 / 0.55) transparent;
+  }
+}
+.editor-scrollbars ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.editor-scrollbars ::-webkit-scrollbar-track,
+.editor-scrollbars ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.editor-scrollbars ::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.16);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+.editor-scrollbars ::-webkit-scrollbar-thumb:hover {
+  background: rgb(167 139 250 / 0.6);
+  background-clip: padding-box;
+}
+.editor-scrollbars ::-webkit-scrollbar-button {
+  display: none;
+}

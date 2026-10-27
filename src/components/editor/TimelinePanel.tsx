@@ -1697,8 +1697,11 @@ function TimelineTracks({
             ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
-        {/* Ruler */}
-        <div className="h-8 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
+        {/* Ruler. It (and the rows below) are as wide as the whole timeline
+            (w-max): a pinned (sticky) column only stays in view while its
+            row is still on screen, so a row as narrow as the view would
+            let the track names scroll away on a long timeline. */}
+        <div className="h-8 w-max min-w-full border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
           <div className="w-[120px] sm:w-[136px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[10px] font-mono text-neutral-500 uppercase tracking-widest">
             Time
           </div>
@@ -1770,7 +1773,7 @@ function TimelineTracks({
           .tl-root { --tl-gutter: 120px; }
           @media (min-width: 640px) { .tl-root { --tl-gutter: 136px; } }
         `}</style>
-        <div>
+        <div className="w-max min-w-full">
           {/* V1 A-Roll */}
           <TrackRow
             label="V1"

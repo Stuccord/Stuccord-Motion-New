@@ -80,7 +80,8 @@ export function EditorShell({
   return (
     <div
       className={cn(
-        "h-screen w-screen flex flex-col bg-[#0A0B10] text-neutral-200 overflow-hidden select-none font-sans",
+        // editor-scrollbars: thin dark scrollbars everywhere inside (styles.css).
+        "editor-scrollbars h-screen w-screen flex flex-col bg-[#0A0B10] text-neutral-200 overflow-hidden select-none font-sans",
         className,
       )}
     >
