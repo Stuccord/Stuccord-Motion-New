@@ -180,7 +180,7 @@ function Home() {
           <CreateCard
             title="Brand kit"
             desc="Your caption colours, font and logo on every export"
-            soon
+            onClick={() => navigate({ to: "/settings", search: { tab: "brand" } as never })}
             visual={
               <div className="relative h-full w-full bg-gradient-to-br from-amber-50 via-card to-rose-50 p-4">
                 <div className="grid grid-cols-2 gap-2">
@@ -272,7 +272,6 @@ function Home() {
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-background/50 mb-2">Coming next</div>
                 <ul className="space-y-1 text-[12.5px] text-background/80">
                   {[
-                    "Brand kit",
                     "Thumbnails",
                     "Voiceover",
                     "Auto-cut silences",

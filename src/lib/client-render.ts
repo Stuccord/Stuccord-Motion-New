@@ -48,6 +48,8 @@ export type RenderOptions = {
   fps?: number;
   videoBitsPerSecond?: number;
   onProgress?: (pct: number, msg: string) => void;
+  /** The brand kit's logo, drawn in its corner on every frame (as the cloud export does). */
+  logo?: { url: string; corner: "tl" | "tr" | "bl" | "br"; width: number; opacity: number } | null;
 };
 
 export type RenderResult = {
@@ -242,6 +244,18 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
     brollClips = [];
   }
 
+  // The brand logo, loaded before recording starts (skipped if it can't load).
+  let logoImage: HTMLImageElement | null = null;
+  if (opts.logo) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = opts.logo.url;
+    logoImage = await img.decode().then(
+      () => img,
+      () => null,
+    );
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -375,6 +389,17 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       drawFit(currentMain, false);
     }
     if (currentBroll && isReady(currentBroll)) drawFit(currentBroll, true);
+    if (logoImage && opts.logo) {
+      // Its corner, 4% of the shorter side in from the edges.
+      const lw = width * opts.logo.width;
+      const lh = (lw * logoImage.naturalHeight) / Math.max(1, logoImage.naturalWidth);
+      const m = Math.min(width, height) * 0.04;
+      const x = opts.logo.corner.endsWith("l") ? m : width - lw - m;
+      const y = opts.logo.corner.startsWith("t") ? m : height - lh - m;
+      ctx.globalAlpha = opts.logo.opacity;
+      ctx.drawImage(logoImage, x, y, lw, lh);
+      ctx.globalAlpha = 1;
+    }
     requestAnimationFrame(draw);
   };
   requestAnimationFrame(draw);

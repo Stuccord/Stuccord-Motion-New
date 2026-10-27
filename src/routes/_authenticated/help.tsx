@@ -63,6 +63,7 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
       "Captions are made from what's said in your V1 videos: the first cloud export transcribes them, word by word.",
       "After that they show in the preview and on the V3 track, and you can fix any word in the Captions tab.",
       "The eye button on the V3 track turns captions on or off for the export.",
+      "Settings → Brand kit sets their font, colours, size and place, the hook's colours, and a logo on every export.",
     ],
   },
   {

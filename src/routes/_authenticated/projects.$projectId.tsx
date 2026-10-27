@@ -34,6 +34,7 @@ import {
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
 import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
+import { loadBrandKit } from "@/lib/brand-kit";
 import { usePreviewAudio } from "@/components/editor/usePreviewAudio";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
 import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
@@ -641,6 +642,23 @@ function EditorPage() {
     })();
   }, [data, signClip]);
 
+  // The account's brand kit (captions, hook and logo in the preview and the
+  // browser export), with a link to its logo; the link is renewed hourly.
+  const brand = useQuery({
+    queryKey: ["brand-kit"],
+    queryFn: async () => {
+      const kit = await loadBrandKit();
+      const logoUrl = kit.logo
+        ? await signClip({ data: { path: kit.logo.path } })
+            .then((r) => r.url)
+            .catch(() => null)
+        : null;
+      return { kit, logoUrl };
+    },
+    staleTime: 30 * 60 * 1000,
+    refetchInterval: 45 * 60 * 1000,
+  });
+
   // Clips without a thumbnail yet (uploaded before thumbnails, or a split
   // half or copy) get one in the background. Audio has no picture;
   // thumbnail_path is missing (undefined) until its migration has run.
@@ -1214,6 +1232,10 @@ function EditorPage() {
           })),
           width: dims.w * scale,
           height: dims.h * scale,
+          logo:
+            brand.data?.kit.logo && brand.data.logoUrl
+              ? { ...brand.data.kit.logo, url: brand.data.logoUrl }
+              : null,
           videoBitsPerSecond: settings.bitrateMbps * 1_000_000,
           onProgress: (pct, msg) => {
             setRenderPct(pct);
@@ -1935,6 +1957,8 @@ function EditorPage() {
               // Captions (when on) and the last render's AI hook, like the export.
               renderOverlay: (timeMs) => (
                 <PreviewOverlay
+                  kit={brand.data?.kit}
+                  logoUrl={brand.data?.logoUrl}
                   timeMs={timeMs}
                   phrases={captionsEnabled ? captionWordPhrases : []}
                   hook={renderHook}

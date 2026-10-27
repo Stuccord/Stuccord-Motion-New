@@ -26,6 +26,7 @@ import fsp from "fs/promises";
 import os from "os";
 import path from "path";
 import ffmpegPath from "ffmpeg-static";
+import { fileURLToPath } from "url";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -390,6 +391,88 @@ function escapeDrawtext(text) {
     .replace(/\n/g, " ");
 }
 
+// ---------- brand kit ----------
+// The account's brand kit, sent with the job (matching src/lib/brand-kit.ts):
+// caption font, colours, size and position, the hook's box colour, and a
+// logo. Anything missing or invalid falls back to the standard look.
+
+const FONTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "fonts");
+// Font files in ./fonts and the family name inside each. "Bold" picks the
+// bold face where the family has one; display fonts are bold already.
+const BRAND_FONTS = {
+  poppins: { file: "Poppins-Bold.ttf", family: "Poppins", bold: true },
+  lato: { file: "Lato-Black.ttf", family: "Lato Black", bold: false },
+  anton: { file: "Anton-Regular.ttf", family: "Anton", bold: false },
+  bebas: { file: "BebasNeue-Regular.ttf", family: "Bebas Neue", bold: false },
+  archivo: { file: "ArchivoBlack-Regular.ttf", family: "Archivo Black", bold: false },
+  luckiest: { file: "LuckiestGuy-Regular.ttf", family: "Luckiest Guy", bold: false },
+};
+const CAPTION_SIZE = { s: 0.06, m: 0.075, l: 0.09 };
+
+function brandKitFromJob(job) {
+  const v = job?.brand_kit && typeof job.brand_kit === "object" ? job.brand_kit : {};
+  const hex = (x, d) => (typeof x === "string" && /^#[0-9A-Fa-f]{6}$/.test(x) ? x.toUpperCase() : d);
+  const pick = (x, allowed, d) => (allowed.includes(x) ? x : d);
+  const num = (x, lo, hi, d) => (Number.isFinite(Number(x)) ? Math.min(hi, Math.max(lo, Number(x))) : d);
+  const logo = v.logo && typeof v.logo === "object" && isAbsoluteHttpUrl(v.logo.url) ? v.logo : null;
+  return {
+    font: pick(v.font, Object.keys(BRAND_FONTS), "default"),
+    textColor: hex(v.textColor, "#FFFFFF"),
+    highlightColor: hex(v.highlightColor, "#FFD700"),
+    outlineColor: hex(v.outlineColor, "#000000"),
+    size: pick(v.size, ["s", "m", "l"], "m"),
+    position: pick(v.position, ["bottom", "middle", "top"], "bottom"),
+    hookBoxColor: hex(v.hookBoxColor, "#000000"),
+    logo: logo
+      ? {
+          url: logo.url,
+          corner: pick(logo.corner, ["tl", "tr", "bl", "br"], "br"),
+          width: num(logo.width, 0.06, 0.3, 0.14),
+          opacity: num(logo.opacity, 0.2, 1, 0.85),
+        }
+      : null,
+  };
+}
+
+/** The brand font's file, if the kit picked one and it's here. */
+function brandFontFile(kit) {
+  const f = BRAND_FONTS[kit.font];
+  if (!f) return null;
+  const file = path.join(FONTS_DIR, f.file);
+  try {
+    return fs.statSync(file).isFile() ? file : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "#RRGGBB" as an ASS colour (&HAABBGGRR, opaque). */
+function assColor(hex) {
+  const n = hex.replace("#", "");
+  return `&H00${n.slice(4, 6)}${n.slice(2, 4)}${n.slice(0, 2)}`.toUpperCase();
+}
+
+/**
+ * Puts the logo in its corner (4% of the shorter side in from the edges, as
+ * the preview shows it), in one more encode.
+ */
+async function overlayLogo(input, logoPath, kit, w, h, out) {
+  const lw = Math.max(2, Math.round((w * kit.logo.width) / 2) * 2);
+  const m = Math.round(Math.min(w, h) * 0.04);
+  const x = kit.logo.corner.endsWith("l") ? `${m}` : `W-w-${m}`;
+  const y = kit.logo.corner.startsWith("t") ? `${m}` : `H-h-${m}`;
+  await run(ffmpegPath, [
+    "-y", "-i", input, "-i", logoPath,
+    "-filter_complex",
+    `[1:v]scale=${lw}:-1,format=rgba,colorchannelmixer=aa=${kit.logo.opacity.toFixed(2)}[lg];[0:v][lg]overlay=x=${x}:y=${y}:format=auto,format=yuv420p`,
+    "-map", "0:a?",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "copy", "-movflags", "+faststart",
+    out,
+  ]);
+  return out;
+}
+
 function findSystemFont() {
   const candidates = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -669,17 +752,22 @@ function fontFamily(fontPath) {
  * with the word being spoken highlighted yellow. Returns null when the
  * transcript has no words.
  */
-function buildCaptionsAss(words, { w, h, fontName }) {
+function buildCaptionsAss(words, { w, h, fontName, kit = brandKitFromJob({}), bold = true }) {
   const groups = groupCaptionWords(words);
   if (!groups.length) return null;
 
-  const fontSize = Math.round(Math.min(w, h) * 0.075);
+  const fontSize = Math.round(Math.min(w, h) * CAPTION_SIZE[kit.size]);
   const outline = Math.max(2, Math.round(fontSize * 0.08));
   const marginX = Math.round(w * 0.08);
-  const marginV = Math.round(h * 0.2);
-  // Colours are &HAABBGGRR. Yellow #FFD700 is &H0000D7FF.
-  const WHITE = "&H00FFFFFF";
-  const HIGHLIGHT = "&H0000D7FF";
+  // 20% of the height from the bottom; at the top 24%, to clear the hook.
+  const marginV = Math.round(h * (kit.position === "top" ? 0.24 : 0.2));
+  // Colours are &HAABBGGRR (yellow #FFD700 is &H0000D7FF).
+  const WHITE = assColor(kit.textColor);
+  const HIGHLIGHT = assColor(kit.highlightColor);
+  const OUTLINE = assColor(kit.outlineColor);
+  // Lower third, middle or top (numpad layout); the margin is from the
+  // bottom or top edge, as the preview places them.
+  const alignment = kit.position === "top" ? 8 : kit.position === "middle" ? 5 : 2;
 
   const events = [];
   groups.forEach((group, gi) => {
@@ -711,7 +799,7 @@ function buildCaptionsAss(words, { w, h, fontName }) {
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Caption,${fontName},${fontSize},${WHITE},${WHITE},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${outline},0,2,${marginX},${marginX},${marginV},1`,
+    `Style: Caption,${fontName},${fontSize},${WHITE},${WHITE},${OUTLINE},&H80000000,${bold ? -1 : 0},0,0,0,100,100,0,0,1,${outline},0,${alignment},${marginX},${marginX},${marginV},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -1255,13 +1343,22 @@ async function runRender(job) {
     // 5. Burn in text: word-by-word captions in the lower third and the AI
     //    hook at the top for the first 3 seconds, in a single encode.
     let finalOut = composedOut;
-    const font = findSystemFont();
+    // The brand kit's font when it picked one (bundled in ./fonts), else the system's.
+    const kit = brandKitFromJob(job);
+    const brandFont = brandFontFile(kit);
+    const font = brandFont ?? findSystemFont();
     if (!font && (hook || captionWords.length)) {
       console.warn(`[Worker] No system font found; skipping captions and hook for job=${job.job_id}`);
     }
     let captionsFilter = null;
     if (font && captionWords.length) {
-      const ass = buildCaptionsAss(captionWords, { w, h, fontName: fontFamily(font) });
+      const ass = buildCaptionsAss(captionWords, {
+        w,
+        h,
+        fontName: brandFont ? BRAND_FONTS[kit.font].family : fontFamily(font),
+        kit,
+        bold: brandFont ? BRAND_FONTS[kit.font].bold : true,
+      });
       if (ass) {
         const assPath = path.join(workdir, "captions.ass");
         await fsp.writeFile(assPath, ass, "utf8");
@@ -1272,9 +1369,10 @@ async function runRender(job) {
     let hookFilter = null;
     if (font && hook) {
       const fontSize = Math.round(h * 0.055);
+      const rgb = (hex) => `0x${hex.slice(1)}`;
       hookFilter =
-        `drawtext=fontfile='${font}':text='${escapeDrawtext(hook)}':` +
-        `fontcolor=white:fontsize=${fontSize}:box=1:boxcolor=black@0.55:boxborderw=24:` +
+        `drawtext=fontfile=${filterPath(font)}:text='${escapeDrawtext(hook)}':` +
+        `fontcolor=${rgb(kit.textColor)}:fontsize=${fontSize}:box=1:boxcolor=${rgb(kit.hookBoxColor)}@0.55:boxborderw=24:` +
         `x=(w-text_w)/2:y=h*0.08:enable='lt(t,3)'`;
     }
 
@@ -1313,6 +1411,18 @@ async function runRender(job) {
             captions_error: String(e?.message ?? e).slice(0, 300),
           };
         }
+      }
+    }
+
+    // 5b. The brand logo in its corner (best-effort: a problem keeps the video without it).
+    if (kit.logo) {
+      try {
+        const logoPath = path.join(workdir, "logo.png");
+        await download(kit.logo.url, logoPath);
+        finalOut = await overlayLogo(finalOut, logoPath, kit, w, h, path.join(workdir, "final-logo.mp4"));
+      } catch (e) {
+        console.warn(`[Worker] Logo overlay failed for job=${job.job_id}:`, e?.message || e);
+        editPlan = { ...(editPlan ?? {}), logo_error: String(e?.message ?? e).slice(0, 300) };
       }
     }
 

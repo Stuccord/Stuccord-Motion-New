@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { parseTransform } from "@/lib/clip-transform";
+import { parseBrandKit } from "@/lib/brand-kit";
 
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
@@ -1069,6 +1070,23 @@ export const submitRender = createServerFn({ method: "POST" })
         .createSignedUploadUrl(outputPath);
       if (uploadErr) throw new Error(uploadErr.message);
 
+      // The account's brand kit, read fresh (the sign-in token may be older
+      // than the last save), with a link to its logo for the worker.
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: owner } = await supabaseAdmin.auth.admin.getUserById(context.userId);
+      const kit = parseBrandKit(owner?.user?.user_metadata?.brand_kit);
+      let logoUrl: string | null = null;
+      if (kit.logo) {
+        const { data: signedLogo } = await context.supabase.storage
+          .from("raw-clips")
+          .createSignedUrl(kit.logo.path, 60 * 60 * 6);
+        logoUrl = signedLogo?.signedUrl ?? null;
+      }
+      const brandKit = {
+        ...kit,
+        logo: kit.logo && logoUrl ? { ...kit.logo, url: logoUrl } : null,
+      };
+
       const payload = {
         job_id: job.id,
         project_id: project.id,
@@ -1080,6 +1098,7 @@ export const submitRender = createServerFn({ method: "POST" })
         aspect_ratio: project.aspect_ratio,
         captions: data.captions,
         music: data.music,
+        brand_kit: brandKit,
         clips: clipUrls,
         output: {
           path: outputPath,

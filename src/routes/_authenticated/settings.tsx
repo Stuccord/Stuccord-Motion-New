@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
 import { readPrefs, savePrefs, type NotificationPrefs } from "@/lib/notification-prefs";
 import { SecuritySettings } from "@/components/settings-security";
+import { BrandKitSettings } from "@/components/settings-brand-kit";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { User, Palette, Bell, Shield, KeyRound } from "lucide-react";
@@ -104,10 +105,12 @@ function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">Brand kit</CardTitle>
-                <CardDescription>Your logo, colours and caption font.</CardDescription>
+                <CardDescription>
+                  Your captions&apos; font, colours, size and place, and a logo on every export.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <NotYet what="Saving your brand colours, font and logo and using them on every export" />
+                <BrandKitSettings />
               </CardContent>
             </Card>
           </TabsContent>
