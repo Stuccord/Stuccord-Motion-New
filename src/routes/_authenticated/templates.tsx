@@ -20,7 +20,7 @@ function TemplatesPage() {
     (!q || t.title.toLowerCase().includes(q.toLowerCase()) || t.desc.toLowerCase().includes(q.toLowerCase()))
   );
 
-  const useTemplate = (id: string) => {
+  const startFromTemplate = (id: string) => {
     navigate({ to: "/projects/new", search: { template: id } as never });
   };
 
@@ -52,7 +52,7 @@ function TemplatesPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((t) => (
-          <button key={t.id} onClick={() => useTemplate(t.id)}
+          <button key={t.id} onClick={() => startFromTemplate(t.id)}
             className="group relative overflow-hidden rounded-2xl border border-black/5 bg-white text-left hover:border-black/20 hover:shadow-[0_10px_40px_-16px_rgba(0,0,0,0.2)] transition-all">
             <div className={cn("relative h-40 bg-gradient-to-br", t.gradient)}>
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(255,255,255,0.35),transparent_60%)]" />

@@ -551,8 +551,77 @@ function VideoLayer({
 }) {
   const el = useRef<HTMLVideoElement | null>(null);
   const bg = useRef<HTMLCanvasElement>(null);
-  // Shown over the frame: still loading (or buffering), or the browser can't play it.
+  // Shown over the frame: still loading (or buffering), or the browser can't
+  // play it. Read from the video itself (not from single events, which a
+  // paused video may never send again after a seek), checked on its events
+  // and every second while it isn't ready.
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  // Reloads after a stalled download (none of it arriving for a while).
+  const [retrying, setRetrying] = useState(false);
+  useEffect(() => {
+    const video = el.current;
+    if (!video) return;
+    let buffering = false;
+    let lastProgress = performance.now();
+    let reloads = 0;
+    const refresh = () => {
+      const next = video.error
+        ? "error"
+        : video.readyState < 2 || (buffering && !video.paused)
+          ? "loading"
+          : "ready";
+      setStatus(next);
+      if (next === "ready") {
+        reloads = 0;
+        setRetrying(false);
+      }
+    };
+    const onWaiting = () => {
+      buffering = true;
+      refresh();
+    };
+    const onFlowing = () => {
+      buffering = false;
+      refresh();
+    };
+    const onProgress = () => {
+      lastProgress = performance.now();
+      refresh();
+    };
+    const onLoadStart = () => {
+      buffering = false;
+      lastProgress = performance.now();
+      refresh();
+    };
+    const flowing = ["playing", "canplay", "canplaythrough", "seeked", "pause"];
+    const checks = ["loadedmetadata", "loadeddata", "timeupdate", "seeking", "emptied", "error"];
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("progress", onProgress);
+    video.addEventListener("loadstart", onLoadStart);
+    for (const ev of flowing) video.addEventListener(ev, onFlowing);
+    for (const ev of checks) video.addEventListener(ev, refresh);
+    const timer = setInterval(() => {
+      refresh();
+      // Nothing to show and nothing arriving for 8 s: the request has
+      // probably stalled; load again (the player puts it back in place).
+      const starved = !video.error && video.readyState < 2 && video.networkState !== 3;
+      if (starved && performance.now() - lastProgress > 8000 && reloads < 3) {
+        reloads++;
+        lastProgress = performance.now();
+        setRetrying(true);
+        video.load();
+      }
+    }, 1000);
+    refresh();
+    return () => {
+      clearInterval(timer);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("progress", onProgress);
+      video.removeEventListener("loadstart", onLoadStart);
+      for (const ev of flowing) video.removeEventListener(ev, onFlowing);
+      for (const ev of checks) video.removeEventListener(ev, refresh);
+    };
+  }, [url]);
   // The blurred copy: the video drawn small into a canvas each frame it shows.
   useEffect(() => {
     const video = el.current;
@@ -618,19 +687,14 @@ function VideoLayer({
           muted
           className={cn("absolute inset-0 w-full h-full", fit)}
           onLoadedMetadata={(e) => onSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-          onLoadStart={() => setStatus("loading")}
-          onLoadedData={() => setStatus("ready")}
-          onCanPlay={() => setStatus("ready")}
-          onPlaying={() => setStatus("ready")}
-          onWaiting={() => setStatus("loading")}
-          onError={() => setStatus("error")}
         />
       </div>
       {status !== "ready" && (
         <div className="absolute inset-0 z-10 grid place-items-center p-4 text-center pointer-events-none">
           {status === "loading" ? (
             <span className="flex items-center gap-1.5 text-[11px] text-neutral-400">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading video…
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {retrying ? "Still loading, trying again…" : "Loading video…"}
             </span>
           ) : (
             <span className="text-[11px] leading-snug text-neutral-400 max-w-[16rem]">

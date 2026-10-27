@@ -103,7 +103,16 @@ export function TransformBox({
     e.stopPropagation();
     const f = measure();
     let latest: ClipTransform | null = null;
+    // A press only selects; the clip changes once the pointer has really
+    // moved, so a shaky click doesn't nudge or resize it.
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let started = false;
     const move = (ev: PointerEvent) => {
+      if (!started) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+        started = true;
+      }
       const { t, g } = update(ev, f);
       latest = cleanTransform(t);
       setGuides(g);
