@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient, useIsMutating } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getProject,
   submitRender,
@@ -364,10 +364,29 @@ function EditorPage() {
   const retrySigning = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const id = setInterval(() => setRenewTick((n) => n + 1), 10 * 60 * 1000);
+    // Coming back to the tab (or waking the computer): timers may not have
+    // run meanwhile, so renew any link that's old before it's used.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") setRenewTick((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
       if (retrySigning.current) clearTimeout(retrySigning.current);
     };
+  }, []);
+  // A file whose download stalled in the preview gets a fresh link now (its
+  // link may have expired), at most every 15 s.
+  const lastResign = useRef(new Map<string, number>());
+  const resignClipLink = useCallback((path: string) => {
+    const now = Date.now();
+    if (now - (lastResign.current.get(path) ?? 0) < 15_000) return;
+    lastResign.current.set(path, now);
+    clipUrlsSignedAt.current.delete(path);
+    setRenewTick((n) => n + 1);
   }, []);
   useEffect(() => {
     if (!data) return;
@@ -1894,6 +1913,7 @@ function EditorPage() {
               selectedClipId,
               onSelectClip: (id) => setSelectedClipId(id),
               onTransform: transformClip,
+              onStall: resignClipLink,
             }}
             sourceIsImage={selectedIsImage}
             imageLengthMs={selectedClip ? clipVisibleMs(selectedClip) : undefined}

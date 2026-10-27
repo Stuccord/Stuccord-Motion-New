@@ -25,6 +25,8 @@ interface PreviewCanvasProps {
     lengthMs: (clip: ClipRow) => number;
     onTick?: (timeMs: number, playing: boolean, rate: number) => void;
     renderOverlay?: (timeMs: number) => React.ReactNode;
+    /** A clip's download stalled: re-sign its link. */
+    onStall?: (storagePath: string) => void;
     /** The selected clip, which gets a box with handles in the picture. */
     selectedClipId?: string | null;
     onSelectClip?: (id: string) => void;
@@ -456,6 +458,7 @@ export function PreviewCanvas({
               onPlayingChange={onPlayingChange}
               onTick={timeline!.onTick}
               renderOverlay={timeline!.renderOverlay}
+              onStall={timeline!.onStall}
               selectedClipId={timeline!.selectedClipId}
               onSelectClip={timeline!.onSelectClip}
               onTransform={timeline!.onTransform}

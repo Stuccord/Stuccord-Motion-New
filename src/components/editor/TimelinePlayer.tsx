@@ -54,6 +54,8 @@ type Props = {
   onTick?: (timeMs: number, playing: boolean, rate: number) => void;
   /** Drawn over the picture at the current time (captions, hook). */
   renderOverlay?: (timeMs: number) => React.ReactNode;
+  /** A clip's file stopped downloading: get a fresh link for it (by storage path). */
+  onStall?: (storagePath: string) => void;
   /** The selected clip: gets a box with handles when it's on screen. */
   selectedClipId?: string | null;
   /** A clip was pressed in the picture. */
@@ -79,6 +81,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     onPlayingChange,
     onTick,
     renderOverlay,
+    onStall,
     selectedClipId = null,
     onSelectClip,
     onTransform,
@@ -388,6 +391,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
                 )
               }
               onReady={() => sync(timeRef.current)}
+              onStall={() => onStall?.(p.clip.storage_path)}
             />
           );
         })}
@@ -456,6 +460,7 @@ function Layer({
   videoRef,
   onSize,
   onReady,
+  onStall,
 }: {
   placed: Placed;
   url: string;
@@ -467,6 +472,7 @@ function Layer({
   videoRef: (el: HTMLVideoElement | null) => void;
   onSize: (w: number, h: number) => void;
   onReady: () => void;
+  onStall: () => void;
 }) {
   const [size, setSizeState] = useState<{ w: number; h: number } | null>(null);
   const setSize = (next: { w: number; h: number }) => {
@@ -530,6 +536,7 @@ function Layer({
         setSize({ w, h });
         onReady();
       }}
+      onStall={onStall}
     />
   );
 }
@@ -545,6 +552,7 @@ function VideoLayer({
   active,
   videoRef,
   onSize,
+  onStall,
 }: {
   url: string;
   style: React.CSSProperties;
@@ -555,8 +563,12 @@ function VideoLayer({
   active: boolean;
   videoRef: (el: HTMLVideoElement | null) => void;
   onSize: (w: number, h: number) => void;
+  /** The download stalled: ask for a fresh link (the old one may have expired). */
+  onStall: () => void;
 }) {
   const el = useRef<HTMLVideoElement | null>(null);
+  const onStallRef = useRef(onStall);
+  onStallRef.current = onStall;
   const bg = useRef<HTMLCanvasElement>(null);
   // Shown over the frame: still loading (or buffering), or the browser can't
   // play it. Read from the video itself (not from single events, which a
@@ -609,13 +621,25 @@ function VideoLayer({
     for (const ev of checks) video.addEventListener(ev, refresh);
     const timer = setInterval(() => {
       refresh();
-      // Nothing to show and nothing arriving for 8 s: the request has
-      // probably stalled; load again (the player puts it back in place).
+      // Nothing to show and nothing arriving for 8 s: the download has
+      // stalled (an expired link, or the browser holding the request).
+      // Ask for a fresh link, which reloads the video, and load again
+      // meanwhile (the player puts it back in place).
       const starved = !video.error && video.readyState < 2 && video.networkState !== 3;
-      if (starved && performance.now() - lastProgress > 8000 && reloads < 3) {
+      if (starved && performance.now() - lastProgress > 8000 && reloads < 4) {
         reloads++;
         lastProgress = performance.now();
         setRetrying(true);
+        console.warn("[preview] Video download stalled; retrying with a fresh link", {
+          try: reloads,
+          readyState: video.readyState,
+          networkState: video.networkState,
+          buffered: video.buffered.length
+            ? `${video.buffered.start(0).toFixed(1)}-${video.buffered.end(video.buffered.length - 1).toFixed(1)}s`
+            : "none",
+          at: video.currentTime.toFixed(1),
+        });
+        onStallRef.current();
         video.load();
       }
     }, 1000);
