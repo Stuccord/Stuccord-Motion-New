@@ -988,6 +988,23 @@ async function runRender(job) {
       mainParts.push(normalized[i]);
       mainCursor = mainStartsMs[i] + mainLengthsMs[i];
     }
+    // Where the main track ends, and the B-roll's timing: the video runs
+    // until the last clip on either track ends, so B-roll past the main
+    // track pads it with black (and silence, filled by the B-roll's own
+    // sound in 4b), matching the app (videoEndMs in src/lib/timeline-layout.ts).
+    const mainEndMs = mainCursor;
+    const brollFiles = normalized.slice(mainClips.length);
+    const brollLengthsMs = [];
+    for (let i = 0; i < brollClips.length; i++) {
+      brollLengthsMs.push((await probeDurationMs(brollFiles[i])) ?? trimmedLengthMs(brollClips[i]));
+    }
+    const brollStartsMs = layoutStarts(brollClips, brollLengthsMs);
+    const brollEndMs = Math.max(0, ...brollStartsMs.map((s, i) => s + brollLengthsMs[i]));
+    if (brollEndMs - mainEndMs >= 34) {
+      const tailOut = path.join(workdir, "gap_tail.mp4");
+      await makeGapClip(tailOut, brollEndMs - mainEndMs, w, h);
+      mainParts.push(tailOut);
+    }
     const concatOut = await concatTrack(mainParts, "concat");
 
     // 4a. Captions words (best-effort; skipped when the user turned captions
@@ -1098,21 +1115,15 @@ async function runRender(job) {
       };
     }
 
-    // 4b. Overlay the B-roll (video only), each clip at its own time on its
-    //     track (placed, or right after the one before). The output ends
-    //     with the main track, so B-roll past that point is cut.
+    // 4b. Overlay the B-roll, each clip at its own time on its track (placed,
+    //     or right after the one before). It's silent over the main track;
+    //     past the main track's end (the padded tail) its own sound plays.
     let composedOut = concatOut;
     if (brollClips.length) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 75,
         stage_message: "Overlaying B-roll",
       });
-      const brollFiles = normalized.slice(mainClips.length);
-      const brollLengthsMs = [];
-      for (let i = 0; i < brollClips.length; i++) {
-        brollLengthsMs.push((await probeDurationMs(brollFiles[i])) ?? trimmedLengthMs(brollClips[i]));
-      }
-      const brollStartsMs = layoutStarts(brollClips, brollLengthsMs);
       const inputs = ["-i", concatOut];
       const graph = [];
       let last = "0:v";
@@ -1133,13 +1144,31 @@ async function runRender(job) {
         );
         last = `v${i}`;
       });
+      // The B-roll's sound after the main track ends, at its place in time.
+      const tails = [];
+      brollFiles.forEach((_file, i) => {
+        const startMs = brollStartsMs[i];
+        if (startMs + brollLengthsMs[i] <= mainEndMs + 1) return;
+        const fromMs = Math.max(0, mainEndMs - startMs);
+        const atMs = Math.round(startMs + fromMs);
+        graph.push(
+          `[${i + 1}:a]atrim=start=${(fromMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS,adelay=${atMs}|${atMs}[ta${i}]`,
+        );
+        tails.push(`[ta${i}]`);
+      });
+      if (tails.length) {
+        graph.push(
+          `[0:a]${tails.join("")}amix=inputs=${tails.length + 1}:duration=first:dropout_transition=0:normalize=0[aout]`,
+        );
+      }
       const overlayOut = path.join(workdir, "overlay.mp4");
       await run(ffmpegPath, [
         "-y", ...inputs,
         "-filter_complex", graph.join(";"),
-        "-map", `[${last}]`, "-map", "0:a?",
+        "-map", `[${last}]`,
+        ...(tails.length ? ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"] : ["-map", "0:a?", "-c:a", "copy"]),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-        "-c:a", "copy", "-movflags", "+faststart",
+        "-movflags", "+faststart",
         overlayOut,
       ]);
       composedOut = overlayOut;

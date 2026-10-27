@@ -30,6 +30,19 @@ export function layoutTrack<T extends Placeable>(
   return { starts, endMs };
 }
 
+/**
+ * Where the video ends (ms): when the last clip on V1 or V2 ends. B-roll that
+ * runs past the main video keeps playing (full frame, with its own sound,
+ * once the main track has ended). Mirrored in render-worker/server.js.
+ */
+export function videoEndMs<T extends Placeable>(
+  aRoll: T[],
+  bRoll: T[],
+  lengthMs: (c: T) => number,
+): number {
+  return Math.max(layoutTrack(aRoll, lengthMs).endMs, layoutTrack(bRoll, lengthMs).endMs);
+}
+
 /** A clip's span on a track (ms). */
 export type Span = { start: number; end: number };
 

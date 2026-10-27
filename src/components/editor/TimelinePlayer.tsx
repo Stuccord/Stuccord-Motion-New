@@ -114,7 +114,13 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     // layoutKey stands for aRoll, bRoll and lengthMs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey]);
-  const endMs = placed.main.length ? placed.main[placed.main.length - 1].end : 0;
+  // The main track's end, and the video's: it runs until the last clip on
+  // either track ends (B-roll past the main track plays on, with its sound).
+  const mainEndMs = placed.main.length ? placed.main[placed.main.length - 1].end : 0;
+  const endMs = Math.max(
+    mainEndMs,
+    placed.over.length ? placed.over[placed.over.length - 1].end : 0,
+  );
 
   // The playhead (ms): a ref for the clock, state for drawing.
   const timeRef = useRef(0);
@@ -126,8 +132,8 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   const videos = useRef(new Map<string, HTMLVideoElement>());
 
   // Latest values for the stable handle and the clock.
-  const latest = useRef({ placed, endMs, muted, onTime, onPlayingChange, onTick });
-  latest.current = { placed, endMs, muted, onTime, onPlayingChange, onTick };
+  const latest = useRef({ placed, endMs, mainEndMs, muted, onTime, onPlayingChange, onTick });
+  latest.current = { placed, endMs, mainEndMs, muted, onTime, onPlayingChange, onTick };
 
   const activeAt = (list: Placed[], t: number) => list.find((p) => t >= p.start && t < p.end);
   const findPlaced = (id: string) =>
@@ -145,7 +151,8 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
       const trimIn = (p.clip.trim_in_ms ?? 0) / 1000;
       const target = trimIn + Math.max(0, Math.min(t, p.end - 1) - p.start) / 1000;
       el.playbackRate = rateRef.current;
-      el.muted = p.track === "over" || latest.current.muted;
+      // B-roll is silent over the main track, heard once the main track ends.
+      el.muted = (p.track === "over" && t < latest.current.mainEndMs) || latest.current.muted;
       if (active && playingRef.current) {
         if (Math.abs(el.currentTime - target) > 0.3) el.currentTime = target;
         if (el.paused) el.play().catch(() => {});

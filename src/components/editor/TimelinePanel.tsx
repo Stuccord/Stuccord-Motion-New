@@ -60,6 +60,7 @@ import {
   fitStart,
   insertIndexAt,
   layoutTrack,
+  videoEndMs,
   musicBars as layoutMusicBars,
   musicStarts,
   planAudioPlacement,
@@ -319,7 +320,21 @@ function TrackRow({
 }
 
 /* ---------- clip block ---------- */
-function TimelineClip({
+// Redrawn only when its own props change (callbacks aside: the timeline
+// passes stable ones), so dragging one clip doesn't redraw all of them.
+const TimelineClip = React.memo(TimelineClipBlock, (a, b) =>
+  (Object.keys({ ...a, ...b }) as (keyof typeof a)[]).every((k) => {
+    if (typeof a[k] === "function" && typeof b[k] === "function") return true;
+    if (k === "dragOffset") {
+      const x = a.dragOffset;
+      const y = b.dragOffset;
+      return x === y || (!!x && !!y && x.x === y.x && x.y === y.y);
+    }
+    return Object.is(a[k], b[k]);
+  }),
+);
+
+function TimelineClipBlock({
   clip,
   index,
   pxPerSec,
@@ -329,7 +344,7 @@ function TimelineClip({
   onSelect,
   onBodyPointerDown,
   onTrim,
-  snapBoundariesMs,
+  snapBoundaries,
   clipStartMs,
   tone,
   thumbnail,
@@ -345,11 +360,12 @@ function TimelineClip({
   selected: boolean;
   /** Pointer movement while this clip is being dragged to a new position. */
   dragOffset: { x: number; y: number } | null;
-  onSelect: () => void;
+  onSelect: (id: string) => void;
   /** Press on the clip body (not a trim handle): may start a drag. */
-  onBodyPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onBodyPointerDown: (clip: ClipRow, e: React.PointerEvent<HTMLDivElement>) => void;
   onTrim: (id: string, trimInMs: number, trimOutMs: number | null) => void;
-  snapBoundariesMs: number[];
+  /** Times a trimmed edge snaps to (read when a trim starts). */
+  snapBoundaries: (clip: ClipRow, startMs: number) => number[];
   clipStartMs: number;
   tone: "primary" | "teal";
   /** A frame from the clip (data URL), repeated along the block. */
@@ -397,7 +413,7 @@ function TimelineClip({
       ? "from-violet-500/45 to-violet-500/20 border-violet-500/50"
       : "from-teal-500/40 to-cyan-500/20 border-teal-400/40";
 
-  function snapTo(valueMs: number, free = false): number {
+  function snapTo(valueMs: number, snapBoundariesMs: number[], free = false): number {
     if (free || snapBoundariesMs.length === 0) return valueMs;
     const reach = snapReachMs(pxPerSec);
     let closest = valueMs;
@@ -416,7 +432,8 @@ function TimelineClip({
   function beginTrim(edge: "left" | "right", e: React.PointerEvent) {
     e.stopPropagation();
     e.preventDefault();
-    onSelect();
+    onSelect(clip.id);
+    const bounds = snapBoundaries(clip, clipStartMs);
     const startClientX = e.clientX;
     const startIn = trimIn;
     const startOut = trimOut;
@@ -433,10 +450,18 @@ function TimelineClip({
       const dx = ev.clientX - startClientX;
       const deltaMs = Math.round((dx / pxPerSec) * 1000);
       if (edge === "left") {
-        nextIn = snapTo(Math.max(0, Math.min(startOut - 200, startIn + deltaMs)), ev.altKey);
+        nextIn = snapTo(
+          Math.max(0, Math.min(startOut - 200, startIn + deltaMs)),
+          bounds,
+          ev.altKey,
+        );
         setLocalTrimIn(nextIn);
       } else {
-        nextOut = snapTo(Math.max(startIn + 200, Math.min(maxOut, startOut + deltaMs)), ev.altKey);
+        nextOut = snapTo(
+          Math.max(startIn + 200, Math.min(maxOut, startOut + deltaMs)),
+          bounds,
+          ev.altKey,
+        );
         setLocalTrimOut(nextOut);
       }
     }
@@ -480,8 +505,8 @@ function TimelineClip({
     <div
       data-timeline-clip
       data-clip-id={clip.id}
-      onPointerDown={onBodyPointerDown}
-      onClick={onSelect}
+      onPointerDown={(e) => onBodyPointerDown(clip, e)}
+      onClick={() => onSelect(clip.id)}
       // Stop the browser's own image/text drag and the long-press menu.
       onDragStart={(e) => e.preventDefault()}
       onContextMenu={(e) => dragOffset && e.preventDefault()}
@@ -493,7 +518,7 @@ function TimelineClip({
         bottom: 5,
         transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
         // While a clip is dragged, clips glide to their new places.
-        transition: sliding ? "left 160ms ease, transform 90ms ease-out" : undefined,
+        transition: sliding && !dragOffset ? "left 160ms ease" : undefined,
       }}
       className={cn(
         "rounded-md border bg-gradient-to-br cursor-grab overflow-hidden group select-none transition-shadow",
@@ -995,11 +1020,11 @@ function TimelineTracks({
 
   const totalMs = Math.max(aLayout.totalMs, bLayout.totalMs);
 
-  // Where the exported video ends: the end of the main track (the A-roll,
-  // or the B-roll when there is no A-roll). B-roll past it is cut.
+  // The main track (the A-roll, or the B-roll when there is no A-roll), and
+  // where the video ends: with the last clip on V1 or V2.
   const mainClips = aRoll.length > 0 ? aRoll : bRoll;
   const mainLayout = aRoll.length > 0 ? aLayout : bLayout;
-  const programEndMs = mainLayout.endMs;
+  const programEndMs = Math.max(aLayout.endMs, bLayout.endMs);
   // The A2 row as the export mixes it (timeline-layout): music pieces, and
   // when each SFX plays (on cuts, or once where it was placed).
   const musicFiles = audioClips.filter((c) => c.role !== "sfx");
@@ -1057,6 +1082,32 @@ function TimelineTracks({
     }
     return ticks;
   }, [totalMs, pxPerSec, programEndMs]);
+
+  // The ruler's ticks, built once per zoom (not on every pointer move).
+  const rulerTicks = useMemo(
+    () =>
+      ruler.map((t, i) => (
+        <div
+          key={i}
+          className="absolute top-0 bottom-0 flex flex-col justify-between"
+          style={{ left: t.t * pxPerSec }}
+        >
+          <span className={cn("block w-px", t.major ? "h-3 bg-white/25" : "h-1.5 bg-white/10")} />
+          {t.label && (
+            <span
+              className={cn(
+                "text-[11px] font-mono text-neutral-400 whitespace-nowrap",
+                // 0:00 starts at the edge instead of half under the track names.
+                t.t === 0 ? "translate-x-0.5" : "-translate-x-1/2",
+              )}
+            >
+              {t.label}
+            </span>
+          )}
+        </div>
+      )),
+    [ruler, pxPerSec],
+  );
 
   const playheadPx = (currentTimeMs / 1000) * pxPerSec;
 
@@ -1673,6 +1724,22 @@ function TimelineTracks({
     if (!suppressClick.current) onSelect(id);
   };
 
+  // What clips call, through a ref so each clip gets the same functions on
+  // every render (and so only redraws when its own props change).
+  const clipCalls = useRef({ startClipPress, selectClip, onTrim, snapPointsFor });
+  clipCalls.current = { startClipPress, selectClip, onTrim, snapPointsFor };
+  const clipHandlers = useMemo(
+    () => ({
+      press: (c: ClipRow, e: React.PointerEvent<HTMLDivElement>) =>
+        clipCalls.current.startClipPress(c, e),
+      select: (id: string) => clipCalls.current.selectClip(id),
+      trim: (id: string, trimInMs: number, trimOutMs: number | null) =>
+        clipCalls.current.onTrim(id, trimInMs, trimOutMs),
+      snap: (c: ClipRow, startMs: number) => clipCalls.current.snapPointsFor(c, startMs),
+    }),
+    [],
+  );
+
   // While a clip is dragged (it sits where it will land): when it will
   // start, and the line it snapped to. Or where dropped media will go.
   const insertionLine = (track: Track) => {
@@ -2091,31 +2158,7 @@ function TimelineTracks({
             title="Click or drag to move the playhead"
             {...scrubHandlers}
           >
-            {ruler.map((t, i) => (
-              <div
-                key={i}
-                className="absolute top-0 bottom-0 flex flex-col justify-between"
-                style={{ left: t.t * pxPerSec }}
-              >
-                <span
-                  className={cn(
-                    "block w-px",
-                    t.major ? "h-3 bg-white/25" : "h-1.5 bg-white/10",
-                  )}
-                />
-                {t.label && (
-                  <span
-                    className={cn(
-                      "text-[11px] font-mono text-neutral-400 whitespace-nowrap",
-                      // 0:00 starts at the edge instead of half under the track names.
-                      t.t === 0 ? "translate-x-0.5" : "-translate-x-1/2",
-                    )}
-                  >
-                    {t.label}
-                  </span>
-                )}
-              </div>
-            ))}
+            {rulerTicks}
           </div>
         </div>
 
@@ -2196,10 +2239,10 @@ function TimelineTracks({
                   sliding={!!drag}
                   selected={selectedClipId === c.id}
                   dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
-                  onSelect={() => selectClip(c.id)}
-                  onBodyPointerDown={(e) => startClipPress(c, e)}
-                  onTrim={onTrim}
-                  snapBoundariesMs={snapPointsFor(c, aLayout.offsets.get(c.id) ?? 0)}
+                  onSelect={clipHandlers.select}
+                  onBodyPointerDown={clipHandlers.press}
+                  onTrim={clipHandlers.trim}
+                  snapBoundaries={clipHandlers.snap}
                   clipStartMs={aLayout.offsets.get(c.id) ?? 0}
                   tone="primary"
                   thumbnail={thumbnails[thumbnailKey(c)]}
@@ -2248,10 +2291,10 @@ function TimelineTracks({
                   sliding={!!drag}
                   selected={selectedClipId === c.id}
                   dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
-                  onSelect={() => selectClip(c.id)}
-                  onBodyPointerDown={(e) => startClipPress(c, e)}
-                  onTrim={onTrim}
-                  snapBoundariesMs={snapPointsFor(c, bLayout.offsets.get(c.id) ?? 0)}
+                  onSelect={clipHandlers.select}
+                  onBodyPointerDown={clipHandlers.press}
+                  onTrim={clipHandlers.trim}
+                  snapBoundaries={clipHandlers.snap}
                   clipStartMs={bLayout.offsets.get(c.id) ?? 0}
                   tone="teal"
                   thumbnail={thumbnails[thumbnailKey(c)]}
@@ -2520,9 +2563,8 @@ export function TimelinePanel({
   filmstrips = {},
   waveforms = {},
 }: TimelinePanelProps) {
-  // Length of the exported video: the A-roll, or the B-roll when there's no A-roll.
-  const mainTrack = aRoll.length > 0 ? aRoll : bRoll;
-  const programMs = layoutTrack(mainTrack, clipVisibleMs).endMs;
+  // Length of the exported video: until the last clip on V1 or V2 ends.
+  const programMs = videoEndMs(aRoll, bRoll, clipVisibleMs);
   // Bumped by the Fit button; the tracks measure their width and zoom to fit.
   const [fitRequest, setFitRequest] = useState(0);
   // Timecode as frames (0:00:05:12, like After Effects) or seconds (00:05.4).

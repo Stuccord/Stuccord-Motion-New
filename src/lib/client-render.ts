@@ -280,7 +280,9 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   // before), like the editor timeline and the cloud export.
   const mainLayout = layoutTrack(mainClips, clipLengthMs);
   const brollLayout = layoutTrack(brollClips, clipLengthMs);
-  const plannedTotalMs = mainLayout.endMs;
+  // The video runs until the last clip on either track ends (videoEndMs in
+  // timeline-layout): B-roll past the main track plays on over black.
+  const plannedTotalMs = Math.max(mainLayout.endMs, brollLayout.endMs);
 
   // One draw loop composites whatever is currently playing on each track.
   let currentMain: LoadedClip | null = null;
@@ -378,9 +380,13 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   requestAnimationFrame(draw);
 
   // B-roll track: runs alongside the main track, each clip from its own
-  // start time (cut when the main track ends).
+  // start time, silent until the main track ends and heard after it.
   let mainDone = false;
   let brollError: unknown = null;
+  let brollFinished = false;
+  // Past the main track's end: the B-roll's sound goes into the recording.
+  let tail = false;
+  const brollGains = new Set<GainNode>();
   let mainStarted: () => void = () => {};
   const mainStartedP = new Promise<void>((res) => {
     mainStarted = res;
@@ -395,14 +401,36 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
         releaseClip(clip);
         break;
       }
+      // Its sound, routed into the recording: off until the main track ends.
+      let gain: GainNode | null = null;
+      if (clip.kind === "video") {
+        try {
+          const src = audioCtx.createMediaElementSource(clip.video);
+          gain = audioCtx.createGain();
+          gain.gain.value = tail ? 1 : 0;
+          src.connect(gain).connect(dest);
+          clip.video.muted = false;
+          brollGains.add(gain);
+        } catch {
+          /* audio not routable (rare) */
+        }
+      }
       currentBroll = clip;
       await playUntilOut(clip, () => mainDone);
       currentBroll = null;
+      if (gain) {
+        brollGains.delete(gain);
+        gain.disconnect();
+      }
       releaseClip(clip);
     }
-  })().catch((e: unknown) => {
-    brollError = e;
-  });
+  })()
+    .catch((e: unknown) => {
+      brollError = e;
+    })
+    .finally(() => {
+      brollFinished = true;
+    });
 
   let elapsedMs = 0;
   let realDurationMs = 0;
@@ -461,6 +489,29 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
         }
       }
       releaseClip(clip);
+      if (brollError) throw brollError;
+    }
+
+    // B-roll running past the main track: keep recording (black behind it,
+    // its own sound now heard) until the last of it ends.
+    const tailMs = brollLayout.endMs - elapsedMs;
+    if (tailMs > 30 && !brollFinished) {
+      inGap = true;
+      tail = true;
+      for (const g of brollGains) g.gain.value = 1;
+      const tailStart = performance.now();
+      await waitFor(() => {
+        const wall = performance.now() - tailStart;
+        mainPosMs = elapsedMs + wall;
+        opts.onProgress?.(
+          Math.min(94, 5 + Math.round((mainPosMs / plannedTotalMs) * 88)),
+          "Rendering the end (B-roll)",
+        );
+        return wall >= tailMs || brollFinished || brollError != null;
+      });
+      const wall = performance.now() - tailStart;
+      elapsedMs += wall;
+      realDurationMs += wall;
       if (brollError) throw brollError;
     }
   } finally {

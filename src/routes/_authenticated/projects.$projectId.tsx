@@ -149,6 +149,7 @@ import {
   insertIndexAt,
   layoutTrack,
   planMagneticInsert,
+  videoEndMs,
   planPlacement,
 } from "@/lib/timeline-layout";
 import {
@@ -494,12 +495,41 @@ function EditorPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  type Placement = { id: string; ordinal: number; role?: string; start_ms?: number | null };
   const reorderMut = useMutation({
     // The timeline only knows clip ids, so the project always comes from the route.
-    mutationFn: ({ order }: { order: { id: string; ordinal: number; role?: string }[] }) =>
+    mutationFn: ({ order }: { order: Placement[] }) =>
       reorder({ data: { project_id: projectId, order } }),
-    onSuccess: () => refetch(),
-    onError: (e: Error) => toast.error(e.message),
+    // Show the new places at once (the timeline and the preview), without
+    // waiting for the save and a fresh copy of the project; put them back if
+    // the save fails.
+    onMutate: async ({ order }) => {
+      const key = ["project", projectId];
+      await qc.cancelQueries({ queryKey: key });
+      const before = qc.getQueryData<typeof data>(key);
+      if (before) {
+        const byId = new Map(order.map((p) => [p.id, p]));
+        const clips = (before.clips as ClipRow[])
+          .map((c) => {
+            const p = byId.get(c.id);
+            if (!p) return c;
+            return {
+              ...c,
+              ordinal: p.ordinal,
+              role: p.role ?? c.role,
+              ...(p.start_ms !== undefined ? { start_ms: p.start_ms } : {}),
+            };
+          })
+          .sort((a, b) => a.ordinal - b.ordinal);
+        qc.setQueryData(key, { ...before, clips: clips as typeof before.clips });
+      }
+      return { before };
+    },
+    onError: (e: Error, _vars, context) => {
+      if (context?.before) qc.setQueryData(["project", projectId], context.before);
+      toast.error(e.message);
+    },
+    onSettled: () => refetch(),
   });
 
   const trimMut = useMutation({
@@ -1318,7 +1348,14 @@ function EditorPage() {
   const mainForHooks = hasMainTrackClips
     ? videoClipsForHooks.filter((c) => c.role !== "broll")
     : videoClipsForHooks;
-  const programEndForHooks = layoutTrack(mainForHooks, clipVisibleMs).endMs;
+  // B-roll on top of the main track (none when the B-roll is the main track).
+  const overForHooks = hasMainTrackClips
+    ? videoClipsForHooks.filter((c) => c.role === "broll")
+    : [];
+  const mainEndForHooks = layoutTrack(mainForHooks, clipVisibleMs).endMs;
+  // The video runs until the last clip on V1 or V2 ends.
+  const programEndForHooks = videoEndMs(mainForHooks, overForHooks, clipVisibleMs);
+  const overStartsForHooks = layoutTrack(overForHooks, clipVisibleMs).starts;
   const previewAudioTick = usePreviewAudio({
     audioClips: ((data?.clips ?? []) as ClipRow[]).filter(
       (c) => c.role === "music" || c.role === "sfx",
@@ -1330,12 +1367,18 @@ function EditorPage() {
     enabled: musicEnabled,
     volume: musicVolume,
     muted,
-    // The voice: a main-track video (not an image) under the playhead.
+    // The voice: a main-track video (not an image) under the playhead, or
+    // after the main track ends, a B-roll video (which plays with its sound).
     voiceAt: (t) =>
       mainForHooks.some((c) => {
         const start = programOffsets.get(c.id) ?? 0;
         return t >= start && t < start + clipVisibleMs(c) && !isImageFilename(c.filename);
-      }),
+      }) ||
+      (t >= mainEndForHooks &&
+        overForHooks.some((c) => {
+          const start = overStartsForHooks.get(c.id) ?? 0;
+          return t >= start && t < start + clipVisibleMs(c) && !isImageFilename(c.filename);
+        })),
   });
 
   if (isLoading || !data) {
