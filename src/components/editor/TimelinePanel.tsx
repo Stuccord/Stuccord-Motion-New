@@ -47,12 +47,13 @@ function clipSourceMs(c: ClipRow): number | null {
   return c.duration_ms ?? null;
 }
 
-function formatTimecode(seconds: number) {
+/** Ruler label: m:ss, or h:mm:ss from an hour. */
+function formatRulerTime(seconds: number) {
   const s = Math.max(0, Math.floor(seconds));
-  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
   const ss = String(s % 60).padStart(2, "0");
-  return `${hh}:${mm}:${ss}`;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
 /* ---------- toolbar micro-components ---------- */
@@ -381,7 +382,7 @@ function TimelineClip({
       )}
 
       {/* Label */}
-      <div className="absolute inset-0 px-3 py-1 flex flex-col justify-between text-[9px] pointer-events-none [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
+      <div className="absolute inset-0 px-4 py-1 flex flex-col justify-between text-[9px] pointer-events-none [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
         <div className="flex items-center gap-1 text-white/95 font-mono font-semibold truncate">
           <Film className="w-2.5 h-2.5 shrink-0" />
           <span className="truncate">
@@ -390,8 +391,10 @@ function TimelineClip({
         </div>
         <div className="flex items-center justify-between text-white/75 font-mono tabular-nums">
           <span>{formatPlaybackTime(visibleMs / 1000)}</span>
-          {sourceMs != null && (
-            <span className="text-white/45">/ {formatPlaybackTime(sourceMs / 1000)}</span>
+          {sourceMs != null && sourceMs - visibleMs >= 50 && (
+            <span className="text-white/45 truncate" title="Length of the original file">
+              of {formatPlaybackTime(sourceMs / 1000)}
+            </span>
           )}
         </div>
       </div>
@@ -581,13 +584,17 @@ function TimelineTracks({
                 ? 30
                 : 60;
     const minor = step >= 30 ? step / 6 : step >= 10 ? step / 5 : 1;
+    // Labels that would sit under the END marker's label are left out.
+    const endPx = (programEndMs / 1000) * pxPerSec;
     const ticks: { t: number; label: string; major: boolean }[] = [];
     for (let t = 0; t <= seconds + step; t += minor) {
       const major = t % step === 0;
-      ticks.push({ t, label: major ? formatTimecode(t) : "", major });
+      const px = t * pxPerSec;
+      const underEnd = programEndMs > 0 && px > endPx - 16 && px < endPx + 72;
+      ticks.push({ t, label: major && !underEnd ? formatRulerTime(t) : "", major });
     }
     return ticks;
-  }, [totalMs, pxPerSec]);
+  }, [totalMs, pxPerSec, programEndMs]);
 
   const playheadPx = (currentTimeMs / 1000) * pxPerSec;
 
@@ -1010,8 +1017,8 @@ function TimelineTracks({
           className="pointer-events-none absolute top-0 bottom-0 z-10 border-l border-dashed border-white/30"
           style={{ left: `calc(var(--tl-gutter, 96px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
         >
-          <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45">
-            End
+          <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45 whitespace-nowrap">
+            End {formatPlaybackTime(programEndMs / 1000)}
           </span>
         </div>
       )}
@@ -1116,27 +1123,6 @@ function TimelineTracks({
           )}
         </TrackRow>
 
-        {/* A1 Voice: the main track's own sound, which is what the export uses */}
-        <TrackRow
-          label="A1"
-          name="Voice"
-          note="From the A-roll"
-          size="slim"
-          innerWidth={trackWidthPx}
-          contentHandlers={scrubHandlers}
-        >
-          {mainClips.map((c) => (
-            <TrackLabel
-              key={c.id}
-              leftPx={((mainLayout.offsets.get(c.id) ?? 0) / 1000) * pxPerSec}
-              widthPx={(clipVisibleMs(c) / 1000) * pxPerSec}
-              text={baseName(c.filename)}
-              title={`Voice from ${c.filename}`}
-              className="bg-emerald-500/10 border-emerald-500/25 text-emerald-200/80"
-            />
-          ))}
-        </TrackRow>
-
         {/* V3 Captions: the phrases the export burns in */}
         {captions && (
           <TrackRow
@@ -1163,6 +1149,27 @@ function TimelineTracks({
             )}
           </TrackRow>
         )}
+
+        {/* A1 Voice: the main track's own sound, which is what the export uses */}
+        <TrackRow
+          label="A1"
+          name="Voice"
+          note="From the A-roll"
+          size="slim"
+          innerWidth={trackWidthPx}
+          contentHandlers={scrubHandlers}
+        >
+          {mainClips.map((c) => (
+            <TrackLabel
+              key={c.id}
+              leftPx={((mainLayout.offsets.get(c.id) ?? 0) / 1000) * pxPerSec}
+              widthPx={(clipVisibleMs(c) / 1000) * pxPerSec}
+              text={baseName(c.filename)}
+              title={`Voice from ${c.filename}`}
+              className="bg-emerald-500/10 border-emerald-500/25 text-emerald-200/80"
+            />
+          ))}
+        </TrackRow>
 
         {/* A2 Music: what the cloud export mixes in. Music plays from 0:00 and
             loops to the end of the video (ducked under the voice); an SFX

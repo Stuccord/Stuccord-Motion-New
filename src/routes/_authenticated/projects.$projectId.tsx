@@ -315,15 +315,6 @@ function EditorPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const playheadPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
-  const seekTo = (pct: number) => {
-    const v = videoRef.current;
-    if (!v || !duration) return;
-    const t = Math.max(0, Math.min(duration, (pct / 100) * duration));
-    v.currentTime = t;
-    if (sourceVideoRef.current) sourceVideoRef.current.currentTime = t;
-    setCurrentTime(t);
-  };
 
   // Realtime updates from render worker
   useEffect(() => {
@@ -521,57 +512,47 @@ function EditorPage() {
     future: { undo: () => void | Promise<void>; redo: () => void | Promise<void>; description: string }[];
   }>({ past: [], future: [] });
 
+  // The latest history, so undo/redo can act on it outside a state updater:
+  // updaters must be pure (React may call them twice), and the actions save
+  // to the server. Updated straight away so quick repeated presses each move
+  // one step.
+  const historyRef = useRef(history);
+  historyRef.current = history;
+
   const pushToHistory = (item: { undo: () => void | Promise<void>; redo: () => void | Promise<void>; description: string }) => {
-    setHistory((curr) => {
-      const nextPast = [...curr.past, item];
-      if (nextPast.length > 50) nextPast.shift();
-      return {
-        past: nextPast,
-        future: [],
-      };
-    });
+    const next = { past: [...historyRef.current.past, item].slice(-50), future: [] };
+    historyRef.current = next;
+    setHistory(next);
+  };
+
+  const runHistoryAction = (action: () => void | Promise<void>, failMessage: string) => {
+    try {
+      Promise.resolve(action()).catch(() => toast.error(failMessage));
+    } catch {
+      toast.error(failMessage);
+    }
   };
 
   const undo = () => {
-    setHistory((curr) => {
-      if (curr.past.length === 0) return curr;
-      const last = curr.past[curr.past.length - 1];
-      const nextPast = curr.past.slice(0, -1);
-      const nextFuture = [last, ...curr.future];
-      
-      try {
-        last.undo();
-        toast.info(`Undid: ${last.description}`);
-      } catch (err) {
-        toast.error("Failed to undo");
-      }
-      
-      return {
-        past: nextPast,
-        future: nextFuture,
-      };
-    });
+    const curr = historyRef.current;
+    if (curr.past.length === 0) return;
+    const last = curr.past[curr.past.length - 1];
+    const next = { past: curr.past.slice(0, -1), future: [last, ...curr.future] };
+    historyRef.current = next;
+    setHistory(next);
+    runHistoryAction(last.undo, "Failed to undo");
+    toast.info(`Undid: ${last.description}`);
   };
 
   const redo = () => {
-    setHistory((curr) => {
-      if (curr.future.length === 0) return curr;
-      const next = curr.future[0];
-      const nextFuture = curr.future.slice(1);
-      const nextPast = [...curr.past, next];
-      
-      try {
-        next.redo();
-        toast.info(`Redid: ${next.description}`);
-      } catch (err) {
-        toast.error("Failed to redo");
-      }
-      
-      return {
-        past: nextPast,
-        future: nextFuture,
-      };
-    });
+    const curr = historyRef.current;
+    if (curr.future.length === 0) return;
+    const item = curr.future[0];
+    const next = { past: [...curr.past, item], future: curr.future.slice(1) };
+    historyRef.current = next;
+    setHistory(next);
+    runHistoryAction(item.redo, "Failed to redo");
+    toast.info(`Redid: ${item.description}`);
   };
 
   // Refs used by the keyboard shortcut effect to avoid stale closures.
@@ -631,12 +612,16 @@ function EditorPage() {
       } else if (e.key === "-" || e.key === "_") {
         e.preventDefault();
         actionsRef.current.zoom(-1);
-      } else if (meta && e.key === "z") {
-        e.preventDefault();
-        actionsRef.current.undo();
-      } else if ((meta && e.key === "y") || (meta && e.shiftKey && e.key === "z")) {
+      } else if (
+        meta &&
+        (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))
+      ) {
+        // Shift turns "z" into "Z", so compare lowercase (Caps Lock too).
         e.preventDefault();
         actionsRef.current.redo();
+      } else if (meta && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        actionsRef.current.undo();
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         const step = e.shiftKey ? 1.0 : 1 / 30;
@@ -919,6 +904,52 @@ function EditorPage() {
   // source file (see PreviewCanvas). currentTime means a position in whichever
   // one it is showing, so every time conversion has to check this first.
   const showingProgram = previewUrl != null && (viewMode !== "source" || !selectedClipUrl);
+  // The view the preview actually shows: without a render there's no program,
+  // and Source and Compare need a selected clip.
+  const shownViewMode: "program" | "source" | "compare" = !previewUrl
+    ? "source"
+    : !selectedClipUrl
+      ? "program"
+      : viewMode;
+
+  // The part of the player's file that belongs to the edit: all of the render,
+  // or the selected clip's trimmed part of its source file. Play, seek and the
+  // transport time stay inside it (seconds in the file).
+  const selectedTrim = useMemo(() => {
+    const c = data?.clips.find((x) => x.id === selectedClipId) as ClipRow | undefined;
+    if (!c) return null;
+    return {
+      startS: (c.trim_in_ms ?? 0) / 1000,
+      endS: c.trim_out_ms != null ? c.trim_out_ms / 1000 : null,
+    };
+  }, [data, selectedClipId]);
+  const playRange =
+    !showingProgram && selectedTrim
+      ? {
+          startS: Math.min(selectedTrim.startS, duration || selectedTrim.startS),
+          endS: Math.min(duration, selectedTrim.endS ?? duration),
+        }
+      : { startS: 0, endS: duration };
+
+  // Stop at the trimmed end of a source clip (timeupdate fires too rarely to
+  // stop on time, so check every frame while playing).
+  useEffect(() => {
+    const end = playRange.endS;
+    if (!playing || showingProgram || !(end > 0) || end >= duration - 0.01) return;
+    let raf = 0;
+    const tick = () => {
+      const v = videoRef.current;
+      if (v && v.currentTime >= end) {
+        v.pause();
+        v.currentTime = end;
+        setCurrentTime(end);
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, showingProgram, playRange.endS, duration]);
 
   const timelinePlayheadMs = useMemo(() => {
     if (showingProgram) {
@@ -1027,8 +1058,17 @@ function EditorPage() {
   function togglePlay() {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) v.play();
-    else v.pause();
+    if (!v.paused) {
+      v.pause();
+      return;
+    }
+    // At (or past) the end, or before the start: play from the start.
+    const { startS, endS } = playRange;
+    if (v.ended || v.currentTime >= endS - 0.05 || v.currentTime < startS - 0.05) {
+      v.currentTime = startS;
+      setCurrentTime(startS);
+    }
+    v.play().catch(() => {});
   }
 
   function doDelete() {
@@ -1169,27 +1209,27 @@ function EditorPage() {
     setPxPerSec((z) => clampZoom(z * ZOOM_STEP ** direction));
   }
 
-  const seekRelative = (offset: number) => {
+  // Seeks the player to a time in its file, kept inside playRange.
+  const seekAbsolute = (time: number) => {
     const v = videoRef.current;
     if (!v) return;
-    const target = Math.max(0, Math.min(v.duration || duration, v.currentTime + offset));
+    const target = Math.max(playRange.startS, Math.min(playRange.endS || v.duration || 0, time));
     v.currentTime = target;
-    if (viewMode === "compare" && sourceVideoRef.current) {
+    if (shownViewMode === "compare" && sourceVideoRef.current) {
       sourceVideoRef.current.currentTime = target;
     }
     setCurrentTime(target);
   };
 
-  const seekAbsolute = (time: number) => {
+  const seekRelative = (offset: number) => {
     const v = videoRef.current;
     if (!v) return;
-    const target = Math.max(0, Math.min(v.duration || duration, time));
-    v.currentTime = target;
-    if (viewMode === "compare" && sourceVideoRef.current) {
-      sourceVideoRef.current.currentTime = target;
-    }
-    setCurrentTime(target);
+    seekAbsolute(v.currentTime + offset);
   };
+
+  // The transport bar covers playRange: 0% is its start, 100% its end.
+  const seekToPct = (pct: number) =>
+    seekAbsolute(playRange.startS + (pct / 100) * (playRange.endS - playRange.startS));
 
   // Refresh the ref so keyboard shortcuts always call the latest closures.
   actionsRef.current = {
@@ -1276,7 +1316,7 @@ function EditorPage() {
         centerPanel={
           <PreviewCanvas
             aspectRatio={project.aspect_ratio}
-            viewMode={viewMode}
+            viewMode={shownViewMode}
             onViewModeChange={setViewMode}
             programUrl={previewUrl}
             sourceUrl={selectedClipUrl}
@@ -1286,10 +1326,11 @@ function EditorPage() {
             renderProgress={latestJob?.progress ?? 0}
             renderStageMessage={latestJob?.stage_message}
             playing={playing}
+            onPlayingChange={setPlaying}
             onTogglePlay={togglePlay}
-            currentTime={currentTime}
-            duration={duration}
-            onSeek={seekTo}
+            currentTime={Math.max(0, currentTime - playRange.startS)}
+            duration={Math.max(0, playRange.endS - playRange.startS)}
+            onSeek={seekToPct}
             onSkipBack={() => seekAbsolute(0)}
             onSkipForward={() => seekAbsolute(duration)}
             muted={muted}
@@ -1299,12 +1340,20 @@ function EditorPage() {
             onTimeUpdate={(t) => setCurrentTime(t)}
             onLoadedMetadata={(d) => {
               setDuration(d);
-              if (pendingSourceSeekMs.current != null && videoRef.current) {
-                videoRef.current.currentTime = pendingSourceSeekMs.current / 1000;
+              const v = videoRef.current;
+              if (pendingSourceSeekMs.current != null && v) {
+                v.currentTime = pendingSourceSeekMs.current / 1000;
                 setCurrentTime(pendingSourceSeekMs.current / 1000);
                 pendingSourceSeekMs.current = null;
+              } else if (v && !showingProgram && selectedClip?.trim_in_ms) {
+                // A trimmed source clip starts at its trimmed start.
+                v.currentTime = selectedClip.trim_in_ms / 1000;
+                setCurrentTime(v.currentTime);
+              } else {
+                setCurrentTime(v?.currentTime ?? 0);
               }
-              if (selectedClipId && d > 0) {
+              // Only the selected clip's own file tells us its length.
+              if (selectedClipId && d > 0 && !showingProgram) {
                 const c = data?.clips.find((x) => x.id === selectedClipId) as ClipRow | undefined;
                 if (c && (c.duration_ms == null || Math.abs(c.duration_ms - Math.round(d * 1000)) > 250)) {
                   durationMut.mutate({ id: selectedClipId, duration_ms: Math.round(d * 1000) });

@@ -1,6 +1,5 @@
-import React, { useRef, useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
 import { MonitorPlay, Sparkles, ChevronLeft, ChevronRight, Loader2, Film, SplitSquareVertical } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { AspectRatio, ViewMode } from "./types";
 import { PlaybackControls } from "./PlaybackControls";
@@ -18,6 +17,8 @@ interface PreviewCanvasProps {
   renderStageMessage?: string | null;
   // Playback state
   playing: boolean;
+  /** Reports when the player starts or stops playing. */
+  onPlayingChange?: (playing: boolean) => void;
   onTogglePlay: () => void;
   currentTime: number;
   duration: number;
@@ -44,6 +45,7 @@ export function PreviewCanvas({
   renderProgress = 0,
   renderStageMessage,
   playing,
+  onPlayingChange,
   onTogglePlay,
   currentTime,
   duration,
@@ -59,6 +61,43 @@ export function PreviewCanvas({
 }: PreviewCanvasProps) {
   const [splitPct, setSplitPct] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // The frame is the largest box with the project's shape that fits the
+  // stage. (CSS aspect-ratio with width: 100% and max-height stretches it
+  // when the stage is short and wide.)
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      setStage({
+        w: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+        h: el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const [arW, arH] = aspectRatio.split(":").map(Number);
+  const ratio = arW / arH;
+  const frameW = Math.max(0, Math.min(stage.w, stage.h * ratio));
+  const frameStyle: React.CSSProperties =
+    stage.w > 0 && stage.h > 0
+      ? { width: frameW, height: frameW / ratio }
+      : { aspectRatio: `${arW} / ${arH}`, height: "100%" };
+
+  // Keep the play button in step with the video element.
+  const playbackEvents = {
+    onPlay: () => onPlayingChange?.(true),
+    onPause: () => onPlayingChange?.(false),
+    onEnded: () => onPlayingChange?.(false),
+    // A new file (or a remounted player) starts paused.
+    onLoadStart: () => onPlayingChange?.(false),
+  };
 
   // Determine active video source based on viewMode
   const activeVideoSrc =
@@ -99,7 +138,8 @@ export function PreviewCanvas({
             <button
               type="button"
               onClick={() => onViewModeChange("program")}
-              disabled={!programUrl && !sourceUrl}
+              disabled={!programUrl}
+              title={programUrl ? "The rendered video" : "Render the video to see the program"}
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
                 viewMode === "program"
@@ -113,6 +153,7 @@ export function PreviewCanvas({
               type="button"
               onClick={() => onViewModeChange("source")}
               disabled={!sourceUrl}
+              title={sourceUrl ? "The selected clip's trimmed part" : "Select a clip to see it"}
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
                 viewMode === "source"
@@ -151,25 +192,18 @@ export function PreviewCanvas({
               Source vs Program
             </span>
           )}
-          <Badge
-            variant="outline"
-            className="text-[10px] font-mono border-white/10 bg-white/[0.04] text-neutral-400 px-1.5 py-0"
-          >
-            {aspectRatio}
-          </Badge>
         </div>
       </div>
 
       {/* Center Video Stage */}
-      <div className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 relative bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.05),transparent_70%)]">
+      <div
+        ref={stageRef}
+        className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 relative bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.05),transparent_70%)]"
+      >
         {hasVideo ? (
           <div
-            className="relative bg-black rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden flex items-center justify-center max-w-full max-h-full"
-            style={{
-              aspectRatio: aspectRatio.replace(":", " / "),
-              height: aspectRatio === "9:16" ? "100%" : undefined,
-              width: aspectRatio !== "9:16" ? "100%" : undefined,
-            }}
+            className="relative bg-black rounded-lg shadow-2xl ring-1 ring-white/10 overflow-hidden flex items-center justify-center max-w-full max-h-full shrink-0"
+            style={frameStyle}
           >
             {viewMode === "compare" && programUrl && sourceUrl ? (
               <>
@@ -179,7 +213,7 @@ export function PreviewCanvas({
                   key={`prog-${programUrl}`}
                   src={programUrl}
                   className="absolute inset-0 w-full h-full object-contain bg-black"
-                  onPlay={() => {}}
+                  {...playbackEvents}
                   onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime)}
                   onLoadedMetadata={(e) => onLoadedMetadata?.(e.currentTarget.duration || 0)}
                   muted={muted}
@@ -241,25 +275,19 @@ export function PreviewCanvas({
                 key={activeVideoSrc!}
                 src={activeVideoSrc!}
                 className="w-full h-full object-contain bg-black"
+                {...playbackEvents}
                 onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime)}
                 onLoadedMetadata={(e) => onLoadedMetadata?.(e.currentTarget.duration || 0)}
                 muted={muted}
                 playsInline
               />
             )}
-
-            {/* Subtle Safe-Zone manga border */}
-            <div className="absolute inset-2 border border-white/[0.05] pointer-events-none rounded" />
           </div>
         ) : (
           /* Empty / Idle State */
           <div
-            className="relative bg-[#0E0F17] rounded-lg border border-white/[0.08] shadow-xl flex flex-col items-center justify-center p-6 text-center max-w-full max-h-full"
-            style={{
-              aspectRatio: aspectRatio.replace(":", " / "),
-              height: aspectRatio === "9:16" ? "100%" : undefined,
-              width: aspectRatio !== "9:16" ? "100%" : undefined,
-            }}
+            className="relative bg-[#0E0F17] rounded-lg border border-white/[0.08] shadow-xl flex flex-col items-center justify-center p-6 text-center max-w-full max-h-full shrink-0 overflow-hidden"
+            style={frameStyle}
           >
             {isRendering ? (
               <div className="flex flex-col items-center gap-3">
