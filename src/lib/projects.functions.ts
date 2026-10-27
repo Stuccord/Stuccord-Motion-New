@@ -777,7 +777,7 @@ export const submitRender = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    // Enforce monthly render cap for the current (Starter) tier.
+    // Enforce the free plan's monthly render cap.
     // Counts every job created this billing month except failed ones so
     // retries after a hard failure don't burn quota. Stale jobs are failed
     // first so a dead render doesn't count against the cap.
@@ -795,7 +795,7 @@ export const submitRender = createServerFn({ method: "POST" })
     if (countErr) throw new Error(countErr.message);
     if ((usedThisMonth ?? 0) >= RENDER_CAP) {
       throw new Error(
-        `You've used all ${RENDER_CAP} renders on the Starter plan this month. Upgrade to Pro for unlimited renders, or wait for your quota to reset on the 1st.`,
+        `You've used all ${RENDER_CAP} exports for this month on the free plan. Exporting opens again on the 1st; you can keep editing meanwhile.`,
       );
     }
 
@@ -1038,7 +1038,7 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       .gte("created_at", monthStart.toISOString());
     if ((usedThisMonth ?? 0) >= RENDER_CAP) {
       throw new Error(
-        `You've used all ${RENDER_CAP} renders on the Starter plan this month. Upgrade to Pro for unlimited renders, or wait for your quota to reset on the 1st.`,
+        `You've used all ${RENDER_CAP} exports for this month on the free plan. Exporting opens again on the 1st; you can keep editing meanwhile.`,
       );
     }
 

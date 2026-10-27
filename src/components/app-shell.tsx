@@ -190,20 +190,21 @@ export function AppShell({
         <div className="mx-1 relative overflow-hidden rounded-xl border border-primary/20 bg-card p-3.5 shadow-sm">
           <div className="relative">
             <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
-              <Gift className="w-3 h-3" /> Starter plan
+              <Gift className="w-3 h-3" /> Free plan
             </div>
             <div className="mt-2 text-xs text-foreground leading-relaxed">
-              <span className="font-semibold tabular-nums">{used} of {cap}</span> renders used this month
+              <span className="font-semibold tabular-nums">{used} of {cap}</span> exports used this month
             </div>
             <div className="mt-2 h-1.5 rounded-full bg-surface overflow-hidden border border-border">
               <div className="h-full bg-primary transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]" style={{ width: `${usePct}%` }} />
             </div>
             <Button
               size="sm"
-              className="w-full mt-3 h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-sm"
+              variant="outline"
+              className="w-full mt-3 h-8 text-xs"
               onClick={() => navigate({ to: "/billing" })}
             >
-              Upgrade to Pro
+              Plan &amp; usage
             </Button>
           </div>
         </div>
@@ -273,7 +274,6 @@ export function AppShell({
             <div className="flex items-center gap-2">
               <button className="p-2 rounded-lg hover:bg-surface relative text-muted-foreground hover:text-foreground transition-colors" aria-label="Notifications">
                 <Bell className="w-4 h-4" />
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary" />
               </button>
               <Button
                 size="sm"

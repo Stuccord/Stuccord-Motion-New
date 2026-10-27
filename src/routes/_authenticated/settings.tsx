@@ -3,10 +3,8 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -94,28 +92,10 @@ function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">Brand kit</CardTitle>
-                <CardDescription>Logo, colors, and font that captions and lower-thirds use by default.</CardDescription>
+                <CardDescription>Your logo, colours and caption font.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-neutral-700">Primary brand color</Label>
-                  <div className="flex items-center gap-2">
-                    <input type="color" defaultValue="#7C3AED" className="w-12 h-10 rounded-md border border-black/10 cursor-pointer" />
-                    <Input defaultValue="#7C3AED" className="flex-1 font-mono bg-white border-black/10 focus:border-black/30" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-neutral-700">Caption font</Label>
-                  <select className="w-full h-10 px-3 text-sm bg-white border border-black/10 rounded-md focus:border-black/30 focus:outline-none">
-                    <option>Inter</option><option>SF Pro Display</option><option>Space Grotesk</option><option>Poppins</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-neutral-700">Logo</Label>
-                  <div className="border-2 border-dashed border-black/10 rounded-lg p-6 text-center text-sm text-neutral-500">
-                    Drop SVG or PNG · transparent background recommended
-                  </div>
-                </div>
+              <CardContent>
+                <NotYet what="Saving your brand colours, font and logo and using them on every export" />
               </CardContent>
             </Card>
           </TabsContent>
@@ -127,15 +107,8 @@ function SettingsPage() {
                 <CardTitle className="text-sm font-semibold">Notifications</CardTitle>
                 <CardDescription>Choose what lands in your inbox.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-0 divide-y divide-black/5">
-                {[
-                  { label: "Render finished", desc: "Ping me when a project is ready to publish.", on: true },
-                  { label: "Render failed", desc: "Alert me so I can retry quickly.", on: true },
-                  { label: "Weekly digest", desc: "A short recap of your activity every Monday.", on: false },
-                  { label: "Product updates", desc: "New features, tips, and templates.", on: true },
-                ].map((n) => (
-                  <NotificationRow key={n.label} label={n.label} desc={n.desc} defaultOn={n.on} />
-                ))}
+              <CardContent>
+                <NotYet what="Notifications when an export finishes or fails, and choosing which ones you get" />
               </CardContent>
             </Card>
           </TabsContent>
@@ -147,28 +120,8 @@ function SettingsPage() {
                 <CardTitle className="text-sm font-semibold">Security</CardTitle>
                 <CardDescription>Password, sessions and two-factor.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-0 divide-y divide-black/5">
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="text-sm font-medium">Password</div>
-                    <div className="text-xs text-neutral-500 mt-0.5">Rotate every 90 days.</div>
-                  </div>
-                  <Button variant="outline" size="sm">Change password</Button>
-                </div>
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="text-sm font-medium">Two-factor auth</div>
-                    <div className="text-xs text-neutral-500 mt-0.5">Add an authenticator app.</div>
-                  </div>
-                  <Button variant="outline" size="sm">Enable 2FA</Button>
-                </div>
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="text-sm font-medium text-red-700">Delete account</div>
-                    <div className="text-xs text-neutral-500 mt-0.5">This is permanent.</div>
-                  </div>
-                  <Button variant="outline" size="sm" className="text-red-700 border-red-200 hover:bg-red-50">Delete</Button>
-                </div>
+              <CardContent>
+                <NotYet what="Changing your password, two-factor sign-in and deleting your account" />
               </CardContent>
             </Card>
           </TabsContent>
@@ -180,11 +133,8 @@ function SettingsPage() {
                 <CardTitle className="text-sm font-semibold">API keys</CardTitle>
                 <CardDescription>Programmatic access to your workspace.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-lg border border-black/10 bg-neutral-50 p-4 text-sm text-neutral-600">
-                  No keys yet. Create one to render projects from your own scripts or CI.
-                </div>
-                <div className="flex justify-end"><Button>Create API key</Button></div>
+              <CardContent>
+                <NotYet what="Keys for starting exports from your own scripts" />
               </CardContent>
             </Card>
           </TabsContent>
@@ -194,15 +144,14 @@ function SettingsPage() {
   );
 }
 
-function NotificationRow({ label, desc, defaultOn }: { label: string; desc: string; defaultOn?: boolean }) {
-  const [on, setOn] = useState(!!defaultOn);
+/** A part of Settings that isn't built yet, said plainly (no pretend controls). */
+function NotYet({ what }: { what: string }) {
   return (
-    <div className="flex items-center justify-between py-3">
-      <div>
-        <div className="text-sm font-medium">{label}</div>
-        <div className="text-xs text-neutral-500 mt-0.5">{desc}</div>
-      </div>
-      <Switch checked={on} onCheckedChange={setOn} />
+    <div className="rounded-lg border border-dashed border-black/10 bg-neutral-50 p-4 text-sm text-neutral-600">
+      <span className="mr-2 rounded-full border border-black/10 bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-500">
+        Soon
+      </span>
+      {what} isn&apos;t available yet. It&apos;s coming in an upcoming update.
     </div>
   );
 }

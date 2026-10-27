@@ -86,11 +86,11 @@ function Home() {
             What would you like to create?
           </h1>
           <Link
-            to="/templates"
+            to="/projects"
             className="group inline-flex items-center gap-2 rounded-full bg-card border border-border pl-1 pr-3 py-1 text-[12px] font-medium text-foreground shadow-sm hover:border-primary/30 hover:bg-accent transition-all"
           >
             <span className="rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5">New</span>
-            Auto-Caption 2.0
+            Move, resize &amp; rotate clips in the preview
             <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
           </Link>
         </div>
@@ -99,7 +99,7 @@ function Home() {
         <div className="grid gap-4 md:grid-cols-3">
           <CreateCard
             title="Short from footage"
-            desc="Drop clips, get a scroll-stopping short with captions & score"
+            desc="Drop your clips, edit them on the timeline, export with captions & music"
             onClick={() => navigate({ to: "/projects/new" })}
             visual={
               <div className="relative h-full w-full bg-gradient-to-br from-surface to-muted p-4 grid place-items-center">
@@ -119,8 +119,10 @@ function Home() {
           />
           <CreateCard
             title="Talking-head clip"
-            desc="Turn a raw selfie video into captioned, cut-tight content"
-            onClick={() => navigate({ to: "/projects/new" })}
+            desc="Turn a selfie video into a captioned short, with your B-roll on top"
+            onClick={() =>
+              navigate({ to: "/projects/new", search: { template: "talking" } as never })
+            }
             visual={
               <div className="relative h-full w-full bg-gradient-to-br from-accent/60 via-card to-primary/5 p-4">
                 <div className="absolute top-4 left-4 w-[92px] rounded-xl overflow-hidden shadow-md border border-border">
@@ -146,8 +148,8 @@ function Home() {
           />
           <CreateCard
             title="Brand kit"
-            desc="Set fonts, colors & intros — apply to every render automatically"
-            onClick={() => navigate({ to: "/settings" })}
+            desc="Your caption colours, font and logo on every export"
+            soon
             visual={
               <div className="relative h-full w-full bg-gradient-to-br from-amber-50 via-card to-rose-50 p-4">
                 <div className="grid grid-cols-2 gap-2">
@@ -169,40 +171,62 @@ function Home() {
 
         {/* Quick tools */}
         <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          {/* Tools that aren't built yet say so and do nothing. */}
           {[
-            { label: "Captions",   icon: Captions,       to: "/projects/new" },
-            { label: "Voiceover",  icon: Mic,            to: "/projects/new" },
-            { label: "Score & SFX",icon: Music2,          to: "/projects/new" },
-            { label: "Auto-cut",   icon: Scissors,       to: "/projects/new" },
-            { label: "Thumbnail",  icon: ImageIcon,      to: "/projects/new" },
-            { label: "More tools", icon: MoreHorizontal, to: "/templates" },
-          ].map((t) => (
-            <Link
-              key={t.label}
-              to={t.to}
-              className="group flex items-center gap-2.5 rounded-xl bg-card border border-border px-3.5 py-3 hover:border-primary/30 hover:shadow-sm transition-all duration-150"
-            >
-              <span className="w-7 h-7 rounded-lg bg-surface grid place-items-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-150">
-                <t.icon className="w-3.5 h-3.5" />
-              </span>
-              <span className="text-[13px] font-medium text-foreground truncate">{t.label}</span>
-            </Link>
-          ))}
+            { label: "Captions", icon: Captions, to: "/projects/new" },
+            { label: "Voiceover", icon: Mic, to: null },
+            { label: "Music & SFX", icon: Music2, to: "/projects/new" },
+            { label: "Auto-cut", icon: Scissors, to: null },
+            { label: "Thumbnail", icon: ImageIcon, to: null },
+            { label: "Templates", icon: MoreHorizontal, to: "/templates" },
+          ].map((t) =>
+            t.to ? (
+              <Link
+                key={t.label}
+                to={t.to}
+                className="group flex items-center gap-2.5 rounded-xl bg-card border border-border px-3.5 py-3 hover:border-primary/30 hover:shadow-sm transition-all duration-150"
+              >
+                <span className="w-7 h-7 rounded-lg bg-surface grid place-items-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-150">
+                  <t.icon className="w-3.5 h-3.5" />
+                </span>
+                <span className="text-[13px] font-medium text-foreground truncate">{t.label}</span>
+              </Link>
+            ) : (
+              <div
+                key={t.label}
+                aria-disabled
+                title="Coming soon"
+                className="flex items-center gap-2.5 rounded-xl bg-card/60 border border-dashed border-border px-3.5 py-3 cursor-default"
+              >
+                <span className="w-7 h-7 rounded-lg bg-surface grid place-items-center text-muted-foreground">
+                  <t.icon className="w-3.5 h-3.5" />
+                </span>
+                <span className="min-w-0 leading-tight">
+                  <span className="block text-[13px] font-medium text-muted-foreground truncate">
+                    {t.label}
+                  </span>
+                  <span className="block text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    Soon
+                  </span>
+                </span>
+              </div>
+            ),
+          )}
         </div>
 
         {/* Feature banner */}
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           <div className="grid md:grid-cols-[1fr_240px] items-stretch">
             <div className="p-6 md:p-8">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">Everything included</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">What you can do today</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-[13px] text-foreground max-w-md">
                 {[
-                  "Publish to 6 platforms",
-                  "Auto-cut silences",
-                  "Multi-language captions",
-                  "Brand-safe scoring",
-                  "4K export",
-                  "Team collaboration",
+                  "Word-by-word captions",
+                  "Music & SFX, quieter under your voice",
+                  "B-roll, images & picture-in-picture",
+                  "A timeline with trims, splits & undo",
+                  "9:16, 16:9 & 1:1 exports",
+                  "Browser exports up to 4K",
                 ].map((f) => (
                   <div key={f} className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
@@ -214,17 +238,26 @@ function Home() {
             <div className="relative bg-foreground text-background p-6 md:p-8 flex flex-col justify-between overflow-hidden">
               <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-primary/20 blur-3xl pointer-events-none" />
               <div className="relative">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-background/50 mb-2">Now live</div>
-                <div className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-                  Motion <span className="inline-flex items-center rounded-full bg-background/15 px-2 py-0.5 text-[11px] font-semibold">v2</span>
-                </div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-background/50 mb-2">Coming next</div>
+                <ul className="space-y-1 text-[12.5px] text-background/80">
+                  {[
+                    "Brand kit",
+                    "Thumbnails",
+                    "Voiceover",
+                    "Auto-cut silences",
+                    "Publishing",
+                    "Teams & API",
+                  ].map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
               </div>
               <Button
                 size="sm"
                 className="relative mt-4 w-fit bg-background text-foreground hover:bg-background/90"
                 onClick={() => navigate({ to: "/projects/new" })}
               >
-                Launch <ArrowRight className="w-3.5 h-3.5" />
+                Start a project <ArrowRight className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>
@@ -304,27 +337,55 @@ function Home() {
   );
 }
 
+/** "Soon": shown on things that aren't built yet. */
+function SoonTag({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full bg-surface-2 border border-border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground",
+        className,
+      )}
+    >
+      Soon
+    </span>
+  );
+}
+
 function CreateCard({
   title,
   desc,
   visual,
   onClick,
+  soon = false,
 }: {
   title: string;
   desc: string;
   visual: React.ReactNode;
-  onClick: () => void;
+  /** Opens it (not given for things that aren't built yet). */
+  onClick?: () => void;
+  /** Not built yet: shown as coming soon, not clickable. */
+  soon?: boolean;
 }) {
   return (
     <Card
-      onClick={onClick}
-      className="group relative overflow-hidden cursor-pointer hover:border-primary/25 hover:shadow-lg transition-all duration-150"
+      onClick={soon ? undefined : onClick}
+      aria-disabled={soon || undefined}
+      className={cn(
+        "group relative overflow-hidden transition-all duration-150",
+        soon
+          ? "cursor-default opacity-75"
+          : "cursor-pointer hover:border-primary/25 hover:shadow-lg",
+      )}
     >
       <div className="h-[172px] overflow-hidden border-b border-border">{visual}</div>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="text-[14px] font-semibold tracking-tight text-foreground">{title}</div>
-          <ArrowUpRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all shrink-0" />
+          {soon ? (
+            <SoonTag />
+          ) : (
+            <ArrowUpRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all shrink-0" />
+          )}
         </div>
         <p className="mt-1 text-[12.5px] text-muted-foreground leading-relaxed">{desc}</p>
       </CardContent>

@@ -27,7 +27,7 @@ function TemplatesPage() {
   return (
     <AppShell
       title="Templates"
-      subtitle="Battle-tested formats — pick one and swap in your footage."
+      subtitle="Each one starts a project with its shape, style and a brief the AI uses to write your opening hook."
       actions={<Button onClick={() => navigate({ to: "/projects/new" })}>Start from blank</Button>}
     >
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">

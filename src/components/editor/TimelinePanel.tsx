@@ -2464,7 +2464,7 @@ const SHORTCUTS: [string, string][] = [
   ["S", "Split the selected clip at the playhead"],
   ["Alt + [  /  Alt + ]", "Trim the selected clip's start / end to the playhead"],
   ["[  /  ]", "Move the selected clip to start / end at the playhead"],
-  ["Drag a clip", "Place it at any time (it stops at a neighbour's edge)"],
+  ["Drag a clip", "V1: change the order · V2: place it at any time (Alt: no snapping)"],
   ["Ctrl + D", "Duplicate the selected clip"],
   ["Del", "Delete the selected clip"],
   ["Ctrl + Z / Ctrl + Shift + Z", "Undo / redo"],
