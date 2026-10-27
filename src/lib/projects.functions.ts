@@ -239,14 +239,18 @@ export const listProjects = createServerFn({ method: "GET" })
       context.supabase,
       [...firstClip.values()].map((c) => c.id),
     );
-    const urls = await signThumbnails(context.supabase, [...(saved?.values() ?? [])]);
+    // A cover made in the Thumbnail maker (projects.thumbnail_url holds its
+    // storage path) is shown instead of the first clip's frame.
+    const covers = projects.flatMap((p) => (isCoverPath(p.thumbnail_url) ? [p.thumbnail_url] : []));
+    const urls = await signThumbnails(context.supabase, [...(saved?.values() ?? []), ...covers]);
     return projects.map((p) => {
       const c = firstClip.get(p.id);
       const path = c ? saved?.get(c.id) : undefined;
-      const thumb = path ? (urls.get(path) ?? null) : null;
+      const cover = isCoverPath(p.thumbnail_url) ? (urls.get(p.thumbnail_url) ?? null) : null;
+      const thumb = cover ?? (path ? (urls.get(path) ?? null) : null);
       // Only offer to make one when thumbnails can be saved (saved != null).
       const source: ThumbSource | null =
-        c && saved && !path
+        c && saved && !path && !cover
           ? {
               id: c.id,
               storage_path: c.storage_path,
@@ -389,6 +393,48 @@ export const listNotifications = createServerFn({ method: "GET" })
     }));
   });
 
+/** A cover file made by the Thumbnail maker (anything else in thumbnail_url is ignored). */
+const isCoverPath = (p: string | null | undefined): p is string =>
+  !!p && /^[^/]+\/thumbs\/cover-[^/]+\.jpg$/.test(p);
+
+/**
+ * Sets a project's cover (made in the Thumbnail maker and uploaded to the
+ * user's thumbs folder), or clears it with path null. The old cover file is
+ * deleted.
+ */
+export const setProjectCover = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({ project_id: z.string().uuid(), path: z.string().min(1).max(300).nullable() })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const prefix = `${context.userId}/thumbs/cover-${data.project_id}-`;
+    if (data.path !== null && (!data.path.startsWith(prefix) || !data.path.endsWith(".jpg"))) {
+      throw new Error("Covers are saved in your own folder");
+    }
+    const { data: before, error: rErr } = await context.supabase
+      .from("projects")
+      .select("thumbnail_url")
+      .eq("id", data.project_id)
+      .maybeSingle();
+    if (rErr) throw new Error(rErr.message);
+    if (!before) throw new Error("Project not found");
+    const { error } = await context.supabase
+      .from("projects")
+      .update({ thumbnail_url: data.path })
+      .eq("id", data.project_id);
+    if (error) throw new Error(error.message);
+    if (isCoverPath(before.thumbnail_url) && before.thumbnail_url !== data.path) {
+      const { error: rmErr } = await context.supabase.storage
+        .from("raw-clips")
+        .remove([before.thumbnail_url]);
+      if (rmErr) console.error("[setProjectCover] Couldn't delete the old cover:", rmErr.message);
+    }
+    return { ok: true };
+  });
+
 /** Records where a clip's thumbnail was saved (only inside the user's own thumbs folder). */
 export const setClipThumbnail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -449,9 +495,17 @@ export const deleteProject = createServerFn({ method: "POST" })
         (projectClips ?? []).map((c) => c.id),
       )) ?? new Map<string, string>()).values(),
     ].map((thumbnail_path) => ({ thumbnail_path }));
+    const { data: projectRow } = await context.supabase
+      .from("projects")
+      .select("thumbnail_url")
+      .eq("id", data.id)
+      .maybeSingle();
     const { error } = await context.supabase.from("projects").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
-    const paths = (thumbs ?? []).flatMap((t) => (t.thumbnail_path ? [t.thumbnail_path] : []));
+    const paths = [
+      ...(thumbs ?? []).flatMap((t) => (t.thumbnail_path ? [t.thumbnail_path] : [])),
+      ...(isCoverPath(projectRow?.thumbnail_url) ? [projectRow.thumbnail_url] : []),
+    ];
     if (paths.length) {
       const { error: rmErr } = await context.supabase.storage.from("raw-clips").remove(paths);
       if (rmErr) console.error("[deleteProject] Failed to delete thumbnails:", rmErr.message);

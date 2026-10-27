@@ -53,6 +53,7 @@ import {
 } from "@/lib/upload-file";
 import { uploadSummary, useUploadQueue } from "@/components/editor/useUploadQueue";
 import { UploadList } from "@/components/editor/UploadList";
+import { ThumbnailMaker } from "@/components/editor/ThumbnailMaker";
 import {
   captureFilmstrip,
   computeWaveform,
@@ -171,6 +172,9 @@ import {
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId")({
   head: () => ({ meta: [{ title: "Editor — Stuccord Motion" }] }),
+  // ?thumbnail=1 opens the Thumbnail maker (Home's Thumbnail tool links here).
+  validateSearch: (s: Record<string, unknown>): { thumbnail?: 1 } =>
+    s.thumbnail === 1 || s.thumbnail === "1" || s.thumbnail === true ? { thumbnail: 1 } : {},
   component: EditorPage,
   errorComponent: ({ error }) => (
     <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4 text-white">
@@ -232,6 +236,7 @@ function clipSourceMs(c: ClipRow): number | null {
 
 function EditorPage() {
   const { projectId } = Route.useParams();
+  const search = Route.useSearch();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const isMutating = useIsMutating();
@@ -1175,6 +1180,18 @@ function EditorPage() {
 
   const [downloading, setDownloading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [thumbOpen, setThumbOpen] = useState(!!search.thumbnail);
+  const closeThumbnailMaker = (open: boolean) => {
+    setThumbOpen(open);
+    if (!open && search.thumbnail) {
+      void navigate({
+        to: "/projects/$projectId",
+        params: { projectId },
+        search: {},
+        replace: true,
+      });
+    }
+  };
   const [renderMsg, setRenderMsg] = useState<string | null>(null);
   const [renderPct, setRenderPct] = useState<number>(0);
 
@@ -1911,6 +1928,7 @@ function EditorPage() {
             onOpenRender={() =>
               project.status === "ready" ? setExportOpen(true) : render.mutate()
             }
+            onOpenThumbnail={() => setThumbOpen(true)}
             isRenderDisabled={
               render.isPending || (inProgress && project.status !== "ready")
             }
@@ -2175,6 +2193,20 @@ function EditorPage() {
         defaultFileName={project.title || "stuccord-export"}
         progressPct={renderPct}
         progressMsg={renderMsg}
+      />
+
+      <ThumbnailMaker
+        open={thumbOpen}
+        onOpenChange={closeThumbnailMaker}
+        projectId={projectId}
+        projectTitle={project.title}
+        aspectRatio={project.aspect_ratio}
+        clips={[...aRoll, ...bRoll]}
+        urls={clipUrls}
+        initialClipId={selectedClipId}
+        kit={brand.data?.kit}
+        logoUrl={brand.data?.logoUrl}
+        hasCover={!!project.thumbnail_url}
       />
     </div>
   );

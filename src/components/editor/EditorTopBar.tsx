@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Check, Loader2, Sparkles, Undo2, Redo2, Film, Smartphone, Monitor, Square } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Sparkles, Undo2, Redo2, Film, Smartphone, Monitor, Square, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +13,8 @@ interface EditorTopBarProps {
   aspectRatio: AspectRatio;
   onAspectRatioChange: (ratio: AspectRatio) => void;
   onOpenRender: () => void;
+  /** Opens the Thumbnail maker. */
+  onOpenThumbnail?: () => void;
   isRenderDisabled?: boolean;
   clipCount: number;
   onUndo?: () => void;
@@ -30,6 +32,7 @@ export function EditorTopBar({
   aspectRatio,
   onAspectRatioChange,
   onOpenRender,
+  onOpenThumbnail,
   isRenderDisabled = false,
   clipCount,
   onUndo,
@@ -200,6 +203,24 @@ export function EditorTopBar({
 
         {/* Right Section: Primary Action (Render Video) */}
         <div className="flex items-center gap-2">
+          {onOpenThumbnail && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  onClick={onOpenThumbnail}
+                  disabled={clipCount === 0}
+                  className="h-9 px-3 text-xs text-neutral-300 hover:text-white hover:bg-white/5 border border-white/10 rounded-lg disabled:opacity-40"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Thumbnail</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {clipCount === 0 ? "Upload a clip first" : "Make a thumbnail or project cover"}
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

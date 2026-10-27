@@ -203,18 +203,29 @@ function Home() {
         {/* Quick tools */}
         <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           {/* Tools that aren't built yet say so and do nothing. */}
+          {/* Thumbnail opens the maker in the latest project (or starts one). */}
           {[
             { label: "Captions", icon: Captions, to: "/projects/new" },
             { label: "Voiceover", icon: Mic, to: null },
             { label: "Music & SFX", icon: Music2, to: "/projects/new" },
             { label: "Auto-cut", icon: Scissors, to: null },
-            { label: "Thumbnail", icon: ImageIcon, to: null },
+            {
+              label: "Thumbnail",
+              icon: ImageIcon,
+              to: recent[0] ? "/projects/$projectId" : "/projects/new",
+              params: recent[0] ? { projectId: recent[0].id } : undefined,
+              search: recent[0] ? { thumbnail: 1 as const } : undefined,
+              title: recent[0] ? `Opens in “${recent[0].title}”` : "Start a project first",
+            },
             { label: "Templates", icon: MoreHorizontal, to: "/templates" },
           ].map((t) =>
             t.to ? (
               <Link
                 key={t.label}
                 to={t.to}
+                params={"params" in t ? t.params : undefined}
+                search={"search" in t ? t.search : undefined}
+                title={"title" in t ? t.title : undefined}
                 className="group flex items-center gap-2.5 rounded-xl bg-card border border-border px-3.5 py-3 hover:border-primary/30 hover:shadow-sm transition-all duration-150"
               >
                 <span className="w-7 h-7 rounded-lg bg-surface grid place-items-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-150">
@@ -258,6 +269,7 @@ function Home() {
                   "A timeline with trims, splits & undo",
                   "9:16, 16:9 & 1:1 exports",
                   "Browser exports up to 4K",
+                  "Thumbnails & project covers",
                 ].map((f) => (
                   <div key={f} className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
@@ -272,7 +284,6 @@ function Home() {
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-background/50 mb-2">Coming next</div>
                 <ul className="space-y-1 text-[12.5px] text-background/80">
                   {[
-                    "Thumbnails",
                     "Voiceover",
                     "Auto-cut silences",
                     "Publishing",

@@ -12,6 +12,7 @@ import {
   Move,
   Download,
   Keyboard,
+  ImageIcon,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -82,6 +83,17 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
       "Render Video makes a cloud export in 1080p with captions, music and SFX. You can keep editing while it renders.",
       "A browser export records the video in your browser, up to 4K. It includes your clips and their sound, but not captions or music.",
       "The free plan includes 5 exports a month; failed exports don't count. The count resets on the 1st.",
+    ],
+  },
+  {
+    icon: ImageIcon,
+    title: "Thumbnails and covers",
+    steps: [
+      "In the editor, press Thumbnail (next to Render Video), or use Thumbnail on Home to open it in your latest project.",
+      "Pick a clip and the moment you want, then zoom in and drag the picture to choose what shows.",
+      "Add a title: it starts in your brand kit's font and colours, with an outline or a box behind it. Your logo can go on too.",
+      "Sizes: like your video, YouTube (1280×720) or square (1080×1080). Download it as PNG or JPG.",
+      "Set as project cover shows it on Home and Projects instead of the first clip's frame.",
     ],
   },
 ];
