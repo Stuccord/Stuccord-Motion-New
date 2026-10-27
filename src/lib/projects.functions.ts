@@ -514,22 +514,35 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
         title: z.string().trim().min(1).max(120).optional(),
         script: z.string().max(20000).nullable().optional(),
         brief: z.string().max(4000).nullable().optional(),
+        // The editor's export switches: Captions, Music and the music volume.
+        captions_enabled: z.boolean().optional(),
+        music_enabled: z.boolean().optional(),
+        music_volume: z.number().int().min(0).max(100).optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const patch: {
-      aspect_ratio?: "9:16" | "16:9" | "1:1";
-      style_preset?: string;
-      title?: string;
-      script?: string | null;
-      brief?: string | null;
-    } = {};
+    const patch: Database["public"]["Tables"]["projects"]["Update"] = {};
     if (data.aspect_ratio !== undefined) patch.aspect_ratio = data.aspect_ratio;
     if (data.style_preset !== undefined) patch.style_preset = data.style_preset;
     if (data.title !== undefined) patch.title = data.title;
     if (data.script !== undefined) patch.script = data.script;
     if (data.brief !== undefined) patch.brief = data.brief;
+    if (data.captions_enabled !== undefined) patch.captions_enabled = data.captions_enabled;
+    if (data.music_enabled !== undefined) patch.music_enabled = data.music_enabled;
+    if (data.music_volume !== undefined) patch.music_volume = data.music_volume;
+    // The music switch and volume only change the export when there is
+    // uploaded music or SFX to mix in.
+    let musicAffectsRender = false;
+    if (data.music_enabled !== undefined || data.music_volume !== undefined) {
+      const { count, error: aErr } = await context.supabase
+        .from("clips")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", data.id)
+        .in("role", ["music", "sfx"]);
+      if (aErr) throw new Error(aErr.message);
+      musicAffectsRender = (count ?? 0) > 0;
+    }
     const { data: row, error } = await context.supabase
       .from("projects")
       .update(patch)
@@ -542,7 +555,9 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
       data.aspect_ratio !== undefined ||
       data.style_preset !== undefined ||
       data.script !== undefined ||
-      data.brief !== undefined;
+      data.brief !== undefined ||
+      data.captions_enabled !== undefined ||
+      musicAffectsRender;
     if (affectsRender && row.status === "ready") {
       await markProjectEdited(context.supabase, data.id);
       return { ...row, status: "draft" as const };

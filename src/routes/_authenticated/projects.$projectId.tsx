@@ -233,9 +233,43 @@ function EditorPage() {
   const [viewMode, setViewMode] = useState<"program" | "source" | "compare">("program");
   const [splitPct, setSplitPct] = useState(50);
   const sourceVideoRef = useRef<HTMLVideoElement>(null);
-  const [musicEnabled, setMusicEnabled] = useState(true);
-  const [musicVolume, setMusicVolume] = useState(60);
-  const [captionsEnabled, setCaptionsEnabled] = useState(true);
+  // Export switches, saved on the project (defaults until it has loaded, or
+  // if the columns don't exist yet). The volume slider shows a draft while
+  // dragging and saves when it's let go.
+  const captionsEnabled = data?.project.captions_enabled ?? true;
+  const musicEnabled = data?.project.music_enabled ?? true;
+  const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
+  const musicVolume = volumeDraft ?? data?.project.music_volume ?? 60;
+  const saveExportSwitches = useMutation({
+    mutationFn: (
+      patch: Partial<Record<"captions_enabled" | "music_enabled", boolean>> & {
+        music_volume?: number;
+      },
+    ) => updateSettings({ data: { id: projectId, ...patch } }),
+    // Show the change at once; put it back if saving fails.
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: ["project", projectId] });
+      const previous = qc.getQueryData<typeof data>(["project", projectId]);
+      if (previous) {
+        qc.setQueryData(["project", projectId], {
+          ...previous,
+          project: { ...previous.project, ...patch },
+        });
+      }
+      return { previous };
+    },
+    onSuccess: (row) => {
+      qc.setQueryData(["project", projectId], (old: typeof data) =>
+        old ? { ...old, project: row } : old,
+      );
+      qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (e: Error, _patch, ctx) => {
+      if (ctx?.previous) qc.setQueryData(["project", projectId], ctx.previous);
+      toast.error(`Couldn't save the setting: ${e.message}`);
+    },
+    onSettled: () => setVolumeDraft(null),
+  });
   const [captionsText, setCaptionsText] = useState<string | null>(null);
   const [activePool, setActivePool] = useState<"clips" | "audio" | "assets" | "effects">("clips");
   const [inspectorTab, setInspectorTab] = useState<"ai" | "notes">("ai");
@@ -1347,9 +1381,18 @@ function EditorPage() {
                       updateSettings({ data: { id: projectId, script: captionsText } });
                     }
                   }}
-                  onMusicEnabledChange={setMusicEnabled}
-                  onMusicVolumeChange={setMusicVolume}
-                  onCaptionsEnabledChange={setCaptionsEnabled}
+                  onMusicEnabledChange={(on) => saveExportSwitches.mutate({ music_enabled: on })}
+                  onMusicVolumeChange={setVolumeDraft}
+                  onMusicVolumeCommit={(vol) => {
+                    if (vol !== data?.project.music_volume) {
+                      saveExportSwitches.mutate({ music_volume: vol });
+                    } else {
+                      setVolumeDraft(null);
+                    }
+                  }}
+                  onCaptionsEnabledChange={(on) =>
+                    saveExportSwitches.mutate({ captions_enabled: on })
+                  }
                 />
               )}
             </div>

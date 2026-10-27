@@ -43,6 +43,8 @@ export interface AIMotionPanelProps {
   onScriptBlur?: () => void;
   onMusicEnabledChange: (enabled: boolean) => void;
   onMusicVolumeChange: (vol: number) => void;
+  /** Called once the user lets go of the volume slider. */
+  onMusicVolumeCommit?: (vol: number) => void;
   onCaptionsEnabledChange: (enabled: boolean) => void;
 }
 
@@ -237,6 +239,7 @@ export function AIMotionPanel({
   onScriptBlur,
   onMusicEnabledChange,
   onMusicVolumeChange,
+  onMusicVolumeCommit,
   onCaptionsEnabledChange,
 }: AIMotionPanelProps) {
   const [activeTab, setActiveTab] = useState<"director" | "notes">("director");
@@ -385,6 +388,7 @@ export function AIMotionPanel({
                   <Slider
                     value={[musicVolume]}
                     onValueChange={(v) => onMusicVolumeChange(v[0])}
+                    onValueCommit={(v) => onMusicVolumeCommit?.(v[0])}
                     max={100}
                     step={1}
                     className="flex-1"

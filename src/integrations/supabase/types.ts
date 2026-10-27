@@ -105,9 +105,12 @@ export type Database = {
         Row: {
           aspect_ratio: Database["public"]["Enums"]["aspect_ratio"]
           brief: string | null
+          captions_enabled: boolean
           created_at: string
           duration_seconds: number | null
           id: string
+          music_enabled: boolean
+          music_volume: number
           output_path: string | null
           script: string | null
           status: Database["public"]["Enums"]["project_status"]
@@ -120,9 +123,12 @@ export type Database = {
         Insert: {
           aspect_ratio?: Database["public"]["Enums"]["aspect_ratio"]
           brief?: string | null
+          captions_enabled?: boolean
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          music_enabled?: boolean
+          music_volume?: number
           output_path?: string | null
           script?: string | null
           status?: Database["public"]["Enums"]["project_status"]
@@ -135,9 +141,12 @@ export type Database = {
         Update: {
           aspect_ratio?: Database["public"]["Enums"]["aspect_ratio"]
           brief?: string | null
+          captions_enabled?: boolean
           created_at?: string
           duration_seconds?: number | null
           id?: string
+          music_enabled?: boolean
+          music_volume?: number
           output_path?: string | null
           script?: string | null
           status?: Database["public"]["Enums"]["project_status"]
