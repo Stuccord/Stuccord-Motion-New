@@ -354,7 +354,14 @@ function EditorPage() {
   }, [selectedClipId, data, signClip]);
 
   const render = useMutation({
-    mutationFn: () => runRender({ data: { project_id: projectId, captions: captionsEnabled } }),
+    mutationFn: () =>
+      runRender({
+        data: {
+          project_id: projectId,
+          captions: captionsEnabled,
+          music: { enabled: musicEnabled, volume: musicVolume },
+        },
+      }),
     onSuccess: () => {
       toast.success("Export started");
       refetch();

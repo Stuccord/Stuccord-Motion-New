@@ -704,6 +704,11 @@ export const submitRender = createServerFn({ method: "POST" })
         project_id: z.string().uuid(),
         // Burn word-by-word captions into the export (editor's Captions switch).
         captions: z.boolean().default(true),
+        // Mix uploaded music (looped, ducked under the voice) and SFX (on cuts)
+        // into the export, from the editor's Music switch and volume (0-100).
+        music: z
+          .object({ enabled: z.boolean(), volume: z.number().min(0).max(100) })
+          .default({ enabled: true, volume: 60 }),
       })
       .parse(d),
   )
@@ -830,6 +835,7 @@ export const submitRender = createServerFn({ method: "POST" })
         style_preset: project.style_preset,
         aspect_ratio: project.aspect_ratio,
         captions: data.captions,
+        music: data.music,
         clips: clipUrls,
         output: {
           path: outputPath,

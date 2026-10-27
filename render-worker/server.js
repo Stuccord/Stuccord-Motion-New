@@ -13,8 +13,10 @@
 // NOT need any Supabase service keys. It uses ffmpeg to normalize each
 // source clip to the target aspect ratio (1080p, H.264 + AAC, 30fps),
 // concatenates the A-roll into the main track and overlays the B-roll on top
-// of it from 0:00 (matching the editor timeline). When an AI edit plan
-// produces a "hook" line, that hook is burned into the first ~3 seconds.
+// of it from 0:00 (matching the editor timeline). Uploaded music is looped
+// under the video and ducked under the voice, with SFX on each cut. When an
+// AI edit plan produces a "hook" line, that hook is burned into the first
+// ~3 seconds.
 
 import express from "express";
 import crypto from "crypto";
@@ -232,21 +234,30 @@ function findSystemFont() {
 
 // ---------- transcripts on the timeline ----------
 
-// Duration of a media file in ms, read from the "Duration:" line ffmpeg
-// prints when given an input and no output. Returns null if unreadable.
-function probeDurationMs(file) {
+// Duration (ms) and whether there's an audio stream, read from what ffmpeg
+// prints when given an input and no output. durationMs is null if unreadable.
+function probeMedia(file) {
   return new Promise((resolve) => {
     const child = spawn(ffmpegPath, ["-hide_banner", "-i", file], {
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
     child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
-    child.on("error", () => resolve(null));
+    child.on("error", () => resolve({ durationMs: null, hasAudio: false }));
     child.on("close", () => {
       const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
-      resolve(m ? Math.round((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000) : null);
+      resolve({
+        durationMs: m
+          ? Math.round((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000)
+          : null,
+        hasAudio: /Stream #\d+:\d+.*: Audio:/.test(stderr),
+      });
     });
   });
+}
+
+async function probeDurationMs(file) {
+  return (await probeMedia(file)).durationMs;
 }
 
 // Keeps only well-formed words ({ text, start_ms, end_ms }), in time order.
@@ -290,6 +301,102 @@ function placeWordsOnTimeline(segments) {
     }
   }
   return placed;
+}
+
+// ---------- music & SFX mix ----------
+
+const MUSIC_FADE_IN_S = 0.5;
+const MUSIC_FADE_OUT_S = 1.5;
+const SFX_LEAD_MS = 150; // start an SFX just before the cut so it leads in
+const SFX_GAIN = 0.8;
+const MAX_SFX = 100;
+const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
+
+/** Music level (linear gain) from the editor's 0–100 volume slider. */
+function musicGain(volume) {
+  const v = Math.min(100, Math.max(0, Number(volume ?? 60)));
+  return Number(((v / 100) * 0.5).toFixed(3));
+}
+
+/**
+ * ffmpeg arguments that keep the video stream of `videoPath` and replace its
+ * audio with a mix of:
+ *  - the voice (the video's own audio; silence if it has none),
+ *  - the music files played one after another from 0:00, looped to the end
+ *    of the video, faded in and out, and ducked while the voice is speaking,
+ *  - an SFX at each cut, taking turns when there are several SFX files.
+ */
+function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPaths, sfxPaths, cutTimesMs, volume, out }) {
+  const D = (durationMs / 1000).toFixed(3);
+  const inputs = ["-i", videoPath];
+  const graph = [];
+  const mixInputs = [];
+  const hasMusic = musicPaths.length > 0;
+
+  // Voice: the video's audio, or silence the length of the video.
+  if (hasVoice) {
+    graph.push(`[0:a]${AUDIO_FMT}${hasMusic ? ",asplit=2[voice][voicekey]" : "[voice]"}`);
+  } else {
+    graph.push(`anullsrc=r=48000:cl=stereo,atrim=0:${D}[voice]`);
+  }
+  mixInputs.push("[voice]");
+
+  // Music: joined, looped to the video's length, faded, ducked under the voice.
+  if (hasMusic) {
+    const first = 1;
+    musicPaths.forEach((p, i) => {
+      inputs.push("-i", p);
+      graph.push(`[${first + i}:a]${AUDIO_FMT}[m${i}]`);
+    });
+    const joined = musicPaths.map((_, i) => `[m${i}]`).join("");
+    graph.push(
+      musicPaths.length > 1
+        ? `${joined}concat=n=${musicPaths.length}:v=0:a=1[mjoined]`
+        : `[m0]anull[mjoined]`,
+    );
+    const fadeOutStart = Math.max(0, durationMs / 1000 - MUSIC_FADE_OUT_S).toFixed(3);
+    graph.push(
+      `[mjoined]aloop=loop=-1:size=2147483647,atrim=0:${D},asetpts=N/SR/TB,` +
+        `volume=${musicGain(volume)},afade=t=in:st=0:d=${MUSIC_FADE_IN_S},` +
+        `afade=t=out:st=${fadeOutStart}:d=${MUSIC_FADE_OUT_S}` +
+        (hasVoice ? "[mraw]" : "[music]"),
+    );
+    if (hasVoice) {
+      // About an 8 dB dip under normal speech (~-20 dBFS), less for quiet
+      // speech, more for shouting; back up within ~0.4s of a pause.
+      graph.push(
+        "[mraw][voicekey]sidechaincompress=threshold=0.03:ratio=4:attack=15:release=350[music]",
+      );
+    }
+    mixInputs.push("[music]");
+  }
+
+  // SFX: one at each cut, cycling through the SFX files.
+  if (sfxPaths.length > 0) {
+    const firstSfx = 1 + musicPaths.length;
+    cutTimesMs.slice(0, MAX_SFX).forEach((cutMs, k) => {
+      inputs.push("-i", sfxPaths[k % sfxPaths.length]);
+      const at = Math.max(0, Math.round(cutMs - SFX_LEAD_MS));
+      graph.push(`[${firstSfx + k}:a]${AUDIO_FMT},volume=${SFX_GAIN},adelay=${at}:all=1[s${k}]`);
+      mixInputs.push(`[s${k}]`);
+    });
+  }
+
+  graph.push(
+    `${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=first:dropout_transition=0:normalize=0,` +
+      "alimiter=limit=0.95[aout]",
+  );
+
+  return [
+    "-y",
+    ...inputs,
+    "-filter_complex", graph.join(";"),
+    "-map", "0:v", "-map", "[aout]",
+    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+    "-t", D,
+    "-movflags", "+faststart",
+    out,
+  ];
 }
 
 // ---------- captions ----------
@@ -605,6 +712,13 @@ async function runRender(job) {
     };
     const concatOut = await concatTrack(normalized.slice(0, mainClips.length), "concat");
 
+    // Real length of each main clip as rendered (trimmed and normalized), for
+    // placing caption words and SFX. null where it couldn't be read.
+    const mainDurationsMs = [];
+    for (let i = 0; i < mainClips.length; i++) {
+      mainDurationsMs.push(await probeDurationMs(normalized[i]));
+    }
+
     // 4a. Captions words (best-effort; skipped when the user turned captions
     //     off). Transcripts belong to whole source files, in source time, so
     //     each file is transcribed once and the user's corrections survive
@@ -689,7 +803,7 @@ async function runRender(job) {
       const segments = [];
       let offsetMs = 0;
       for (let i = 0; i < mainClips.length; i++) {
-        const durationMs = await probeDurationMs(normalized[i]);
+        const durationMs = mainDurationsMs[i];
         if (durationMs == null) {
           transcriptErrors.push(`Could not read the length of clip ${i + 1}; captions stop there`);
           break;
@@ -733,6 +847,63 @@ async function runRender(job) {
         overlayOut,
       ]);
       composedOut = overlayOut;
+    }
+
+    // 4c. Music and SFX (best-effort; skipped when the user turned Music
+    //     off). Music loops under the whole video and ducks while the voice
+    //     speaks; an SFX plays at each cut between main clips.
+    const musicOn = job.music?.enabled !== false;
+    const musicClips = job.clips.filter((c) => c.download_url && c.role === "music");
+    const sfxClips = job.clips.filter((c) => c.download_url && c.role === "sfx");
+    if (musicOn && (musicClips.length || sfxClips.length)) {
+      await callback(job.callback_url, {
+        job_id: job.job_id, status: "rendering", progress: 80,
+        stage_message: "Mixing music & SFX",
+      });
+      try {
+        const fetchAudio = async (clips, prefix) => {
+          const paths = [];
+          for (let i = 0; i < clips.length; i++) {
+            const ext = path.extname(clips[i].filename || "").slice(0, 6) || ".bin";
+            const dest = path.join(workdir, `${prefix}_${i}${ext}`);
+            await download(clips[i].download_url, dest);
+            paths.push(dest);
+          }
+          return paths;
+        };
+        const musicPaths = await fetchAudio(musicClips, "music");
+        const sfxPaths = await fetchAudio(sfxClips, "sfx");
+
+        const video = await probeMedia(composedOut);
+        if (video.durationMs == null) throw new Error("could not read the video length");
+        // Cuts: where each main clip after the first starts.
+        const cutTimesMs = [];
+        let at = 0;
+        for (let i = 0; i < mainDurationsMs.length - 1; i++) {
+          if (mainDurationsMs[i] == null) break;
+          at += mainDurationsMs[i];
+          cutTimesMs.push(at);
+        }
+
+        const mixedOut = path.join(workdir, "mixed.mp4");
+        await run(
+          ffmpegPath,
+          buildAudioMixArgs({
+            videoPath: composedOut,
+            hasVoice: video.hasAudio,
+            durationMs: video.durationMs,
+            musicPaths,
+            sfxPaths,
+            cutTimesMs,
+            volume: job.music?.volume,
+            out: mixedOut,
+          }),
+        );
+        composedOut = mixedOut;
+      } catch (e) {
+        console.warn(`[Worker] Music mix failed for job=${job.job_id}:`, e?.message || e);
+        editPlan = { ...(editPlan ?? {}), music_error: String(e?.message ?? e).slice(0, 300) };
+      }
     }
 
     // 5. Burn in text: word-by-word captions in the lower third and the AI

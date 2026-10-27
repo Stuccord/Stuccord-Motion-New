@@ -40,6 +40,9 @@ export function clipVisibleMs(c: ClipRow): number {
   return 5000;
 }
 
+/** File name without its extension (a name with no extension is kept). */
+const baseName = (filename: string) => filename.replace(/\.[^.]+$/, "");
+
 function clipSourceMs(c: ClipRow): number | null {
   return c.duration_ms ?? null;
 }
@@ -382,7 +385,7 @@ function TimelineClip({
         <div className="flex items-center gap-1 text-white/95 font-mono font-semibold truncate">
           <Film className="w-2.5 h-2.5 shrink-0" />
           <span className="truncate">
-            {String(index + 1).padStart(2, "0")} · {clip.filename.replace(/\.[^.]+$/, "")}
+            {String(index + 1).padStart(2, "0")} · {baseName(clip.filename)}
           </span>
         </div>
         <div className="flex items-center justify-between text-white/75 font-mono tabular-nums">
@@ -517,6 +520,44 @@ function TimelineTracks({
   const mainClips = aRoll.length > 0 ? aRoll : bRoll;
   const mainLayout = aRoll.length > 0 ? aLayout : bLayout;
   const programEndMs = mainClips.reduce((sum, c) => sum + clipVisibleMs(c), 0);
+  // The music row as the export mixes it: music files one after another,
+  // looped to the end of the video; one SFX per cut, cycling through files.
+  const musicFiles = audioClips.filter((c) => c.role !== "sfx");
+  const sfxFiles = audioClips.filter((c) => c.role === "sfx");
+  const musicEndMs =
+    programEndMs > 0 ? programEndMs : musicFiles.reduce((t, c) => t + clipVisibleMs(c), 0);
+  const musicBars: {
+    key: string;
+    clip: ClipRow;
+    startMs: number;
+    lengthMs: number;
+    loop: boolean;
+  }[] = [];
+  for (let at = 0, n = 0; musicFiles.length > 0 && at < musicEndMs && n < 500; n++) {
+    const clip = musicFiles[n % musicFiles.length];
+    const lengthMs = Math.min(clipVisibleMs(clip), musicEndMs - at);
+    musicBars.push({
+      key: `${clip.id}:${n}`,
+      clip,
+      startMs: at,
+      lengthMs,
+      loop: n >= musicFiles.length,
+    });
+    at += lengthMs;
+  }
+  const sfxMarks = sfxFiles.length
+    ? mainClips.slice(1).map((c, k) => {
+        const cutMs = mainLayout.offsets.get(c.id) ?? 0;
+        const clip = sfxFiles[k % sfxFiles.length];
+        return {
+          key: `${c.id}:sfx`,
+          clip,
+          cutMs,
+          startMs: Math.max(0, cutMs - 150),
+          lengthMs: Math.max(200, clipVisibleMs(clip)),
+        };
+      })
+    : [];
   const cutAtFor = (c: ClipRow) => {
     if (aRoll.length === 0) return null;
     const start = bLayout.offsets.get(c.id) ?? 0;
@@ -1089,7 +1130,7 @@ function TimelineTracks({
               key={c.id}
               leftPx={((mainLayout.offsets.get(c.id) ?? 0) / 1000) * pxPerSec}
               widthPx={(clipVisibleMs(c) / 1000) * pxPerSec}
-              text={c.filename.replace(/.[^.]+$/, "")}
+              text={baseName(c.filename)}
               title={`Voice from ${c.filename}`}
               className="bg-emerald-500/10 border-emerald-500/25 text-emerald-200/80"
             />
@@ -1123,12 +1164,14 @@ function TimelineTracks({
           </TrackRow>
         )}
 
-        {/* A2 Music: uploaded music and SFX, not mixed into exports yet */}
+        {/* A2 Music: what the cloud export mixes in. Music plays from 0:00 and
+            loops to the end of the video (ducked under the voice); an SFX
+            plays at each cut between main clips, taking turns. */}
         {music && (
           <TrackRow
             label="A2"
             name="Music"
-            note="Not in export yet"
+            note="Ducked under voice"
             size="slim"
             innerWidth={trackWidthPx}
             contentHandlers={scrubHandlers}
@@ -1138,24 +1181,28 @@ function TimelineTracks({
                 No music or SFX uploaded
               </div>
             ) : (
-              (() => {
-                let cursor = 0;
-                return audioClips.map((c) => {
-                  const leftPx = (cursor / 1000) * pxPerSec;
-                  const ms = clipVisibleMs(c);
-                  cursor += ms;
-                  return (
-                    <TrackLabel
-                      key={c.id}
-                      leftPx={leftPx}
-                      widthPx={(ms / 1000) * pxPerSec}
-                      text={`${c.role === "sfx" ? "SFX" : "♪"} ${c.filename.replace(/.[^.]+$/, "")}`}
-                      title={`${c.filename}: not mixed into exports yet`}
-                      className="bg-amber-500/5 border-dashed border-amber-400/30 text-amber-200/70"
-                    />
-                  );
-                });
-              })()
+              <>
+                {musicBars.map((b) => (
+                  <TrackLabel
+                    key={b.key}
+                    leftPx={(b.startMs / 1000) * pxPerSec}
+                    widthPx={(b.lengthMs / 1000) * pxPerSec}
+                    text={`♪ ${baseName(b.clip.filename)}${b.loop ? " (loop)" : ""}`}
+                    title={`${b.clip.filename}: loops under the video, quieter while you speak`}
+                    className="bg-amber-500/10 border-amber-400/30 text-amber-200/80"
+                  />
+                ))}
+                {sfxMarks.map((m) => (
+                  <TrackLabel
+                    key={m.key}
+                    leftPx={(m.startMs / 1000) * pxPerSec}
+                    widthPx={(m.lengthMs / 1000) * pxPerSec}
+                    text="SFX"
+                    title={`${m.clip.filename} on the cut at ${formatPlaybackTime(m.cutMs / 1000)}`}
+                    className="bg-pink-500/20 border-pink-400/40 text-pink-100 z-[1]"
+                  />
+                ))}
+              </>
             )}
           </TrackRow>
         )}

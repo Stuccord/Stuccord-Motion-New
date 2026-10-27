@@ -181,7 +181,8 @@ export function MediaLibrary({
           {tab === "audio" ? (
             <>
               <p className="px-1 pb-1 text-[11px] text-neutral-500 leading-normal">
-                Music and SFX aren&apos;t mixed into exports yet.
+                Cloud exports loop your music under the video (quieter while you speak) and play an
+                SFX at each cut. Browser exports don&apos;t include them.
               </p>
               {audioClips.length === 0 ? (
                 <p className="px-1 text-[11px] text-neutral-500 leading-normal">
