@@ -31,6 +31,7 @@ import {
   type TranscriptWord,
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
+import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
 import { captureVideoFrame, thumbnailKey } from "@/lib/video-thumbnail";
 
@@ -1216,10 +1217,10 @@ function EditorPage() {
     durationMs: clipVisibleMs(c),
     offsetMs: programOffsets.get(c.id) ?? 0,
   }));
+  // The phrases the export burns in, word by word (for the live preview).
+  const captionWordPhrases = groupIntoPhrases(placeTranscripts(captionSegments, transcriptMap));
   // The same phrases the Captions tab lists, for the timeline's caption track.
-  const captionPhrases: CaptionPhrase[] = groupIntoPhrases(
-    placeTranscripts(captionSegments, transcriptMap),
-  ).map((phrase) => ({
+  const captionPhrases: CaptionPhrase[] = captionWordPhrases.map((phrase) => ({
     key: phrase[0].key,
     text: phrase.map((w) => w.text).join(" "),
     startMs: phrase[0].startMs,
@@ -1248,6 +1249,10 @@ function EditorPage() {
   }
   const inProgress =
     latestJob && ["queued", "transcribing", "planning", "rendering"].includes(latestJob.status);
+  // The AI hook from the last cloud render (shown for the first 3 seconds).
+  const renderPlan = latestJob?.edit_plan as { hook?: unknown } | null | undefined;
+  const renderHook =
+    typeof renderPlan?.hook === "string" && renderPlan.hook.trim() ? renderPlan.hook.trim() : null;
 
   const selectedClip = selectedClipId
     ? (clips.find((c) => c.id === selectedClipId) as ClipRow | undefined)
@@ -1657,7 +1662,20 @@ function EditorPage() {
             onViewModeChange={setViewMode}
             programUrl={previewUrl}
             sourceUrl={selectedClipUrl}
-            timeline={{ aRoll, bRoll, urls: clipUrls, lengthMs: clipVisibleMs }}
+            timeline={{
+              aRoll,
+              bRoll,
+              urls: clipUrls,
+              lengthMs: clipVisibleMs,
+              // Captions (when on) and the last render's AI hook, like the export.
+              renderOverlay: (timeMs) => (
+                <PreviewOverlay
+                  timeMs={timeMs}
+                  phrases={captionsEnabled ? captionWordPhrases : []}
+                  hook={renderHook}
+                />
+              ),
+            }}
             sourceIsImage={selectedIsImage}
             imageLengthMs={selectedClip ? clipVisibleMs(selectedClip) : undefined}
             selectedClipFilename={selectedClip?.filename}

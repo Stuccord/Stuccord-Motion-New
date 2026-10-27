@@ -110,3 +110,31 @@ export function groupIntoPhrases(words: TimelineWord[]): TimelineWord[][] {
   if (cur.length) phrases.push(cur);
   return phrases;
 }
+
+const HOLD_MS = 250;
+
+/**
+ * The caption on screen at `timeMs`, as the export burns it in
+ * (render-worker/server.js: buildCaptionsAss): its words, and which one is
+ * being spoken (highlighted). Each word shows until the next one starts;
+ * the last word of a phrase stays a moment longer, until the next phrase.
+ */
+export function captionAt(
+  phrases: TimelineWord[][],
+  timeMs: number,
+): { words: TimelineWord[]; active: number } | null {
+  for (let p = 0; p < phrases.length; p++) {
+    const phrase = phrases[p];
+    const nextStart = phrases[p + 1]?.[0].startMs ?? Infinity;
+    for (let i = 0; i < phrase.length; i++) {
+      const start = phrase[i].startMs;
+      const end =
+        i < phrase.length - 1
+          ? phrase[i + 1].startMs
+          : Math.min(phrase[i].endMs + HOLD_MS, nextStart);
+      if (timeMs >= start && timeMs < end) return { words: phrase, active: i };
+    }
+    if (phrase[0].startMs > timeMs) return null;
+  }
+  return null;
+}
