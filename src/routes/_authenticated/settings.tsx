@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
 import { readPrefs, savePrefs, type NotificationPrefs } from "@/lib/notification-prefs";
+import { SecuritySettings } from "@/components/settings-security";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { User, Palette, Bell, Shield, KeyRound } from "lucide-react";
@@ -134,7 +135,7 @@ function SettingsPage() {
                 <CardDescription>Password, sessions and two-factor.</CardDescription>
               </CardHeader>
               <CardContent>
-                <NotYet what="Changing your password, two-factor sign-in and deleting your account" />
+                <SecuritySettings />
               </CardContent>
             </Card>
           </TabsContent>

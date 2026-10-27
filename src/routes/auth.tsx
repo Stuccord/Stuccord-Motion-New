@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { needsCode, sendPasswordReset, verifySignInCode } from "@/lib/account-security";
 import logoUrl from "@/assets/logo.png";
 import editingDesk from "@/assets/editing-desk.jpg";
 
@@ -35,7 +36,10 @@ function AuthPage() {
   const redirectUrl = nextPath ?? "/dashboard";
 
   const [checkingSession, setCheckingSession] = useState(true);
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  // signin / signup, "forgot" (send a reset link), "code" (two-factor step).
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "code">("signin");
+  const [code, setCode] = useState("");
+  const [resetSent, setResetSent] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -47,20 +51,26 @@ function AuthPage() {
 
   useEffect(() => {
     let isMounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (isMounted) {
-        if (data.session?.user) {
-          navigate({ to: redirectUrl, replace: true });
-        } else {
+    // Signed in already: go on, unless the two-factor code is still needed.
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!isMounted) return;
+      if (data.session?.user) {
+        if (await needsCode()) {
+          setMode("code");
           setCheckingSession(false);
+        } else {
+          navigate({ to: redirectUrl, replace: true });
         }
+      } else {
+        setCheckingSession(false);
       }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user && isMounted) {
-        navigate({ to: redirectUrl, replace: true });
-      }
+      if (!session?.user || !isMounted) return;
+      void needsCode().then((need) => {
+        if (isMounted && !need) navigate({ to: redirectUrl, replace: true });
+      });
     });
 
     return () => {
@@ -81,9 +91,9 @@ function AuthPage() {
   }
 
   const perks = [
-    "5 free cinematic renders every month",
-    "Auto-captions, B-roll, and score included",
-    "Publish to TikTok, Reels & Shorts in one click",
+    "5 free exports every month",
+    "Word-by-word captions, music and B-roll",
+    "A real timeline editor in your browser",
   ];
 
   async function handleSignIn(e: React.FormEvent) {
@@ -109,6 +119,12 @@ function AuthPage() {
       }
 
       if (data.session) {
+        // Two-factor on: one more step before the studio.
+        if (await needsCode()) {
+          setMode("code");
+          setPassword("");
+          return;
+        }
         toast.success("Welcome back to Stuccord Motion!");
         navigate({ to: redirectUrl, replace: true });
       }
@@ -116,6 +132,35 @@ function AuthPage() {
       const msg = err instanceof Error ? err.message : "Failed to sign in. Please try again.";
       setErrorMessage(msg);
       toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCode(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMessage(null);
+    setLoading(true);
+    try {
+      await verifySignInCode(code);
+      toast.success("Welcome back to Stuccord Motion!");
+      navigate({ to: redirectUrl, replace: true });
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "That code didn't work.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMessage(null);
+    setLoading(true);
+    try {
+      await sendPasswordReset(email);
+      setResetSent(true);
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Couldn't send the email. Try again.");
     } finally {
       setLoading(false);
     }
@@ -205,9 +250,13 @@ function AuthPage() {
               <Sparkles className="w-3.5 h-3.5 text-primary" />
               {emailConfirmationSent
                 ? "Verify your email"
+                : mode === "code"
+                ? "Two-factor sign-in"
+                : mode === "forgot"
+                ? "Reset your password"
                 : mode === "signin"
                 ? "Welcome back"
-                : "Join 12,400+ creators"}
+                : "Free to start"}
             </div>
 
             {emailConfirmationSent ? (
@@ -241,6 +290,112 @@ function AuthPage() {
                     Back to Sign In
                   </Button>
                 </div>
+              </div>
+            ) : mode === "code" ? (
+              /* Two-factor: the code from the authenticator app */
+              <div>
+                <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+                  Enter your code
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                  Open your authenticator app and type the 6-digit code for Stuccord Motion.
+                </p>
+                {errorMessage && (
+                  <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs leading-relaxed">
+                    {errorMessage}
+                  </div>
+                )}
+                <form onSubmit={handleCode} className="space-y-4 mt-6">
+                  <Input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    autoFocus
+                    placeholder="123456"
+                    maxLength={7}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    className="h-12 text-center text-lg tracking-[0.4em] font-mono"
+                    aria-label="6-digit code"
+                    disabled={loading}
+                  />
+                  <Button type="submit" className="w-full h-11 font-medium" disabled={loading}>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continue"}
+                  </Button>
+                </form>
+                <p className="mt-6 text-sm text-muted-foreground text-center">
+                  Not you?{" "}
+                  <button
+                    type="button"
+                    className="text-foreground font-semibold hover:underline underline-offset-4"
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      setMode("signin");
+                      setCode("");
+                      setErrorMessage(null);
+                    }}
+                  >
+                    Sign in with another account
+                  </button>
+                </p>
+              </div>
+            ) : mode === "forgot" ? (
+              /* Forgot password: email a reset link */
+              <div>
+                <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+                  Reset your password
+                </h1>
+                {resetSent ? (
+                  <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
+                    If there&apos;s an account for{" "}
+                    <span className="font-semibold text-foreground">{email}</span>, we&apos;ve
+                    sent it a link to set a new password. It can take a minute to arrive; check
+                    your spam folder too.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                      We&apos;ll email you a link to set a new one.
+                    </p>
+                    {errorMessage && (
+                      <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs leading-relaxed">
+                        {errorMessage}
+                      </div>
+                    )}
+                    <form onSubmit={handleForgot} className="space-y-4 mt-6">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="reset-email" className="text-xs font-medium text-foreground">
+                          Email
+                        </Label>
+                        <Input
+                          id="reset-email"
+                          type="email"
+                          autoComplete="email"
+                          required
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="h-11"
+                          disabled={loading}
+                        />
+                      </div>
+                      <Button type="submit" className="w-full h-11 font-medium" disabled={loading}>
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send reset link"}
+                      </Button>
+                    </form>
+                  </>
+                )}
+                <p className="mt-6 text-sm text-muted-foreground text-center">
+                  <button
+                    type="button"
+                    className="text-foreground font-semibold hover:underline underline-offset-4"
+                    onClick={() => {
+                      setMode("signin");
+                      setResetSent(false);
+                      setErrorMessage(null);
+                    }}
+                  >
+                    Back to sign in
+                  </button>
+                </p>
               </div>
             ) : (
               /* Sign In / Sign Up Form */
@@ -281,9 +436,23 @@ function AuthPage() {
 
                   {/* Password */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="password" className="text-xs font-medium text-foreground">
-                      Password
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password" className="text-xs font-medium text-foreground">
+                        Password
+                      </Label>
+                      {mode === "signin" && (
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            setMode("forgot");
+                            setErrorMessage(null);
+                          }}
+                        >
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
                     <div className="relative">
                       <Input
                         id="password"
@@ -395,25 +564,13 @@ function AuthPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,color-mix(in_oklab,var(--color-primary)_30%,transparent),transparent_55%)]" />
 
         <div className="relative h-full flex flex-col justify-between p-12 text-background">
-          <div className="flex items-center gap-2 text-background/60 text-xs font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Render engine online · 2,431 shorts shipped today
-          </div>
+          <div className="text-background/60 text-xs font-medium">Stuccord Motion</div>
 
           <div className="max-w-md space-y-8">
-            <blockquote className="text-[24px] leading-[1.35] font-medium tracking-tight text-background/90">
-              &ldquo;Stuccord replaced a $4k/mo editor. I ship five shorts a week now and my retention
-              is up 38%.&rdquo;
-            </blockquote>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary grid place-items-center font-semibold text-sm text-primary-foreground shadow-sm">
-                MK
-              </div>
-              <div>
-                <div className="text-sm font-medium text-background">Maya Kaur</div>
-                <div className="text-xs text-background/55">Creator · 480K subs</div>
-              </div>
-            </div>
+            <p className="text-[24px] leading-[1.35] font-medium tracking-tight text-background/90">
+              Drop in your footage, shape it on the timeline, and export a short with captions
+              and music.
+            </p>
 
             <ul className="space-y-3 pt-6 border-t border-background/15">
               {perks.map((p) => (
@@ -428,9 +585,8 @@ function AuthPage() {
           </div>
 
           <div className="flex items-center gap-6 text-[11px] text-background/40 uppercase tracking-wider">
-            <span>SOC 2 · Type II</span>
-            <span>GDPR Ready</span>
-            <span>4K Export</span>
+            <span>9:16 · 16:9 · 1:1</span>
+            <span>Up to 4K in the browser</span>
           </div>
         </div>
       </div>
