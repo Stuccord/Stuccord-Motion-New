@@ -48,6 +48,7 @@ import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { FPS, formatFrameTimecode } from "./timecode";
 import { thumbnailKey } from "@/lib/video-thumbnail";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
+import { layoutTrack } from "@/lib/timeline-layout";
 
 /* ---------- shared types ---------- */
 /** A track media can be added to, and where on it (null: at the end). */
@@ -658,24 +659,15 @@ function TimelineTracks({
   // select a clip.
   const suppressClick = useRef(false);
 
+  // Where each clip sits on its track (placed, or right after the one before).
   const aLayout = useMemo(() => {
-    const offsets = new Map<string, number>();
-    let cur = 0;
-    for (const c of aRoll) {
-      offsets.set(c.id, cur);
-      cur += clipVisibleMs(c);
-    }
-    return { offsets, totalMs: Math.max(cur, 10000) };
+    const { starts, endMs } = layoutTrack(aRoll, clipVisibleMs);
+    return { offsets: starts, endMs, totalMs: Math.max(endMs, 10000) };
   }, [aRoll]);
 
   const bLayout = useMemo(() => {
-    const offsets = new Map<string, number>();
-    let cur = 0;
-    for (const c of bRoll) {
-      offsets.set(c.id, cur);
-      cur += clipVisibleMs(c);
-    }
-    return { offsets, totalMs: Math.max(cur, 5000) };
+    const { starts, endMs } = layoutTrack(bRoll, clipVisibleMs);
+    return { offsets: starts, endMs, totalMs: Math.max(endMs, 5000) };
   }, [bRoll]);
 
   const totalMs = Math.max(aLayout.totalMs, bLayout.totalMs);
@@ -684,7 +676,7 @@ function TimelineTracks({
   // or the B-roll when there is no A-roll). B-roll past it is cut.
   const mainClips = aRoll.length > 0 ? aRoll : bRoll;
   const mainLayout = aRoll.length > 0 ? aLayout : bLayout;
-  const programEndMs = mainClips.reduce((sum, c) => sum + clipVisibleMs(c), 0);
+  const programEndMs = mainLayout.endMs;
   // The music row as the export mixes it: music files one after another,
   // looped to the end of the video; one SFX per cut, cycling through files.
   const musicFiles = audioClips.filter((c) => c.role !== "sfx");
@@ -816,7 +808,8 @@ function TimelineTracks({
     }
     if (!target) return onSeekMs("", 0, ms);
     const start = layout.offsets.get(target.id) ?? 0;
-    onSeekMs(target.id, (target.trim_in_ms ?? 0) + (ms - start), ms);
+    // In a gap before the clip: its first frame.
+    onSeekMs(target.id, (target.trim_in_ms ?? 0) + Math.max(0, ms - start), ms);
   }
 
   // Click or drag anywhere along the ruler, or on empty track space, to move
@@ -940,10 +933,7 @@ function TimelineTracks({
     lastFitRequest.current = fitRequest;
     const el = scrollRef.current;
     if (!el) return;
-    const contentMs = Math.max(
-      aRoll.reduce((sum, c) => sum + clipVisibleMs(c), 0),
-      bRoll.reduce((sum, c) => sum + clipVisibleMs(c), 0),
-    );
+    const contentMs = Math.max(aLayout.endMs, bLayout.endMs);
     if (contentMs <= 0) return;
     const visible = el.clientWidth - gutterWidth(el) - TRACK_TAIL_PX;
     const next = clampZoom((visible / contentMs) * 1000);
@@ -1841,7 +1831,7 @@ export function TimelinePanel({
 }: TimelinePanelProps) {
   // Length of the exported video: the A-roll, or the B-roll when there's no A-roll.
   const mainTrack = aRoll.length > 0 ? aRoll : bRoll;
-  const programMs = mainTrack.reduce((sum, c) => sum + clipVisibleMs(c), 0);
+  const programMs = layoutTrack(mainTrack, clipVisibleMs).endMs;
   // Bumped by the Fit button; the tracks measure their width and zoom to fit.
   const [fitRequest, setFitRequest] = useState(0);
   // Timecode as frames (0:00:05:12, like After Effects) or seconds (00:05.4).

@@ -15,6 +15,8 @@ export type ClipRow = {
   trim_in_ms?: number | null;
   trim_out_ms?: number | null;
   parent_clip_id?: string | null;
+  /** Where the clip starts on the timeline (ms); null: right after the clip before it. */
+  start_ms?: number | null;
 };
 
 export type ProjectRow = {

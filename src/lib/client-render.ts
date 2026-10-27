@@ -7,6 +7,7 @@
 // clip's trim_in / trim_out and fits each clip to the frame like the cloud export.
 
 import { IMAGE_DEFAULT_MS, IMAGE_ZOOM, isImageFilename } from "@/lib/media-kind";
+import { layoutTrack } from "@/lib/timeline-layout";
 
 export type BrowserClipInput = {
   id: string;
@@ -17,7 +18,25 @@ export type BrowserClipInput = {
   trim_in_ms: number | null;
   trim_out_ms: number | null;
   duration_ms: number | null;
+  /** Where it starts on its track (ms); null follows the clip before it. */
+  start_ms?: number | null;
 };
+
+/** A clip's length on the timeline, from its trims. */
+function clipLengthMs(c: BrowserClipInput): number {
+  const inMs = c.trim_in_ms ?? 0;
+  if (isImageFilename(c.filename ?? "")) return (c.trim_out_ms ?? IMAGE_DEFAULT_MS) - inMs;
+  const outMs = c.trim_out_ms ?? c.duration_ms ?? inMs + 5000;
+  return Math.max(0, outMs - inMs);
+}
+
+/** Resolves on the next animation frame once `done()` is true. */
+function waitFor(done: () => boolean): Promise<void> {
+  return new Promise((resolve) => {
+    const tick = () => (done() ? resolve() : requestAnimationFrame(tick));
+    tick();
+  });
+}
 
 export type RenderOptions = {
   clips: BrowserClipInput[];
@@ -240,16 +259,20 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   });
   recorder.start(250);
 
-  const plannedTotalMs = mainClips.reduce((s, c) => {
-    const inMs = c.trim_in_ms ?? 0;
-    const outMs = c.trim_out_ms ?? c.duration_ms ?? inMs + 5000;
-    return s + Math.max(0, outMs - inMs);
-  }, 0);
+  // Where each clip starts on its track (placed, or right after the one
+  // before), like the editor timeline and the cloud export.
+  const mainLayout = layoutTrack(mainClips, clipLengthMs);
+  const brollLayout = layoutTrack(brollClips, clipLengthMs);
+  const plannedTotalMs = mainLayout.endMs;
 
   // One draw loop composites whatever is currently playing on each track.
   let currentMain: LoadedClip | null = null;
   let currentBroll: LoadedClip | null = null;
   let drawing = true;
+  // A gap in the main track: black (and silence) until the next clip.
+  let inGap = false;
+  // How far the main track has got (ms of recording); B-roll waits for it.
+  let mainPosMs = 0;
   // A tenth-size canvas for the blurred background: drawn small, then
   // stretched back up, which blurs it without ctx.filter (Safari lacks it).
   const blurCanvas = document.createElement("canvas");
@@ -303,7 +326,10 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   const draw = () => {
     if (!drawing) return;
     // While the next main clip loads, keep its predecessor's last frame on screen.
-    if (currentMain && isReady(currentMain)) {
+    if (inGap) {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, width, height);
+    } else if (currentMain && isReady(currentMain)) {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, width, height);
       drawFit(currentMain);
@@ -313,7 +339,8 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   };
   requestAnimationFrame(draw);
 
-  // B-roll track: runs alongside the main track, starting with its first clip.
+  // B-roll track: runs alongside the main track, each clip from its own
+  // start time (cut when the main track ends).
   let mainDone = false;
   let brollError: unknown = null;
   let mainStarted: () => void = () => {};
@@ -324,6 +351,8 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
     for (let i = 0; i < brollClips.length && !mainDone; i++) {
       const clip = await loadClip(brollClips[i], `B-roll clip ${i + 1}`, true);
       if (i === 0) await mainStartedP;
+      const startMs = brollLayout.starts.get(brollClips[i].id) ?? 0;
+      await waitFor(() => mainDone || mainPosMs >= startMs);
       if (mainDone) {
         releaseClip(clip);
         break;
@@ -344,6 +373,21 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
     for (let i = 0; i < mainClips.length; i++) {
       const clip = await loadClip(mainClips[i], `clip ${i + 1}`, false);
       if (brollError) throw brollError;
+      if (i === 0) mainStarted();
+
+      // A gap before this clip (it was placed later): black and silence.
+      const gapMs = (mainLayout.starts.get(mainClips[i].id) ?? elapsedMs) - elapsedMs;
+      if (gapMs > 30) {
+        inGap = true;
+        const gapStart = performance.now();
+        await waitFor(() => {
+          mainPosMs = elapsedMs + (performance.now() - gapStart);
+          return performance.now() - gapStart >= gapMs || brollError != null;
+        });
+        inGap = false;
+        elapsedMs += gapMs;
+        realDurationMs += gapMs;
+      }
 
       // An image has no sound: the recording stays silent while it shows.
       let srcNode: MediaElementAudioSourceNode | null = null;
@@ -357,11 +401,11 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       }
 
       currentMain = clip;
-      if (i === 0) mainStarted();
       const wall = await playUntilOut(
         clip,
         () => brollError != null,
         (wallMs) => {
+          mainPosMs = elapsedMs + wallMs;
           const total = plannedTotalMs > 0 ? plannedTotalMs : clip.targetMs * mainClips.length;
           const pct = Math.min(94, 5 + Math.round(((elapsedMs + wallMs) / total) * 88));
           opts.onProgress?.(pct, `Rendering clip ${i + 1} of ${mainClips.length}`);
@@ -369,6 +413,7 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       );
       elapsedMs += wall;
       realDurationMs += wall;
+      mainPosMs = elapsedMs;
 
       if (srcNode) {
         try {

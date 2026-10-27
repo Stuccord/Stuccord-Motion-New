@@ -42,6 +42,8 @@ async function insertClipAfter(
     ...fields,
     id: crypto.randomUUID(),
     ordinal: src.ordinal + 1,
+    // Follows the clip it was split from or copied (no start of its own).
+    ...("start_ms" in src ? { start_ms: null } : {}),
     parent_clip_id: src.parent_clip_id ?? src.id,
     created_at: new Date().toISOString(),
   };
@@ -826,6 +828,8 @@ export const submitRender = createServerFn({ method: "POST" })
             duration_ms: c.duration_ms ?? null,
             trim_in_ms: c.trim_in_ms ?? 0,
             trim_out_ms: c.trim_out_ms ?? null,
+            // Where it starts on the timeline; null follows the clip before it.
+            start_ms: c.start_ms ?? null,
             parent_clip_id: c.parent_clip_id ?? null,
             // Words in source-file time, or null when not transcribed yet.
             transcript_words: savedWords.get(c.storage_path) ?? null,
@@ -999,7 +1003,7 @@ export const startBrowserRender = createServerFn({ method: "POST" })
 
     const { data: clips, error: cErr } = await context.supabase
       .from("clips")
-      .select("id, storage_path, role, ordinal, trim_in_ms, trim_out_ms, duration_ms, filename")
+      .select("*")
       .eq("project_id", data.project_id)
       .order("ordinal", { ascending: true });
     if (cErr) throw new Error(cErr.message);

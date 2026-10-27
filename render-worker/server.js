@@ -247,6 +247,47 @@ function kenBurnsFilter(w, h, lengthS) {
   return `scale=w='trunc(${w}*(1+${IMAGE_ZOOM}*t/${len})/2)*2':h=-2:eval=frame,crop=${w}:${h}`;
 }
 
+// Where clips sit on a track, matching the app (src/lib/timeline-layout.ts):
+// a clip with start_ms sits there; one without follows the clip before it.
+// Clips are in order and never overlap (one that would start inside the
+// previous one starts at its end). Returns each clip's start in ms.
+function layoutStarts(clips, lengthsMs) {
+  const starts = [];
+  let end = 0;
+  clips.forEach((c, i) => {
+    const want = c.start_ms == null ? end : Number(c.start_ms);
+    const start = Math.max(end, Math.round(Number.isFinite(want) ? want : end));
+    starts.push(start);
+    end = start + Math.max(0, lengthsMs[i] ?? 0);
+  });
+  return starts;
+}
+
+// A clip's length on the timeline from its trims (used when its rendered
+// file's length can't be read).
+function trimmedLengthMs(clip) {
+  const inMs = Math.max(0, Number(clip.trim_in_ms ?? 0));
+  if (isImageClip(clip)) return Math.max(100, Number(clip.trim_out_ms ?? IMAGE_DEFAULT_MS) - inMs);
+  const outMs = clip.trim_out_ms ?? clip.duration_ms;
+  return outMs != null ? Math.max(0, Number(outMs) - inMs) : 0;
+}
+
+// Black and silence for a gap in the main track, encoded like the
+// normalized clips so the track still joins by copying streams.
+async function makeGapClip(out, ms, w, h) {
+  await run(ffmpegPath, [
+    "-y",
+    "-f", "lavfi", "-i", `color=c=black:s=${w}x${h}:r=30`,
+    "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+    "-t", (ms / 1000).toFixed(3),
+    "-vf", "setsar=1",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+    "-movflags", "+faststart",
+    out,
+  ]);
+}
+
 function escapeDrawtext(text) {
   return String(text)
     .replace(/\\/g, "\\\\")
@@ -371,16 +412,20 @@ function musicGain(volume) {
  * ffmpeg arguments that keep the video stream of `videoPath` and replace its
  * audio with a mix of:
  *  - the voice (the video's own audio; silence if it has none),
- *  - the music files played one after another from 0:00, looped to the end
- *    of the video, faded in and out, and ducked while the voice is speaking,
- *  - an SFX at each cut, taking turns when there are several SFX files.
+ *  - the music, faded in and out and ducked while the voice is speaking:
+ *    musicPlan { mode: "sequence", paths } plays the files one after another
+ *    from 0:00, looped to the end of the video; { mode: "segments",
+ *    segments: [{ path, startMs, endMs }] } loops each file over its own span,
+ *  - sfxEvents: [{ path, atMs }], each SFX played once at its time.
  */
-function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPaths, sfxPaths, cutTimesMs, volume, out }) {
+function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPlan, sfxEvents, volume, out }) {
   const D = (durationMs / 1000).toFixed(3);
   const inputs = ["-i", videoPath];
   const graph = [];
   const mixInputs = [];
-  const hasMusic = musicPaths.length > 0;
+  const musicPaths = musicPlan.mode === "sequence" ? musicPlan.paths : [];
+  const segments = musicPlan.mode === "segments" ? musicPlan.segments : [];
+  const hasMusic = musicPaths.length > 0 || segments.length > 0;
 
   // Voice: the video's audio, or silence the length of the video.
   if (hasVoice) {
@@ -390,24 +435,50 @@ function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPaths, sfxPat
   }
   mixInputs.push("[voice]");
 
-  // Music: joined, looped to the video's length, faded, ducked under the voice.
+  // Music: looped to fill, faded, ducked under the voice.
   if (hasMusic) {
     const first = 1;
-    musicPaths.forEach((p, i) => {
-      inputs.push("-i", p);
-      graph.push(`[${first + i}:a]${AUDIO_FMT}[m${i}]`);
-    });
-    const joined = musicPaths.map((_, i) => `[m${i}]`).join("");
-    graph.push(
-      musicPaths.length > 1
-        ? `${joined}concat=n=${musicPaths.length}:v=0:a=1[mjoined]`
-        : `[m0]anull[mjoined]`,
-    );
     const fadeOutStart = Math.max(0, durationMs / 1000 - MUSIC_FADE_OUT_S).toFixed(3);
+    if (musicPaths.length) {
+      // One after another from 0:00, the whole run looped.
+      musicPaths.forEach((p, i) => {
+        inputs.push("-i", p);
+        graph.push(`[${first + i}:a]${AUDIO_FMT}[m${i}]`);
+      });
+      const joined = musicPaths.map((_, i) => `[m${i}]`).join("");
+      graph.push(
+        musicPaths.length > 1
+          ? `${joined}concat=n=${musicPaths.length}:v=0:a=1[mjoined]`
+          : `[m0]anull[mjoined]`,
+      );
+      graph.push(
+        `[mjoined]aloop=loop=-1:size=2147483647,atrim=0:${D},asetpts=N/SR/TB,` +
+          `afade=t=in:st=0:d=${MUSIC_FADE_IN_S}[mbus]`,
+      );
+    } else {
+      // Each song over its own span, looped to fill it, with short fades
+      // where one song hands over to the next.
+      segments.forEach((seg, i) => {
+        inputs.push("-i", seg.path);
+        const len = ((seg.endMs - seg.startMs) / 1000).toFixed(3);
+        const fade = Math.min(MUSIC_FADE_IN_S, (seg.endMs - seg.startMs) / 4000).toFixed(3);
+        const outAt = Math.max(0, (seg.endMs - seg.startMs) / 1000 - Number(fade)).toFixed(3);
+        graph.push(
+          `[${first + i}:a]${AUDIO_FMT},aloop=loop=-1:size=2147483647,atrim=0:${len},` +
+            `asetpts=N/SR/TB,afade=t=in:st=0:d=${fade},afade=t=out:st=${outAt}:d=${fade},` +
+            `adelay=${Math.round(seg.startMs)}:all=1[ms${i}]`,
+        );
+      });
+      graph.push(
+        segments.length > 1
+          ? `${segments.map((_, i) => `[ms${i}]`).join("")}amix=inputs=${segments.length}:` +
+              "duration=longest:dropout_transition=0:normalize=0[mseq]"
+          : "[ms0]anull[mseq]",
+      );
+      graph.push(`[mseq]apad,atrim=0:${D},asetpts=N/SR/TB[mbus]`);
+    }
     graph.push(
-      `[mjoined]aloop=loop=-1:size=2147483647,atrim=0:${D},asetpts=N/SR/TB,` +
-        `volume=${musicGain(volume)},afade=t=in:st=0:d=${MUSIC_FADE_IN_S},` +
-        `afade=t=out:st=${fadeOutStart}:d=${MUSIC_FADE_OUT_S}` +
+      `[mbus]volume=${musicGain(volume)},afade=t=out:st=${fadeOutStart}:d=${MUSIC_FADE_OUT_S}` +
         (hasVoice ? "[mraw]" : "[music]"),
     );
     if (hasVoice) {
@@ -420,16 +491,14 @@ function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPaths, sfxPat
     mixInputs.push("[music]");
   }
 
-  // SFX: one at each cut, cycling through the SFX files.
-  if (sfxPaths.length > 0) {
-    const firstSfx = 1 + musicPaths.length;
-    cutTimesMs.slice(0, MAX_SFX).forEach((cutMs, k) => {
-      inputs.push("-i", sfxPaths[k % sfxPaths.length]);
-      const at = Math.max(0, Math.round(cutMs - SFX_LEAD_MS));
-      graph.push(`[${firstSfx + k}:a]${AUDIO_FMT},volume=${SFX_GAIN},adelay=${at}:all=1[s${k}]`);
-      mixInputs.push(`[s${k}]`);
-    });
-  }
+  // SFX: each one once, at its time.
+  const firstSfx = 1 + musicPaths.length + segments.length;
+  sfxEvents.slice(0, MAX_SFX).forEach((ev, k) => {
+    inputs.push("-i", ev.path);
+    const at = Math.max(0, Math.round(ev.atMs));
+    graph.push(`[${firstSfx + k}:a]${AUDIO_FMT},volume=${SFX_GAIN},adelay=${at}:all=1[s${k}]`);
+    mixInputs.push(`[s${k}]`);
+  });
 
   graph.push(
     `${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=first:dropout_transition=0:normalize=0,` +
@@ -789,14 +858,29 @@ async function runRender(job) {
       ]);
       return out;
     };
-    const concatOut = await concatTrack(normalized.slice(0, mainClips.length), "concat");
-
     // Real length of each main clip as rendered (trimmed and normalized), for
-    // placing caption words and SFX. null where it couldn't be read.
+    // placing clips, caption words and SFX. null where it couldn't be read.
     const mainDurationsMs = [];
     for (let i = 0; i < mainClips.length; i++) {
       mainDurationsMs.push(await probeDurationMs(normalized[i]));
     }
+    // Where each main clip starts (placed, or right after the one before);
+    // gaps between them are black and silent.
+    const mainLengthsMs = mainClips.map((c, i) => mainDurationsMs[i] ?? trimmedLengthMs(c));
+    const mainStartsMs = layoutStarts(mainClips, mainLengthsMs);
+    const mainParts = [];
+    let mainCursor = 0;
+    for (let i = 0; i < mainClips.length; i++) {
+      const gapMs = mainStartsMs[i] - mainCursor;
+      if (gapMs >= 34) {
+        const gapOut = path.join(workdir, `gap_${i}.mp4`);
+        await makeGapClip(gapOut, gapMs, w, h);
+        mainParts.push(gapOut);
+      }
+      mainParts.push(normalized[i]);
+      mainCursor = mainStartsMs[i] + mainLengthsMs[i];
+    }
+    const concatOut = await concatTrack(mainParts, "concat");
 
     // 4a. Captions words (best-effort; skipped when the user turned captions
     //     off). Transcripts belong to whole source files, in source time, so
@@ -882,7 +966,6 @@ async function runRender(job) {
       // Place each main clip's words at its position in the final video,
       // using the real length of its normalized (trimmed) file.
       const segments = [];
-      let offsetMs = 0;
       for (let i = 0; i < mainClips.length; i++) {
         const durationMs = mainDurationsMs[i];
         if (durationMs == null) {
@@ -893,9 +976,8 @@ async function runRender(job) {
           words: sourceWords.get(sourceKey(mainClips[i])) ?? [],
           trimInMs: Math.max(0, Math.round(Number(mainClips[i].trim_in_ms ?? 0))),
           durationMs,
-          offsetMs,
+          offsetMs: mainStartsMs[i],
         });
-        offsetMs += durationMs;
       }
       captionWords = placeWordsOnTimeline(segments);
 
@@ -908,21 +990,39 @@ async function runRender(job) {
       };
     }
 
-    // 4b. Overlay the B-roll track (video only). eof_action=pass shows the
-    //     A-roll again once the B-roll runs out, and the output ends with the
-    //     A-roll, so B-roll past that point is cut.
+    // 4b. Overlay the B-roll (video only), each clip at its own time on its
+    //     track (placed, or right after the one before). The output ends
+    //     with the main track, so B-roll past that point is cut.
     let composedOut = concatOut;
     if (brollClips.length) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 75,
         stage_message: "Overlaying B-roll",
       });
-      const brollOut = await concatTrack(normalized.slice(mainClips.length), "broll", ["-an"]);
+      const brollFiles = normalized.slice(mainClips.length);
+      const brollLengthsMs = [];
+      for (let i = 0; i < brollClips.length; i++) {
+        brollLengthsMs.push((await probeDurationMs(brollFiles[i])) ?? trimmedLengthMs(brollClips[i]));
+      }
+      const brollStartsMs = layoutStarts(brollClips, brollLengthsMs);
+      const inputs = ["-i", concatOut];
+      const graph = [];
+      let last = "0:v";
+      brollFiles.forEach((file, i) => {
+        inputs.push("-i", file);
+        const startS = (brollStartsMs[i] / 1000).toFixed(3);
+        const endS = ((brollStartsMs[i] + brollLengthsMs[i]) / 1000).toFixed(3);
+        graph.push(`[${i + 1}:v]setpts=PTS-STARTPTS+${startS}/TB[b${i}]`);
+        graph.push(
+          `[${last}][b${i}]overlay=eof_action=pass:enable='between(t,${startS},${endS})'[v${i}]`,
+        );
+        last = `v${i}`;
+      });
       const overlayOut = path.join(workdir, "overlay.mp4");
       await run(ffmpegPath, [
-        "-y", "-i", concatOut, "-i", brollOut,
-        "-filter_complex", "[0:v][1:v]overlay=eof_action=pass[v]",
-        "-map", "[v]", "-map", "0:a?",
+        "-y", ...inputs,
+        "-filter_complex", graph.join(";"),
+        "-map", `[${last}]`, "-map", "0:a?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
         "-c:a", "copy", "-movflags", "+faststart",
         overlayOut,
@@ -957,14 +1057,36 @@ async function runRender(job) {
 
         const video = await probeMedia(composedOut);
         if (video.durationMs == null) throw new Error("could not read the video length");
-        // Cuts: where each main clip after the first starts.
-        const cutTimesMs = [];
-        let at = 0;
-        for (let i = 0; i < mainDurationsMs.length - 1; i++) {
-          if (mainDurationsMs[i] == null) break;
-          at += mainDurationsMs[i];
-          cutTimesMs.push(at);
+
+        // Music: untouched projects keep the songs one after another from
+        // 0:00, looped to the end. Once any song is placed, each one starts
+        // at its time and loops until the next song (or the end).
+        let musicPlan = { mode: "sequence", paths: musicPaths };
+        if (musicClips.some((c) => c.start_ms != null)) {
+          const lengths = [];
+          for (const p of musicPaths) lengths.push((await probeDurationMs(p)) ?? 0);
+          const starts = layoutStarts(musicClips, lengths);
+          const segments = [];
+          starts.forEach((startMs, i) => {
+            const endMs = Math.min(video.durationMs, starts[i + 1] ?? video.durationMs);
+            if (endMs - startMs >= 100) segments.push({ path: musicPaths[i], startMs, endMs });
+          });
+          musicPlan = { mode: "segments", segments };
         }
+
+        // SFX: one with no start plays on every cut (where each main clip
+        // after the first starts), taking turns with the others; a placed
+        // one plays once at its time.
+        const autoSfx = sfxPaths.filter((_, i) => sfxClips[i].start_ms == null);
+        const sfxEvents = [];
+        if (autoSfx.length) {
+          mainStartsMs.slice(1).forEach((cutMs, k) => {
+            sfxEvents.push({ path: autoSfx[k % autoSfx.length], atMs: cutMs - SFX_LEAD_MS });
+          });
+        }
+        sfxClips.forEach((c, i) => {
+          if (c.start_ms != null) sfxEvents.push({ path: sfxPaths[i], atMs: Number(c.start_ms) });
+        });
 
         const mixedOut = path.join(workdir, "mixed.mp4");
         await run(
@@ -973,9 +1095,8 @@ async function runRender(job) {
             videoPath: composedOut,
             hasVoice: video.hasAudio,
             durationMs: video.durationMs,
-            musicPaths,
-            sfxPaths,
-            cutTimesMs,
+            musicPlan,
+            sfxEvents: sfxEvents.filter((e) => e.atMs < video.durationMs),
             volume: job.music?.volume,
             out: mixedOut,
           }),

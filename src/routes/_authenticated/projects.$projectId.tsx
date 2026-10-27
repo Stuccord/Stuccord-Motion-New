@@ -127,6 +127,7 @@ import {
 } from "@/components/editor";
 import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
 import { FPS, snapToFrame } from "@/components/editor/timecode";
+import { layoutTrack } from "@/lib/timeline-layout";
 import {
   IMAGE_DEFAULT_MS,
   IMAGE_MAX_MS,
@@ -178,6 +179,7 @@ type ClipRow = {
   trim_in_ms?: number | null;
   trim_out_ms?: number | null;
   parent_clip_id?: string | null;
+  start_ms?: number | null;
 };
 
 /** Effective visible length of a clip in ms (falls back to a display default) */
@@ -962,6 +964,7 @@ function EditorPage() {
             trim_in_ms: c.trim_in_ms,
             trim_out_ms: c.trim_out_ms,
             duration_ms: c.duration_ms,
+            start_ms: c.start_ms ?? null,
           })),
           width: dims.w * scale,
           height: dims.h * scale,
@@ -1027,23 +1030,20 @@ function EditorPage() {
   );
 
   // Where each clip starts in the rendered program, matching the export and the
-  // timeline: A-roll back to back from 0:00, and B-roll back to back from 0:00
-  // on its own track. With no A-roll, the B-roll is the main track.
+  // timeline: each track (A-roll, B-roll) laid out on its own from 0:00, a
+  // clip at its placed time or right after the one before (timeline-layout).
+  // With no A-roll, the B-roll is the main track.
   const hasMainTrackClips = videoClipsForHooks.some((c) => c.role !== "broll");
   const programOffsets = useMemo(() => {
-    const offsets = new Map<string, number>();
-    let mainCursor = 0;
-    let brollCursor = 0;
-    for (const c of videoClipsForHooks) {
-      if (c.role === "broll") {
-        offsets.set(c.id, brollCursor);
-        brollCursor += clipVisibleMs(c);
-      } else {
-        offsets.set(c.id, mainCursor);
-        mainCursor += clipVisibleMs(c);
-      }
-    }
-    return offsets;
+    const main = layoutTrack(
+      videoClipsForHooks.filter((c) => c.role !== "broll"),
+      clipVisibleMs,
+    );
+    const broll = layoutTrack(
+      videoClipsForHooks.filter((c) => c.role === "broll"),
+      clipVisibleMs,
+    );
+    return new Map([...main.starts, ...broll.starts]);
   }, [videoClipsForHooks]);
 
   // The main player shows either the rendered program or the selected clip's

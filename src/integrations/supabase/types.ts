@@ -25,6 +25,7 @@ export type Database = {
           project_id: string
           role: Database["public"]["Enums"]["clip_role"]
           size_bytes: number | null
+          start_ms: number | null
           storage_path: string
           trim_in_ms: number
           trim_out_ms: number | null
@@ -40,6 +41,7 @@ export type Database = {
           project_id: string
           role?: Database["public"]["Enums"]["clip_role"]
           size_bytes?: number | null
+          start_ms?: number | null
           storage_path: string
           trim_in_ms?: number
           trim_out_ms?: number | null
@@ -55,6 +57,7 @@ export type Database = {
           project_id?: string
           role?: Database["public"]["Enums"]["clip_role"]
           size_bytes?: number | null
+          start_ms?: number | null
           storage_path?: string
           trim_in_ms?: number
           trim_out_ms?: number | null
