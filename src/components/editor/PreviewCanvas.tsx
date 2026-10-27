@@ -1,11 +1,13 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
-import { MonitorPlay, Sparkles, ChevronLeft, ChevronRight, Loader2, Film, SplitSquareVertical } from "lucide-react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MonitorPlay, Sparkles, ChevronLeft, ChevronRight, Loader2, Film, SplitSquareVertical, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AspectRatio, ViewMode } from "./types";
 import { PlaybackControls } from "./PlaybackControls";
 
 interface PreviewCanvasProps {
   aspectRatio: AspectRatio;
+  /** Switches the project's shape (offered when the shown clip doesn't match). */
+  onAspectRatioChange?: (ratio: AspectRatio) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   programUrl: string | null;
@@ -35,6 +37,7 @@ interface PreviewCanvasProps {
 
 export function PreviewCanvas({
   aspectRatio,
+  onAspectRatioChange,
   viewMode,
   onViewModeChange,
   programUrl,
@@ -106,6 +109,89 @@ export function PreviewCanvas({
       : viewMode === "source"
       ? sourceUrl || programUrl
       : programUrl;
+
+  // The shown video's own shape (after phone rotation), once it has loaded.
+  const [clipSize, setClipSize] = useState<{ src: string; w: number; h: number } | null>(null);
+  const shownSize =
+    clipSize && clipSize.src === activeVideoSrc && clipSize.w > 0 && clipSize.h > 0
+      ? clipSize
+      : null;
+  const clipRatio = shownSize ? shownSize.w / shownSize.h : null;
+  // Same rule as the exports: (nearly) the frame's shape fills it; others are
+  // shown whole over a blurred copy.
+  const mismatched = clipRatio != null && Math.abs(Math.log(clipRatio / ratio)) >= 0.03;
+  const blurBackground = mismatched && viewMode !== "compare";
+
+  // The blurred copy: the video drawn into a tiny canvas every frame, then
+  // stretched and blurred by CSS. Cheap, and always in step with the video.
+  const bgRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = bgRef.current;
+    const video = videoRef.current;
+    const g = canvas?.getContext("2d");
+    if (!blurBackground || !canvas || !video || !g) return;
+    const drawFrame = () => {
+      if (video.readyState < 2 || !video.videoWidth) return;
+      const s = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+      const dw = video.videoWidth * s;
+      const dh = video.videoHeight * s;
+      try {
+        g.drawImage(video, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
+      } catch {
+        /* frame not ready */
+      }
+    };
+    // Every frame while playing (or until the first frame is ready); once
+    // whenever a paused frame changes.
+    let raf = 0;
+    const loop = () => {
+      drawFrame();
+      if (!video.paused || video.readyState < 2) raf = requestAnimationFrame(loop);
+    };
+    const start = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(loop);
+    };
+    const events = ["play", "seeked", "loadeddata", "canplay"] as const;
+    events.forEach((ev) => video.addEventListener(ev, start));
+    start();
+    // Where supported, also draw each frame the browser actually shows: the
+    // first frame can't be copied until it has been shown.
+    let frameHandle: number | null = null;
+    const onFrame = () => {
+      drawFrame();
+      frameHandle = video.requestVideoFrameCallback(onFrame);
+    };
+    if ("requestVideoFrameCallback" in video) {
+      frameHandle = video.requestVideoFrameCallback(onFrame);
+    }
+    return () => {
+      cancelAnimationFrame(raf);
+      events.forEach((ev) => video.removeEventListener(ev, start));
+      if (frameHandle != null) video.cancelVideoFrameCallback(frameHandle);
+    };
+  }, [blurBackground, activeVideoSrc, videoRef]);
+
+  // Suggest the project shape closest to the shown clip's, unless dismissed.
+  const suggestedRatio: AspectRatio | null =
+    clipRatio != null && onAspectRatioChange
+      ? (["9:16", "1:1", "16:9"] as const).reduce((best, r) => {
+          const [w, h] = r.split(":").map(Number);
+          const [bw, bh] = best.split(":").map(Number);
+          return Math.abs(Math.log(clipRatio / (w / h))) < Math.abs(Math.log(clipRatio / (bw / bh)))
+            ? r
+            : best;
+        }, aspectRatio)
+      : null;
+  const [dismissedHints, setDismissedHints] = useState<string[]>([]);
+  const hintKey = `${aspectRatio}->${suggestedRatio}`;
+  const showShapeHint =
+    suggestedRatio != null &&
+    suggestedRatio !== aspectRatio &&
+    viewMode !== "compare" &&
+    !dismissedHints.includes(hintKey);
+  const clipShapeWord =
+    suggestedRatio === "9:16" ? "vertical" : suggestedRatio === "16:9" ? "horizontal" : "square";
 
   const canCompare = Boolean(programUrl && sourceUrl);
   const hasVideo = Boolean(activeVideoSrc);
@@ -270,17 +356,60 @@ export function PreviewCanvas({
                 </div>
               </>
             ) : (
-              <video
-                ref={videoRef as React.RefObject<HTMLVideoElement>}
-                key={activeVideoSrc!}
-                src={activeVideoSrc!}
-                className="w-full h-full object-contain bg-black"
-                {...playbackEvents}
-                onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime)}
-                onLoadedMetadata={(e) => onLoadedMetadata?.(e.currentTarget.duration || 0)}
-                muted={muted}
-                playsInline
-              />
+              <>
+                {blurBackground && (
+                  <canvas
+                    ref={bgRef}
+                    aria-hidden
+                    width={ratio >= 1 ? 64 : Math.round(64 * ratio)}
+                    height={ratio >= 1 ? Math.round(64 / ratio) : 64}
+                    className="absolute inset-0 w-full h-full scale-110 blur-xl brightness-75 pointer-events-none"
+                  />
+                )}
+                <video
+                  ref={videoRef as React.RefObject<HTMLVideoElement>}
+                  key={activeVideoSrc!}
+                  src={activeVideoSrc!}
+                  className={cn(
+                    "relative w-full h-full object-contain",
+                    blurBackground ? "bg-transparent" : "bg-black",
+                  )}
+                  {...playbackEvents}
+                  onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime)}
+                  onLoadedMetadata={(e) => {
+                    const v = e.currentTarget;
+                    setClipSize({ src: activeVideoSrc!, w: v.videoWidth, h: v.videoHeight });
+                    onLoadedMetadata?.(v.duration || 0);
+                  }}
+                  muted={muted}
+                  playsInline
+                />
+              </>
+            )}
+
+            {/* The clip's shape doesn't match the project: offer to switch */}
+            {showShapeHint && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-1rem)] flex items-center gap-2 rounded-md border border-white/10 bg-black/75 backdrop-blur px-2.5 py-1.5 text-[11px] text-neutral-200 shadow-lg">
+                <span className="truncate">
+                  This clip is {clipShapeWord}. Switch the project to {suggestedRatio}?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onAspectRatioChange?.(suggestedRatio!)}
+                  className="shrink-0 rounded bg-violet-600 px-2 py-0.5 font-medium text-white hover:bg-violet-500"
+                >
+                  Switch to {suggestedRatio}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDismissedHints((d) => [...d, hintKey])}
+                  className="shrink-0 rounded p-0.5 text-neutral-400 hover:text-white"
+                  aria-label="Keep the current shape"
+                  title="Keep the current shape"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
             )}
           </div>
         ) : (

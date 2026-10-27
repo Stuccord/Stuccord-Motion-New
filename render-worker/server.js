@@ -208,6 +208,31 @@ function coverFilter(w, h) {
   return `scale=w=${w}:h=${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30`;
 }
 
+// The whole clip in the middle of the frame, over a blurred, zoomed, slightly
+// darker copy of itself that fills the rest (e.g. a vertical phone clip in a
+// 16:9 video). The copy is blurred at a tenth of the size, which is cheap.
+function blurFillFilter(w, h) {
+  const bw = Math.round(w / 20) * 2;
+  const bh = Math.round(h / 20) * 2;
+  return [
+    "split=2[bg][fg]",
+    `[bg]scale=w=${bw}:h=${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},boxblur=6:2,scale=${w}:${h},eq=brightness=-0.08[bgb]`,
+    `[fg]scale=w=${w}:h=${h}:force_original_aspect_ratio=decrease:force_divisible_by=2[fgs]`,
+    "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30",
+  ].join(";");
+}
+
+// Clips (nearly) the project's shape fill the frame; others are shown whole
+// over a blurred copy, matching the editor preview. Unknown shape: blur fill,
+// which still looks right when the shape matches.
+function fitFilter(w, h, src) {
+  if (src?.width && src?.height) {
+    const off = Math.abs(Math.log(src.width / src.height / (w / h)));
+    if (off < 0.03) return coverFilter(w, h);
+  }
+  return blurFillFilter(w, h);
+}
+
 function escapeDrawtext(text) {
   return String(text)
     .replace(/\\/g, "\\\\")
@@ -234,8 +259,9 @@ function findSystemFont() {
 
 // ---------- transcripts on the timeline ----------
 
-// Duration (ms) and whether there's an audio stream, read from what ffmpeg
-// prints when given an input and no output. durationMs is null if unreadable.
+// Duration (ms), whether there's an audio stream, and the picture's shape as
+// shown (width/height after the phone's rotation), read from what ffmpeg
+// prints when given an input and no output. Unreadable values are null.
 function probeMedia(file) {
   return new Promise((resolve) => {
     const child = spawn(ffmpegPath, ["-hide_banner", "-i", file], {
@@ -243,14 +269,23 @@ function probeMedia(file) {
     });
     let stderr = "";
     child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
-    child.on("error", () => resolve({ durationMs: null, hasAudio: false }));
+    child.on("error", () =>
+      resolve({ durationMs: null, hasAudio: false, width: null, height: null }),
+    );
     child.on("close", () => {
       const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+      const size = stderr.match(/Stream #\d+:\d+.*: Video:.*?\b(\d{2,5})x(\d{2,5})\b/);
+      const rotation = stderr.match(/rotation of (-?\d+(?:\.\d+)?) degrees|rotate\s*:\s*(-?\d+)/);
+      const turned = rotation && Math.abs(Math.round(Number(rotation[1] ?? rotation[2]))) % 180 === 90;
+      const w = size ? Number(size[1]) : null;
+      const h = size ? Number(size[2]) : null;
       resolve({
         durationMs: m
           ? Math.round((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000)
           : null,
         hasAudio: /Stream #\d+:\d+.*: Audio:/.test(stderr),
+        width: turned ? h : w,
+        height: turned ? w : h,
       });
     });
   });
@@ -657,7 +692,6 @@ async function runRender(job) {
     // 3. Normalize each source to target aspect at 1080p / 30fps / H.264 + AAC.
     //    This makes the concat step lossless-safe (identical codec params).
     const { w, h } = aspectDims(job.aspect_ratio);
-    const filter = coverFilter(w, h);
 
     await callback(job.callback_url, {
       job_id: job.job_id, status: "rendering", progress: 45,
@@ -678,7 +712,7 @@ async function runRender(job) {
       }
       args.push(
         "-i", sources[i],
-        "-vf", filter,
+        "-vf", fitFilter(w, h, await probeMedia(sources[i])),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart",

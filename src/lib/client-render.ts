@@ -4,7 +4,7 @@
 // (the editor timeline's layout) into a single MP4/WebM using an offscreen
 // canvas + MediaRecorder. Runs entirely in the browser so we don't
 // need an external ffmpeg worker to produce a deliverable. Respects each
-// clip's trim_in / trim_out and covers the target frame (no letterboxing).
+// clip's trim_in / trim_out and fits each clip to the frame like the cloud export.
 
 export type BrowserClipInput = {
   id: string;
@@ -206,13 +206,42 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   let currentMain: HTMLVideoElement | null = null;
   let currentBroll: HTMLVideoElement | null = null;
   let drawing = true;
-  const drawCover = (video: HTMLVideoElement) => {
+  // A tenth-size canvas for the blurred background: drawn small, then
+  // stretched back up, which blurs it without ctx.filter (Safari lacks it).
+  const blurCanvas = document.createElement("canvas");
+  blurCanvas.width = Math.max(2, Math.round(width / 10));
+  blurCanvas.height = Math.max(2, Math.round(height / 10));
+  const blurCtx = blurCanvas.getContext("2d");
+  // Like the cloud export: clips (nearly) the frame's shape fill it; others
+  // are shown whole over a blurred, darker copy of themselves.
+  const drawFit = (video: HTMLVideoElement) => {
     const vw = video.videoWidth || width;
     const vh = video.videoHeight || height;
-    const scale = Math.max(width / vw, height / vh);
-    const dw = vw * scale;
-    const dh = vh * scale;
+    const cover = Math.max(width / vw, height / vh);
     try {
+      if (Math.abs(Math.log(vw / vh / (width / height))) < 0.03 || !blurCtx) {
+        const dw = vw * cover;
+        const dh = vh * cover;
+        ctx.drawImage(video, (width - dw) / 2, (height - dh) / 2, dw, dh);
+        return;
+      }
+      const bw = blurCanvas.width;
+      const bh = blurCanvas.height;
+      const small = Math.max(bw / vw, bh / vh);
+      blurCtx.drawImage(
+        video,
+        (bw - vw * small) / 2,
+        (bh - vh * small) / 2,
+        vw * small,
+        vh * small,
+      );
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(blurCanvas, 0, 0, width, height);
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.fillRect(0, 0, width, height);
+      const contain = Math.min(width / vw, height / vh);
+      const dw = vw * contain;
+      const dh = vh * contain;
       ctx.drawImage(video, (width - dw) / 2, (height - dh) / 2, dw, dh);
     } catch {
       /* frame not ready */
@@ -224,9 +253,9 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
     if (currentMain && currentMain.readyState >= 2) {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, width, height);
-      drawCover(currentMain);
+      drawFit(currentMain);
     }
-    if (currentBroll && currentBroll.readyState >= 2) drawCover(currentBroll);
+    if (currentBroll && currentBroll.readyState >= 2) drawFit(currentBroll);
     requestAnimationFrame(draw);
   };
   requestAnimationFrame(draw);

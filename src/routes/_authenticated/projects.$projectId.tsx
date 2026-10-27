@@ -1316,6 +1316,7 @@ function EditorPage() {
         centerPanel={
           <PreviewCanvas
             aspectRatio={project.aspect_ratio}
+            onAspectRatioChange={(ratio) => changeAspect.mutate(ratio)}
             viewMode={shownViewMode}
             onViewModeChange={setViewMode}
             programUrl={previewUrl}

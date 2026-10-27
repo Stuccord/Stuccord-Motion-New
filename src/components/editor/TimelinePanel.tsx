@@ -56,6 +56,9 @@ function formatRulerTime(seconds: number) {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
+// Empty space after the last clip, room for the END label.
+const TRACK_TAIL_PX = 80;
+
 /* ---------- toolbar micro-components ---------- */
 function ToolBtn({
   icon: Icon,
@@ -147,7 +150,7 @@ function TrackRow({
     >
       <div
         data-track-header
-        className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] px-2.5 flex flex-col justify-center sticky left-0 z-10"
+        className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] px-2.5 flex flex-col justify-center sticky left-0 z-[25]"
       >
         <div className="flex items-baseline gap-1.5 min-w-0">
           <span className="text-[11px] font-mono font-bold text-violet-400">{label}</span>
@@ -566,7 +569,7 @@ function TimelineTracks({
     const start = bLayout.offsets.get(c.id) ?? 0;
     return start + clipVisibleMs(c) > programEndMs ? Math.max(0, programEndMs - start) : null;
   };
-  const trackWidthPx = Math.max(600, (totalMs / 1000) * pxPerSec);
+  const trackWidthPx = Math.max(600, (totalMs / 1000) * pxPerSec + TRACK_TAIL_PX);
 
   const ruler = useMemo(() => {
     const seconds = totalMs / 1000;
@@ -684,6 +687,7 @@ function TimelineTracks({
   // when it leaves the visible area, page the view so it sits a quarter in.
   // Zooming alone doesn't count, so zooming at the pointer isn't undone.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollLeft, setScrollLeft] = useState(0);
   const lastFollowedMs = useRef(currentTimeMs);
   useEffect(() => {
     if (currentTimeMs === lastFollowedMs.current) return;
@@ -760,7 +764,7 @@ function TimelineTracks({
       bRoll.reduce((sum, c) => sum + clipVisibleMs(c), 0),
     );
     if (contentMs <= 0) return;
-    const visible = el.clientWidth - gutterWidth(el) - 24;
+    const visible = el.clientWidth - gutterWidth(el) - TRACK_TAIL_PX;
     const next = clampZoom((visible / contentMs) * 1000);
     if (next === pxPerSecRef.current) {
       el.scrollLeft = 0;
@@ -975,10 +979,14 @@ function TimelineTracks({
   return (
     // tl-root sets --tl-gutter (the track header width) on the whole scroll
     // area, so the playhead below lines up with the ruler and clips.
-    <div ref={scrollRef} className="relative flex-1 overflow-auto min-h-0 tl-scroll tl-root">
+    <div
+      ref={scrollRef}
+      className="relative flex-1 overflow-auto min-h-0 tl-scroll tl-root"
+      onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+    >
       {/* Ruler */}
-      <div className="h-6 border-b border-white/[0.06] sticky top-0 z-10 bg-[#0b0b12]/95 backdrop-blur select-none flex">
-        <div className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
+      <div className="h-6 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
+        <div className="w-24 sm:w-28 shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
           Time
         </div>
         <div
@@ -1010,11 +1018,11 @@ function TimelineTracks({
       </div>
 
       {/* Where the exported video ends */}
-      {programEndMs > 0 && (
+      {programEndMs > 0 && (programEndMs / 1000) * pxPerSec >= scrollLeft && (
         <div
           aria-hidden
           data-video-end
-          className="pointer-events-none absolute top-0 bottom-0 z-10 border-l border-dashed border-white/30"
+          className="pointer-events-none absolute top-0 bottom-0 z-[32] border-l border-dashed border-white/30"
           style={{ left: `calc(var(--tl-gutter, 96px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
         >
           <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45 whitespace-nowrap">
@@ -1023,10 +1031,14 @@ function TimelineTracks({
         </div>
       )}
 
-      {/* Playhead */}
+      {/* Playhead (hidden while it's scrolled under the track headers) */}
       <div
         aria-hidden
-        className="pointer-events-none absolute top-0 bottom-0 z-20 transition-[left] duration-75"
+        data-playhead
+        className={cn(
+          "pointer-events-none absolute top-0 bottom-0 z-40 transition-[left] duration-75",
+          playheadPx < scrollLeft - 1 && "hidden",
+        )}
         style={{ left: `calc(var(--tl-gutter, 96px) + ${playheadPx}px)` }}
       >
         <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rotate-45 bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.7)]" />
