@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 
 interface PlaybackControlsProps {
   playing: boolean;
+  /** Play speed; shown as e.g. "2×" when it isn't normal. */
+  playbackRate?: number;
   onTogglePlay: () => void;
   currentTime: number;
   duration: number;
@@ -29,6 +31,7 @@ export function formatTimecode(seconds: number): string {
 
 export function PlaybackControls({
   playing,
+  playbackRate = 1,
   onTogglePlay,
   currentTime,
   duration,
@@ -150,6 +153,14 @@ export function PlaybackControls({
               <span className="text-neutral-100 font-semibold">{formatTimecode(currentTime)}</span>
               <span className="text-neutral-500"> / {duration > 0 ? formatTimecode(duration) : "00:00.0"}</span>
             </div>
+            {playbackRate !== 1 && (
+              <span
+                className="ml-1 px-1.5 py-0.5 rounded bg-violet-600/20 border border-violet-500/30 text-[10px] font-mono text-violet-200"
+                title="Play speed (L: faster, K: normal)"
+              >
+                {playbackRate}×
+              </span>
+            )}
           </div>
 
           {/* Right Controls: Volume & Fullscreen */}

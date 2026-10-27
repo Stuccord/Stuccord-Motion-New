@@ -24,6 +24,8 @@ interface PreviewCanvasProps {
   renderStageMessage?: string | null;
   // Playback state
   playing: boolean;
+  /** Play speed (L key), shown in the transport when it isn't 1×. */
+  playbackRate?: number;
   /** Reports when the player starts or stops playing. */
   onPlayingChange?: (playing: boolean) => void;
   onTogglePlay: () => void;
@@ -55,6 +57,7 @@ export function PreviewCanvas({
   renderProgress = 0,
   renderStageMessage,
   playing,
+  playbackRate = 1,
   onPlayingChange,
   onTogglePlay,
   currentTime,
@@ -511,6 +514,7 @@ export function PreviewCanvas({
       {/* Bottom Playback Transport Controls */}
       <PlaybackControls
         playing={playing}
+        playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
         currentTime={currentTime}
         duration={duration}

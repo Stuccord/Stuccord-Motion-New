@@ -126,6 +126,7 @@ import {
   type AddMediaSource,
 } from "@/components/editor";
 import { clampZoom, ZOOM_STEP } from "@/components/editor/timeline-zoom";
+import { FPS, snapToFrame } from "@/components/editor/timecode";
 import {
   IMAGE_DEFAULT_MS,
   IMAGE_MAX_MS,
@@ -239,6 +240,8 @@ function EditorPage() {
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [playing, setPlaying] = useState(false);
+  // Play speed set with L (1×, 2×, 4×); K or a new file resets it.
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [viewMode, setViewMode] = useState<"program" | "source" | "compare">("program");
   const [splitPct, setSplitPct] = useState(50);
   const sourceVideoRef = useRef<HTMLVideoElement>(null);
@@ -578,6 +581,9 @@ function EditorPage() {
     redo: () => void;
     seekRelative: (offset: number) => void;
     seekAbsolute: (time: number) => void;
+    stepFrames: (frames: number) => void;
+    shuttle: (action: "back" | "stop" | "forward") => void;
+    trimToPlayhead: (edge: "in" | "out") => void;
   }>({
     play: () => {},
     del: () => {},
@@ -588,10 +594,16 @@ function EditorPage() {
     redo: () => {},
     seekRelative: () => {},
     seekAbsolute: () => {},
+    stepFrames: () => {},
+    shuttle: () => {},
+    trimToPlayhead: () => {},
   });
 
   // Global keyboard shortcuts: Space play/pause, Del/Backspace delete,
-  // S split at playhead, ⌘/Ctrl+D duplicate, +/- zoom, Ctrl+Z/Y undo/redo.
+  // S split at playhead, ⌘/Ctrl+D duplicate, +/- zoom, Ctrl+Z/Y undo/redo,
+  // and After Effects-style ones: Page Up/Down step a frame (Shift: 10),
+  // J/K/L back 1 s / stop / play (faster each press), Alt+[ / Alt+] trim the
+  // selected clip's start/end to the playhead.
   useEffect(() => {
     function isTypingTarget(el: EventTarget | null) {
       if (!(el instanceof HTMLElement)) return false;
@@ -634,14 +646,24 @@ function EditorPage() {
       } else if (meta && e.key.toLowerCase() === "z") {
         e.preventDefault();
         actionsRef.current.undo();
-      } else if (e.key === "ArrowLeft") {
+      } else if (e.altKey && (e.code === "BracketLeft" || e.code === "BracketRight")) {
+        // By key position: Alt + [ types another character on some layouts.
         e.preventDefault();
-        const step = e.shiftKey ? 1.0 : 1 / 30;
-        actionsRef.current.seekRelative(-step);
-      } else if (e.key === "ArrowRight") {
+        actionsRef.current.trimToPlayhead(e.code === "BracketLeft" ? "in" : "out");
+      } else if (e.key === "PageUp" || e.key === "PageDown") {
         e.preventDefault();
-        const step = e.shiftKey ? 1.0 : 1 / 30;
-        actionsRef.current.seekRelative(step);
+        const frames = e.shiftKey ? 10 : 1;
+        actionsRef.current.stepFrames(e.key === "PageUp" ? -frames : frames);
+      } else if (!meta && !e.altKey && ["j", "k", "l"].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        const key = e.key.toLowerCase();
+        actionsRef.current.shuttle(key === "j" ? "back" : key === "k" ? "stop" : "forward");
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        // One whole frame (landing exactly on it), or a second with Shift.
+        e.preventDefault();
+        const dir = e.key === "ArrowLeft" ? -1 : 1;
+        if (e.shiftKey) actionsRef.current.seekRelative(dir);
+        else actionsRef.current.stepFrames(dir);
       } else if (e.key === "Home") {
         e.preventDefault();
         actionsRef.current.seekAbsolute(0);
@@ -1192,6 +1214,74 @@ function EditorPage() {
     : undefined;
 
   // ---- Timeline actions ----
+  /** Trims a clip, with undo. */
+  function trimClip(id: string, ti: number, to: number | null) {
+    const c = clips.find((x) => x.id === id);
+    if (!c) return;
+    const prevIn = c.trim_in_ms ?? 0;
+    const prevOut = c.trim_out_ms ?? null;
+
+    pushToHistory({
+      description: "Trim clip",
+      undo: () => {
+        trimMut.mutate({ id, trim_in_ms: prevIn, trim_out_ms: prevOut });
+      },
+      redo: () => {
+        trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
+      },
+    });
+
+    trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
+  }
+
+  /** Alt+[ / Alt+]: the selected clip starts or ends at the playhead. */
+  function trimToPlayhead(edge: "in" | "out") {
+    if (!selectedClip || selectedClip.role === "music" || selectedClip.role === "sfx") {
+      toast("Select a clip on V1 or V2 first");
+      return;
+    }
+    const start = programOffsets.get(selectedClip.id) ?? 0;
+    const length = clipVisibleMs(selectedClip);
+    const into = timelinePlayheadMs - start;
+    // Keep at least a few frames of the clip.
+    if (into < 100 || into > length - 100) {
+      toast("Move the playhead inside the selected clip first");
+      return;
+    }
+    const trimIn = selectedClip.trim_in_ms ?? 0;
+    const trimOut = selectedClip.trim_out_ms ?? selectedClip.duration_ms ?? trimIn + length;
+    if (edge === "in") trimClip(selectedClip.id, Math.round(trimIn + into), trimOut);
+    else trimClip(selectedClip.id, trimIn, Math.round(trimIn + into));
+  }
+
+  /** Page Up/Down: move the playhead by whole frames (pausing playback). */
+  function stepFrames(frames: number) {
+    const v = videoRef.current;
+    if (!v) return;
+    if (!v.paused) v.pause();
+    seekAbsolute(snapToFrame(v.currentTime + frames / FPS));
+  }
+
+  /** J/K/L: back 1 s, stop, or play (each L press doubles the speed, up to 4×). */
+  function shuttle(action: "back" | "stop" | "forward") {
+    const v = videoRef.current;
+    if (!v) return;
+    if (action === "back") {
+      seekAbsolute(v.currentTime - 1);
+      return;
+    }
+    if (action === "stop") {
+      v.pause();
+      v.playbackRate = 1;
+      setPlaybackRate(1);
+      return;
+    }
+    const rate = v.paused ? 1 : Math.min(4, v.playbackRate * 2);
+    v.playbackRate = rate;
+    setPlaybackRate(rate);
+    if (v.paused) togglePlay();
+  }
+
   function togglePlay() {
     const v = videoRef.current;
     if (!v) return;
@@ -1379,6 +1469,9 @@ function EditorPage() {
     redo,
     seekRelative,
     seekAbsolute,
+    stepFrames,
+    shuttle,
+    trimToPlayhead,
   };
 
   return (
@@ -1469,6 +1562,7 @@ function EditorPage() {
             renderProgress={latestJob?.progress ?? 0}
             renderStageMessage={latestJob?.stage_message}
             playing={playing}
+            playbackRate={playbackRate}
             onPlayingChange={setPlaying}
             onTogglePlay={togglePlay}
             currentTime={
@@ -1490,6 +1584,8 @@ function EditorPage() {
             onLoadedMetadata={(d) => {
               setDuration(d);
               const v = videoRef.current;
+              // A new file plays at normal speed.
+              setPlaybackRate(1);
               if (pendingSourceSeekMs.current != null && v) {
                 v.currentTime = pendingSourceSeekMs.current / 1000;
                 setCurrentTime(pendingSourceSeekMs.current / 1000);
@@ -1604,24 +1700,7 @@ function EditorPage() {
             videoClips={videoClips}
             selectedClipId={selectedClipId}
             onSelect={(id) => setSelectedClipId(id)}
-            onTrim={(id, ti, to) => {
-              const c = clips.find((x) => x.id === id);
-              if (!c) return;
-              const prevIn = c.trim_in_ms ?? 0;
-              const prevOut = c.trim_out_ms ?? null;
-
-              pushToHistory({
-                description: "Trim clip",
-                undo: () => {
-                  trimMut.mutate({ id, trim_in_ms: prevIn, trim_out_ms: prevOut });
-                },
-                redo: () => {
-                  trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
-                },
-              });
-
-              trimMut.mutate({ id, trim_in_ms: ti, trim_out_ms: to });
-            }}
+            onTrim={trimClip}
             captions={captionsEnabled}
             onCaptionsToggle={() =>
               saveExportSwitches.mutate({ captions_enabled: !captionsEnabled })

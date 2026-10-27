@@ -22,8 +22,10 @@ import {
   VolumeX,
   ArrowDownToLine,
   ArrowUpToLine,
+  Keyboard,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +45,7 @@ import { cn } from "@/lib/utils";
 import { CLIP_DRAG_TYPE, type ClipRow } from "./types";
 import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
 import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
+import { FPS, formatFrameTimecode } from "./timecode";
 import { thumbnailKey } from "@/lib/video-thumbnail";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
 
@@ -743,11 +746,16 @@ function TimelineTracks({
                 ? 30
                 : 60;
     const minor = step >= 30 ? step / 6 : step >= 10 ? step / 5 : 1;
+    // Counted in whole frames (no floating-point drift). Zoomed in far
+    // enough, the small ticks mark every frame (or every 5th).
+    const majorFrames = step * FPS;
+    const minorFrames = pxPerSec >= 240 ? 1 : pxPerSec >= 120 ? 5 : minor * FPS;
     // Labels that would sit under the END marker's label are left out.
     const endPx = (programEndMs / 1000) * pxPerSec;
     const ticks: { t: number; label: string; major: boolean }[] = [];
-    for (let t = 0; t <= seconds + step; t += minor) {
-      const major = t % step === 0;
+    for (let f = 0; f <= (seconds + step) * FPS; f += minorFrames) {
+      const t = f / FPS;
+      const major = f % majorFrames === 0;
       const px = t * pxPerSec;
       const underEnd = programEndMs > 0 && px > endPx - 16 && px < endPx + 72;
       ticks.push({ t, label: major && !underEnd ? formatRulerTime(t) : "", major });
@@ -844,6 +852,23 @@ function TimelineTracks({
   // Zooming alone doesn't count, so zooming at the pointer isn't undone.
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  // Width of the visible track area and of the track headers, for the
+  // time navigator.
+  const [view, setView] = useState({ width: 0, gutter: 88 });
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => {
+      const gutter = gutterWidth(el);
+      setView({ width: Math.max(0, el.clientWidth - gutter), gutter });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // gutterWidth only reads the DOM.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const lastFollowedMs = useRef(currentTimeMs);
   useEffect(() => {
     if (currentTimeMs === lastFollowedMs.current) return;
@@ -1207,379 +1232,530 @@ function TimelineTracks({
   const trackName = (t: Track | "music") =>
     t === "aroll" ? "V1 A-roll" : t === "broll" ? "V2 B-roll" : "A2 Music";
 
-  return (
-    // tl-root sets --tl-gutter (the track header width) on the whole scroll
-    // area, so the playhead below lines up with the ruler and clips.
-    <div
-      ref={scrollRef}
-      className="relative flex-1 overflow-auto min-h-0 tl-scroll tl-root"
-      onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
-      onPointerDownCapture={(e) => {
-        lastPointerType.current = e.pointerType;
-      }}
-      onContextMenu={openMenu}
-      {...mediaDragHandlers}
-    >
-      <input
-        ref={fileInput}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          const files = Array.from(e.currentTarget.files ?? []);
-          if (files.length && pickTarget.current && onAddMedia) {
-            onAddMedia(pickTarget.current, { files });
-          }
-        }}
-      />
-      {/* Right-click menu, opened where the pointer was */}
-      <DropdownMenu open={!!menu} onOpenChange={(open) => !open && setMenu(null)}>
-        <DropdownMenuTrigger asChild>
-          <span
-            aria-hidden
-            className="fixed w-0 h-0"
-            style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }}
-          />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-52 text-xs">
-          {menu?.clip ? (
-            <>
-              <DropdownMenuLabel className="text-[11px] truncate">
-                {baseName(menu.clip.filename)}
-              </DropdownMenuLabel>
-              <DropdownMenuItem onSelect={onSplit}>
-                <Scissors className="w-3.5 h-3.5" /> Split at playhead
-                <DropdownMenuShortcut>S</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onDuplicate}>
-                <Copy className="w-3.5 h-3.5" /> Duplicate
-                <DropdownMenuShortcut>Ctrl+D</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              {menu.clip.role === "broll" ? (
-                <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "aroll", aRoll.length)}>
-                  <ArrowUpToLine className="w-3.5 h-3.5" /> Move to V1 A-roll
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "broll", bRoll.length)}>
-                  <ArrowDownToLine className="w-3.5 h-3.5" /> Move to V2 B-roll
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={onDelete}
-                className="text-rose-300 focus:text-rose-200 focus:bg-rose-500/15"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-                <DropdownMenuShortcut>Del</DropdownMenuShortcut>
-              </DropdownMenuItem>
-            </>
-          ) : menu?.track ? (
-            <DropdownMenuItem
-              onSelect={() =>
-                pickFiles({
-                  track: menu.track!,
-                  index:
-                    menu.track === "music"
-                      ? null
-                      : (dropTargetAt(menu.x, menu.y, "")?.index ?? null),
-                })
-              }
-            >
-              <Plus className="w-3.5 h-3.5" />
-              {menu.track === "music"
-                ? "Add music or SFX…"
-                : `Add video or image to ${trackName(menu.track)}…`}
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {/* Ruler */}
-      <div className="h-6 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
-        <div className="w-[88px] sm:w-[100px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
-          Time
-        </div>
-        <div
-          className="relative h-full cursor-ew-resize flex-1 touch-none"
-          style={{ width: trackWidthPx }}
-          title="Click or drag to move the playhead"
-          {...scrubHandlers}
-        >
-          {ruler.map((t, i) => (
-            <div
-              key={i}
-              className="absolute top-0 bottom-0 flex flex-col justify-between"
-              style={{ left: t.t * pxPerSec }}
-            >
-              <span
-                className={cn(
-                  "block w-px",
-                  t.major ? "h-3 bg-white/25" : "h-1.5 bg-white/10",
-                )}
-              />
-              {t.label && (
-                <span className="text-[9px] font-mono text-neutral-500 -translate-x-1/2 whitespace-nowrap">
-                  {t.label}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
+  // Time navigator (like After Effects'): the whole video in one thin bar,
+  // with a window over the part on screen. Drag the window to scroll, drag
+  // its ends to zoom, click the bar to jump there.
+  const viewStartMs = (scrollLeft / pxPerSec) * 1000;
+  const viewEndMs = viewStartMs + (view.width / pxPerSec) * 1000;
+  const navTotalMs = Math.max(totalMs, viewEndMs, 1000);
+  const navPct = (ms: number) => `${Math.min(100, Math.max(0, (ms / navTotalMs) * 100))}%`;
+  // Shows the time range [startMs, endMs] across the visible width.
+  function showRange(startMs: number, endMs: number) {
+    const el = scrollRef.current;
+    if (!el || view.width <= 0) return;
+    const next = clampZoom((view.width / Math.max(100, endMs - startMs)) * 1000);
+    if (next === pxPerSecRef.current) {
+      el.scrollLeft = Math.max(0, (startMs / 1000) * next);
+    } else {
+      zoomAnchor.current = { ms: Math.max(0, startMs), viewX: 0 };
+      onZoomTo(next);
+    }
+  }
+  function startNavDrag(e: React.PointerEvent<HTMLElement>, part: "window" | "start" | "end") {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const bar = (
+      e.currentTarget.closest("[data-navigator]") as HTMLElement
+    ).getBoundingClientRect();
+    const startX = e.clientX;
+    const el = scrollRef.current;
+    // Read the scroll position itself: the scroll event may not have
+    // updated scrollLeft (state) yet.
+    const startScroll = el?.scrollLeft ?? 0;
+    const startMs = (startScroll / pxPerSec) * 1000;
+    const from = { start: startMs, end: startMs + (viewEndMs - viewStartMs) };
+    const minSpan = 500;
+    const move = (ev: PointerEvent) => {
+      const dMs = ((ev.clientX - startX) / bar.width) * navTotalMs;
+      if (part === "window") {
+        if (el) el.scrollLeft = Math.max(0, startScroll + (dMs / 1000) * pxPerSecRef.current);
+      } else if (part === "start") {
+        showRange(Math.max(0, Math.min(from.end - minSpan, from.start + dMs)), from.end);
+      } else {
+        showRange(from.start, Math.max(from.start + minSpan, from.end + dMs));
+      }
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  const navigator = (
+    <div className="h-5 shrink-0 flex border-b border-white/[0.06] bg-[#08080e] select-none">
+      <div
+        className="shrink-0 flex items-center px-2 text-[8px] font-mono uppercase tracking-widest text-neutral-600 border-r border-white/[0.06]"
+        style={{ width: view.gutter }}
+      >
+        Nav
       </div>
-
-      {/* Where the exported video ends */}
-      {programEndMs > 0 && (programEndMs / 1000) * pxPerSec >= scrollLeft && (
+      <div
+        data-navigator
+        className="relative flex-1 my-1 mx-1 rounded-sm bg-white/[0.03] cursor-pointer touch-none"
+        title="Drag the window to scroll · drag its ends to zoom · click to jump"
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          // Click outside the window: centre the view there.
+          const r = e.currentTarget.getBoundingClientRect();
+          const ms = ((e.clientX - r.left) / r.width) * navTotalMs;
+          const span = viewEndMs - viewStartMs;
+          const el = scrollRef.current;
+          if (el) el.scrollLeft = Math.max(0, ((ms - span / 2) / 1000) * pxPerSec);
+        }}
+      >
+        {/* The edit in miniature: main track on top, B-roll below */}
+        {aRoll.map((c) => (
+          <div
+            key={c.id}
+            className="absolute top-0 h-1/2 bg-violet-500/35 border-r border-[#08080e]"
+            style={{
+              left: navPct(aLayout.offsets.get(c.id) ?? 0),
+              width: navPct(clipVisibleMs(c)),
+            }}
+          />
+        ))}
+        {bRoll.map((c) => (
+          <div
+            key={c.id}
+            className="absolute bottom-0 h-1/2 bg-teal-500/35 border-r border-[#08080e]"
+            style={{
+              left: navPct(bLayout.offsets.get(c.id) ?? 0),
+              width: navPct(clipVisibleMs(c)),
+            }}
+          />
+        ))}
         <div
           aria-hidden
-          data-video-end
-          className="pointer-events-none absolute top-0 bottom-0 z-[32] border-l border-dashed border-white/30"
-          style={{ left: `calc(var(--tl-gutter, 88px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
+          className="absolute -top-0.5 -bottom-0.5 w-px bg-violet-300"
+          style={{ left: navPct(currentTimeMs) }}
+        />
+        {/* The part on screen */}
+        <div
+          role="scrollbar"
+          aria-orientation="horizontal"
+          aria-label="Visible part of the timeline"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(navTotalMs)}
+          aria-valuenow={Math.round(viewStartMs)}
+          className="absolute -top-0.5 -bottom-0.5 rounded-sm border border-white/50 bg-white/[0.08] hover:bg-white/[0.12] cursor-grab active:cursor-grabbing"
+          style={{
+            left: navPct(viewStartMs),
+            width: navPct(viewEndMs - viewStartMs),
+            minWidth: 10,
+          }}
+          onPointerDown={(e) => startNavDrag(e, "window")}
         >
-          <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45 whitespace-nowrap">
-            End {formatPlaybackTime(programEndMs / 1000)}
-          </span>
+          <span
+            aria-label="Drag to zoom (start)"
+            className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 cursor-ew-resize rounded-l-sm bg-white/60"
+            onPointerDown={(e) => startNavDrag(e, "start")}
+          />
+          <span
+            aria-label="Drag to zoom (end)"
+            className="absolute right-0 top-0 bottom-0 w-1.5 -mr-0.5 cursor-ew-resize rounded-r-sm bg-white/60"
+            onPointerDown={(e) => startNavDrag(e, "end")}
+          />
         </div>
-      )}
-
-      {/* Playhead (hidden while it's scrolled under the track headers) */}
-      <div
-        aria-hidden
-        data-playhead
-        className={cn(
-          "pointer-events-none absolute top-0 bottom-0 z-40 transition-[left] duration-75",
-          playheadPx < scrollLeft - 1 && "hidden",
-        )}
-        style={{ left: `calc(var(--tl-gutter, 88px) + ${playheadPx}px)` }}
-      >
-        <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rotate-45 bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.7)]" />
-        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-violet-400/90 shadow-[0_0_6px_rgba(139,92,246,0.55)]" />
-      </div>
-
-      <style>{`
-        .tl-root { --tl-gutter: 88px; }
-        @media (min-width: 640px) { .tl-root { --tl-gutter: 100px; } }
-      `}</style>
-      <div>
-        {/* V1 A-Roll */}
-        <TrackRow
-          label="V1"
-          name="A-Roll"
-          icon={Film}
-          toneClass="text-violet-400"
-          size={aRoll.length === 0 ? "slim" : "clip"}
-          trackKey="aroll"
-          onAdd={onAddMedia && (() => pickFiles({ track: "aroll", index: null }))}
-          addLabel="video or image to V1"
-          dropHighlight={mediaDrop?.track === "aroll"}
-          innerWidth={trackWidthPx}
-          contentHandlers={scrubHandlers}
-          contentRef={(el) => {
-            trackEls.current.aroll = el;
-          }}
-        >
-          {insertionLine("aroll")}
-          {aRoll.length === 0 ? (
-            <div
-              className={cn(
-                "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
-                dropTarget?.track === "aroll" ? "text-violet-400" : "text-neutral-600",
-              )}
-            >
-              Drop or drag videos and images here
-            </div>
-          ) : (
-            aRoll.map((c, i) => (
-              <TimelineClip
-                key={c.id}
-                clip={c}
-                index={i}
-                pxPerSec={pxPerSec}
-                offsetMs={aLayout.offsets.get(c.id) ?? 0}
-                selected={selectedClipId === c.id}
-                dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
-                onSelect={() => selectClip(c.id)}
-                onBodyPointerDown={(e) => startClipPress(c, e)}
-                onTrim={onTrim}
-                snapBoundariesMs={snapPointsFor(c, aLayout.offsets.get(c.id) ?? 0)}
-                clipStartMs={aLayout.offsets.get(c.id) ?? 0}
-                tone="primary"
-                thumbnail={thumbnails[thumbnailKey(c)]}
-              />
-            ))
-          )}
-        </TrackRow>
-
-        {/* V2 B-Roll */}
-        <TrackRow
-          label="V2"
-          name="B-Roll"
-          icon={Layers}
-          toneClass="text-teal-400"
-          size={bRoll.length === 0 ? "slim" : "clip"}
-          trackKey="broll"
-          onAdd={onAddMedia && (() => pickFiles({ track: "broll", index: null }))}
-          addLabel="video or image to V2"
-          dropHighlight={mediaDrop?.track === "broll"}
-          innerWidth={trackWidthPx}
-          contentHandlers={scrubHandlers}
-          contentRef={(el) => {
-            trackEls.current.broll = el;
-          }}
-        >
-          {insertionLine("broll")}
-          {bRoll.length === 0 ? (
-            <div
-              className={cn(
-                "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
-                dropTarget?.track === "broll" ? "text-teal-400" : "text-neutral-600",
-              )}
-            >
-              B-roll &amp; cutaways: drop videos or images here
-            </div>
-          ) : (
-            bRoll.map((c, i) => (
-              <TimelineClip
-                key={c.id}
-                clip={c}
-                index={i}
-                pxPerSec={pxPerSec}
-                offsetMs={bLayout.offsets.get(c.id) ?? 0}
-                selected={selectedClipId === c.id}
-                dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
-                onSelect={() => selectClip(c.id)}
-                onBodyPointerDown={(e) => startClipPress(c, e)}
-                onTrim={onTrim}
-                snapBoundariesMs={snapPointsFor(c, bLayout.offsets.get(c.id) ?? 0)}
-                clipStartMs={bLayout.offsets.get(c.id) ?? 0}
-                tone="teal"
-                thumbnail={thumbnails[thumbnailKey(c)]}
-                cutAtMs={cutAtFor(c)}
-              />
-            ))
-          )}
-        </TrackRow>
-
-        {/* V3 Captions: the phrases the export burns in */}
-        <TrackRow
-          label="V3"
-          name="Captions"
-          note="Burned in"
-          icon={Type}
-          toneClass="text-violet-300"
-          toggle={
-            onCaptionsToggle && {
-              on: captions,
-              onToggle: onCaptionsToggle,
-              what: "captions",
-              kind: "eye",
-            }
-          }
-          size="slim"
-          innerWidth={trackWidthPx}
-          contentHandlers={scrubHandlers}
-        >
-          {captionPhrases.length === 0 ? (
-            <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
-              Captions appear here after a cloud render transcribes your clips
-            </div>
-          ) : (
-            captionPhrases.map((p) => (
-              <TrackLabel
-                key={p.key}
-                leftPx={(p.startMs / 1000) * pxPerSec}
-                widthPx={((p.endMs - p.startMs) / 1000) * pxPerSec}
-                text={p.text}
-                className="bg-violet-400/15 border-violet-400/30 text-violet-200 font-medium"
-              />
-            ))
-          )}
-        </TrackRow>
-
-        {/* A1 Voice: the main track's own sound, which is what the export uses */}
-        <TrackRow
-          label="A1"
-          name="Voice"
-          icon={Mic}
-          toneClass="text-emerald-400"
-          note="From the A-roll"
-          size="slim"
-          innerWidth={trackWidthPx}
-          contentHandlers={scrubHandlers}
-        >
-          {mainClips.map((c) => (
-            <TrackLabel
-              key={c.id}
-              leftPx={((mainLayout.offsets.get(c.id) ?? 0) / 1000) * pxPerSec}
-              widthPx={(clipVisibleMs(c) / 1000) * pxPerSec}
-              text={baseName(c.filename)}
-              title={`Voice from ${c.filename}`}
-              className="bg-emerald-500/10 border-emerald-500/25 text-emerald-200/80"
-            />
-          ))}
-        </TrackRow>
-
-        {/* A2 Music: what the cloud export mixes in. Music plays from 0:00 and
-            loops to the end of the video (ducked under the voice); an SFX
-            plays at each cut between main clips, taking turns. */}
-        <TrackRow
-          label="A2"
-          name="Music"
-          icon={Music2}
-          toneClass="text-amber-400"
-          toggle={
-            onMusicToggle && {
-              on: music,
-              onToggle: onMusicToggle,
-              what: "music and SFX",
-              kind: "sound",
-            }
-          }
-          note="Ducked under voice"
-          size="slim"
-          trackKey="music"
-          onAdd={onAddMedia && (() => pickFiles({ track: "music", index: null }))}
-          addLabel="music or SFX"
-          dropHighlight={mediaDrop?.track === "music"}
-          innerWidth={trackWidthPx}
-          contentHandlers={scrubHandlers}
-          contentRef={(el) => {
-            musicTrackEl.current = el;
-          }}
-        >
-          {audioClips.length === 0 ? (
-            <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
-              Drop music or SFX here
-            </div>
-          ) : (
-            <>
-              {musicBars.map((b) => (
-                <TrackLabel
-                  key={b.key}
-                  leftPx={(b.startMs / 1000) * pxPerSec}
-                  widthPx={(b.lengthMs / 1000) * pxPerSec}
-                  text={`♪ ${baseName(b.clip.filename)}${b.loop ? " (loop)" : ""}`}
-                  title={`${b.clip.filename}: loops under the video, quieter while you speak`}
-                  className="bg-amber-500/10 border-amber-400/30 text-amber-200/80"
-                />
-              ))}
-              {sfxMarks.map((m) => (
-                <TrackLabel
-                  key={m.key}
-                  leftPx={(m.startMs / 1000) * pxPerSec}
-                  widthPx={(m.lengthMs / 1000) * pxPerSec}
-                  text="SFX"
-                  title={`${m.clip.filename} on the cut at ${formatPlaybackTime(m.cutMs / 1000)}`}
-                  className="bg-pink-500/20 border-pink-400/40 text-pink-100 z-[1]"
-                />
-              ))}
-            </>
-          )}
-        </TrackRow>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {navigator}
+      {/* tl-root sets --tl-gutter (the track header width) on the whole scroll
+          area, so the playhead below lines up with the ruler and clips. */}
+      <div
+        ref={scrollRef}
+        className="relative flex-1 overflow-auto min-h-0 tl-scroll tl-root"
+        onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
+        onPointerDownCapture={(e) => {
+          lastPointerType.current = e.pointerType;
+        }}
+        onContextMenu={openMenu}
+        {...mediaDragHandlers}
+      >
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.currentTarget.files ?? []);
+            if (files.length && pickTarget.current && onAddMedia) {
+              onAddMedia(pickTarget.current, { files });
+            }
+          }}
+        />
+        {/* Right-click menu, opened where the pointer was */}
+        <DropdownMenu open={!!menu} onOpenChange={(open) => !open && setMenu(null)}>
+          <DropdownMenuTrigger asChild>
+            <span
+              aria-hidden
+              className="fixed w-0 h-0"
+              style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52 text-xs">
+            {menu?.clip ? (
+              <>
+                <DropdownMenuLabel className="text-[11px] truncate">
+                  {baseName(menu.clip.filename)}
+                </DropdownMenuLabel>
+                <DropdownMenuItem onSelect={onSplit}>
+                  <Scissors className="w-3.5 h-3.5" /> Split at playhead
+                  <DropdownMenuShortcut>S</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onDuplicate}>
+                  <Copy className="w-3.5 h-3.5" /> Duplicate
+                  <DropdownMenuShortcut>Ctrl+D</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                {menu.clip.role === "broll" ? (
+                  <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "aroll", aRoll.length)}>
+                    <ArrowUpToLine className="w-3.5 h-3.5" /> Move to V1 A-roll
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => moveClip(menu.clip!.id, "broll", bRoll.length)}>
+                    <ArrowDownToLine className="w-3.5 h-3.5" /> Move to V2 B-roll
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={onDelete}
+                  className="text-rose-300 focus:text-rose-200 focus:bg-rose-500/15"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                  <DropdownMenuShortcut>Del</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </>
+            ) : menu?.track ? (
+              <DropdownMenuItem
+                onSelect={() =>
+                  pickFiles({
+                    track: menu.track!,
+                    index:
+                      menu.track === "music"
+                        ? null
+                        : (dropTargetAt(menu.x, menu.y, "")?.index ?? null),
+                  })
+                }
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {menu.track === "music"
+                  ? "Add music or SFX…"
+                  : `Add video or image to ${trackName(menu.track)}…`}
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {/* Ruler */}
+        <div className="h-6 border-b border-white/[0.06] sticky top-0 z-30 bg-[#0b0b12]/95 backdrop-blur select-none flex">
+          <div className="w-[88px] sm:w-[100px] shrink-0 border-r border-white/[0.06] bg-[#0d0d14] flex items-center px-2 sticky left-0 z-10 text-[9px] font-mono text-neutral-600 uppercase tracking-widest">
+            Time
+          </div>
+          <div
+            className="relative h-full cursor-ew-resize flex-1 touch-none"
+            style={{ width: trackWidthPx }}
+            title="Click or drag to move the playhead"
+            {...scrubHandlers}
+          >
+            {ruler.map((t, i) => (
+              <div
+                key={i}
+                className="absolute top-0 bottom-0 flex flex-col justify-between"
+                style={{ left: t.t * pxPerSec }}
+              >
+                <span
+                  className={cn(
+                    "block w-px",
+                    t.major ? "h-3 bg-white/25" : "h-1.5 bg-white/10",
+                  )}
+                />
+                {t.label && (
+                  <span className="text-[9px] font-mono text-neutral-500 -translate-x-1/2 whitespace-nowrap">
+                    {t.label}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Where the exported video ends */}
+        {programEndMs > 0 && (programEndMs / 1000) * pxPerSec >= scrollLeft && (
+          <div
+            aria-hidden
+            data-video-end
+            className="pointer-events-none absolute top-0 bottom-0 z-[32] border-l border-dashed border-white/30"
+            style={{ left: `calc(var(--tl-gutter, 88px) + ${(programEndMs / 1000) * pxPerSec}px)` }}
+          >
+            <span className="absolute top-1 left-1 text-[8.5px] font-mono uppercase tracking-wider text-white/45 whitespace-nowrap">
+              End {formatPlaybackTime(programEndMs / 1000)}
+            </span>
+          </div>
+        )}
+
+        {/* Playhead (hidden while it's scrolled under the track headers) */}
+        <div
+          aria-hidden
+          data-playhead
+          className={cn(
+            "pointer-events-none absolute top-0 bottom-0 z-40 transition-[left] duration-75",
+            playheadPx < scrollLeft - 1 && "hidden",
+          )}
+          style={{ left: `calc(var(--tl-gutter, 88px) + ${playheadPx}px)` }}
+        >
+          <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rotate-45 bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.7)]" />
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-violet-400/90 shadow-[0_0_6px_rgba(139,92,246,0.55)]" />
+        </div>
+
+        <style>{`
+          .tl-root { --tl-gutter: 88px; }
+          @media (min-width: 640px) { .tl-root { --tl-gutter: 100px; } }
+        `}</style>
+        <div>
+          {/* V1 A-Roll */}
+          <TrackRow
+            label="V1"
+            name="A-Roll"
+            icon={Film}
+            toneClass="text-violet-400"
+            size={aRoll.length === 0 ? "slim" : "clip"}
+            trackKey="aroll"
+            onAdd={onAddMedia && (() => pickFiles({ track: "aroll", index: null }))}
+            addLabel="video or image to V1"
+            dropHighlight={mediaDrop?.track === "aroll"}
+            innerWidth={trackWidthPx}
+            contentHandlers={scrubHandlers}
+            contentRef={(el) => {
+              trackEls.current.aroll = el;
+            }}
+          >
+            {insertionLine("aroll")}
+            {aRoll.length === 0 ? (
+              <div
+                className={cn(
+                  "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
+                  dropTarget?.track === "aroll" ? "text-violet-400" : "text-neutral-600",
+                )}
+              >
+                Drop or drag videos and images here
+              </div>
+            ) : (
+              aRoll.map((c, i) => (
+                <TimelineClip
+                  key={c.id}
+                  clip={c}
+                  index={i}
+                  pxPerSec={pxPerSec}
+                  offsetMs={aLayout.offsets.get(c.id) ?? 0}
+                  selected={selectedClipId === c.id}
+                  dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
+                  onSelect={() => selectClip(c.id)}
+                  onBodyPointerDown={(e) => startClipPress(c, e)}
+                  onTrim={onTrim}
+                  snapBoundariesMs={snapPointsFor(c, aLayout.offsets.get(c.id) ?? 0)}
+                  clipStartMs={aLayout.offsets.get(c.id) ?? 0}
+                  tone="primary"
+                  thumbnail={thumbnails[thumbnailKey(c)]}
+                />
+              ))
+            )}
+          </TrackRow>
+
+          {/* V2 B-Roll */}
+          <TrackRow
+            label="V2"
+            name="B-Roll"
+            icon={Layers}
+            toneClass="text-teal-400"
+            size={bRoll.length === 0 ? "slim" : "clip"}
+            trackKey="broll"
+            onAdd={onAddMedia && (() => pickFiles({ track: "broll", index: null }))}
+            addLabel="video or image to V2"
+            dropHighlight={mediaDrop?.track === "broll"}
+            innerWidth={trackWidthPx}
+            contentHandlers={scrubHandlers}
+            contentRef={(el) => {
+              trackEls.current.broll = el;
+            }}
+          >
+            {insertionLine("broll")}
+            {bRoll.length === 0 ? (
+              <div
+                className={cn(
+                  "absolute inset-0 grid place-items-center text-[10px] italic pointer-events-none",
+                  dropTarget?.track === "broll" ? "text-teal-400" : "text-neutral-600",
+                )}
+              >
+                B-roll &amp; cutaways: drop videos or images here
+              </div>
+            ) : (
+              bRoll.map((c, i) => (
+                <TimelineClip
+                  key={c.id}
+                  clip={c}
+                  index={i}
+                  pxPerSec={pxPerSec}
+                  offsetMs={bLayout.offsets.get(c.id) ?? 0}
+                  selected={selectedClipId === c.id}
+                  dragOffset={drag?.id === c.id ? { x: drag.dx, y: drag.dy } : null}
+                  onSelect={() => selectClip(c.id)}
+                  onBodyPointerDown={(e) => startClipPress(c, e)}
+                  onTrim={onTrim}
+                  snapBoundariesMs={snapPointsFor(c, bLayout.offsets.get(c.id) ?? 0)}
+                  clipStartMs={bLayout.offsets.get(c.id) ?? 0}
+                  tone="teal"
+                  thumbnail={thumbnails[thumbnailKey(c)]}
+                  cutAtMs={cutAtFor(c)}
+                />
+              ))
+            )}
+          </TrackRow>
+
+          {/* V3 Captions: the phrases the export burns in */}
+          <TrackRow
+            label="V3"
+            name="Captions"
+            note="Burned in"
+            icon={Type}
+            toneClass="text-violet-300"
+            toggle={
+              onCaptionsToggle && {
+                on: captions,
+                onToggle: onCaptionsToggle,
+                what: "captions",
+                kind: "eye",
+              }
+            }
+            size="slim"
+            innerWidth={trackWidthPx}
+            contentHandlers={scrubHandlers}
+          >
+            {captionPhrases.length === 0 ? (
+              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+                Captions appear here after a cloud render transcribes your clips
+              </div>
+            ) : (
+              captionPhrases.map((p) => (
+                <TrackLabel
+                  key={p.key}
+                  leftPx={(p.startMs / 1000) * pxPerSec}
+                  widthPx={((p.endMs - p.startMs) / 1000) * pxPerSec}
+                  text={p.text}
+                  className="bg-violet-400/15 border-violet-400/30 text-violet-200 font-medium"
+                />
+              ))
+            )}
+          </TrackRow>
+
+          {/* A1 Voice: the main track's own sound, which is what the export uses */}
+          <TrackRow
+            label="A1"
+            name="Voice"
+            icon={Mic}
+            toneClass="text-emerald-400"
+            note="From the A-roll"
+            size="slim"
+            innerWidth={trackWidthPx}
+            contentHandlers={scrubHandlers}
+          >
+            {mainClips.map((c) => (
+              <TrackLabel
+                key={c.id}
+                leftPx={((mainLayout.offsets.get(c.id) ?? 0) / 1000) * pxPerSec}
+                widthPx={(clipVisibleMs(c) / 1000) * pxPerSec}
+                text={baseName(c.filename)}
+                title={`Voice from ${c.filename}`}
+                className="bg-emerald-500/10 border-emerald-500/25 text-emerald-200/80"
+              />
+            ))}
+          </TrackRow>
+
+          {/* A2 Music: what the cloud export mixes in. Music plays from 0:00 and
+              loops to the end of the video (ducked under the voice); an SFX
+              plays at each cut between main clips, taking turns. */}
+          <TrackRow
+            label="A2"
+            name="Music"
+            icon={Music2}
+            toneClass="text-amber-400"
+            toggle={
+              onMusicToggle && {
+                on: music,
+                onToggle: onMusicToggle,
+                what: "music and SFX",
+                kind: "sound",
+              }
+            }
+            note="Ducked under voice"
+            size="slim"
+            trackKey="music"
+            onAdd={onAddMedia && (() => pickFiles({ track: "music", index: null }))}
+            addLabel="music or SFX"
+            dropHighlight={mediaDrop?.track === "music"}
+            innerWidth={trackWidthPx}
+            contentHandlers={scrubHandlers}
+            contentRef={(el) => {
+              musicTrackEl.current = el;
+            }}
+          >
+            {audioClips.length === 0 ? (
+              <div className="absolute inset-0 flex items-center px-2 text-[10px] italic text-neutral-600 pointer-events-none">
+                Drop music or SFX here
+              </div>
+            ) : (
+              <>
+                {musicBars.map((b) => (
+                  <TrackLabel
+                    key={b.key}
+                    leftPx={(b.startMs / 1000) * pxPerSec}
+                    widthPx={(b.lengthMs / 1000) * pxPerSec}
+                    text={`♪ ${baseName(b.clip.filename)}${b.loop ? " (loop)" : ""}`}
+                    title={`${b.clip.filename}: loops under the video, quieter while you speak`}
+                    className="bg-amber-500/10 border-amber-400/30 text-amber-200/80"
+                  />
+                ))}
+                {sfxMarks.map((m) => (
+                  <TrackLabel
+                    key={m.key}
+                    leftPx={(m.startMs / 1000) * pxPerSec}
+                    widthPx={(m.lengthMs / 1000) * pxPerSec}
+                    text="SFX"
+                    title={`${m.clip.filename} on the cut at ${formatPlaybackTime(m.cutMs / 1000)}`}
+                    className="bg-pink-500/20 border-pink-400/40 text-pink-100 z-[1]"
+                  />
+                ))}
+              </>
+            )}
+          </TrackRow>
+        </div>
+      </div>
+    </>
   );
 }
 
 /* ---------- main export: TimelinePanel ---------- */
+const TIME_FORMAT_KEY = "stuccord.timeFormat";
+
+/** Listed in the toolbar's keyboard shortcuts popover. */
+const SHORTCUTS: [string, string][] = [
+  ["Space", "Play / pause"],
+  ["J  K  L", "Back 1 s · stop · play (L again: 2×, 4×)"],
+  ["← →", "One frame (Shift: 1 second)"],
+  ["Page Up / Down", "One frame (Shift: 10 frames)"],
+  ["Home / End", "Start / end"],
+  ["S", "Split the selected clip at the playhead"],
+  ["Alt + [  /  Alt + ]", "Trim the selected clip's start / end to the playhead"],
+  ["Ctrl + D", "Duplicate the selected clip"],
+  ["Del", "Delete the selected clip"],
+  ["Ctrl + Z / Ctrl + Shift + Z", "Undo / redo"],
+  ["+ / −", "Zoom in / out"],
+  ["Ctrl + scroll", "Zoom at the pointer"],
+  ["Right-click", "Clip and track menu"],
+];
 export interface TimelinePanelProps {
   projectTitle: string;
   aRoll: ClipRow[];
@@ -1668,6 +1844,27 @@ export function TimelinePanel({
   const programMs = mainTrack.reduce((sum, c) => sum + clipVisibleMs(c), 0);
   // Bumped by the Fit button; the tracks measure their width and zoom to fit.
   const [fitRequest, setFitRequest] = useState(0);
+  // Timecode as frames (0:00:05:12, like After Effects) or seconds (00:05.4).
+  // Click it to switch; remembered in this browser.
+  const [timeFormat, setTimeFormat] = useState<"frames" | "seconds">("frames");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(TIME_FORMAT_KEY) === "seconds") setTimeFormat("seconds");
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  const toggleTimeFormat = () => {
+    const next = timeFormat === "frames" ? "seconds" : "frames";
+    setTimeFormat(next);
+    try {
+      localStorage.setItem(TIME_FORMAT_KEY, next);
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  const showTime = (ms: number) =>
+    timeFormat === "frames" ? formatFrameTimecode(ms) : formatPlaybackTime(ms / 1000);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0b0b12]">
@@ -1713,14 +1910,48 @@ export function TimelinePanel({
           <span className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold truncate max-w-[220px]">
             {projectTitle}
           </span>
-          <span className="text-[11px] font-mono text-violet-300/90 tabular-nums">
-            {formatPlaybackTime(currentTimeMs / 1000)}
-            <span className="text-neutral-500"> / {formatPlaybackTime(programMs / 1000)}</span>
-          </span>
+          <button
+            type="button"
+            onClick={toggleTimeFormat}
+            className="text-[11px] font-mono text-violet-300/90 tabular-nums rounded px-1 hover:bg-white/[0.05]"
+            title={
+              timeFormat === "frames"
+                ? "Hours:minutes:seconds:frames (30 fps). Click for seconds."
+                : "Minutes:seconds. Click for frames."
+            }
+          >
+            {showTime(currentTimeMs)}
+            <span className="text-neutral-500"> / {showTime(programMs)}</span>
+          </button>
         </div>
         <div className="md:hidden flex-1" />
 
-        {/* Right cluster: snap + zoom */}
+        {/* Right cluster: shortcuts, snap + zoom */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] transition"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts"
+            >
+              <Keyboard className="w-4 h-4" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-3 text-xs">
+            <p className="font-semibold text-neutral-100 mb-2">Keyboard shortcuts</p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+              {SHORTCUTS.map(([keys, what]) => (
+                <React.Fragment key={keys}>
+                  <dt className="font-mono text-[10.5px] text-violet-200 whitespace-nowrap">
+                    {keys}
+                  </dt>
+                  <dd className="text-neutral-400">{what}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          </PopoverContent>
+        </Popover>
         <ToolBtn
           icon={Magnet}
           title={snapEnabled ? "Magnetic snap: ON" : "Magnetic snap: OFF"}
