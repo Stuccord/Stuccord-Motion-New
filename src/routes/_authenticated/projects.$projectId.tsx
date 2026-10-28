@@ -57,6 +57,8 @@ import { uploadSummary, useUploadQueue } from "@/components/editor/useUploadQueu
 import { UploadList } from "@/components/editor/UploadList";
 import { ThumbnailMaker } from "@/components/editor/ThumbnailMaker";
 import { AutoCutPanel, type AutoCutClip } from "@/components/editor/AutoCutPanel";
+import { VoiceoverDialog } from "@/components/editor/VoiceoverDialog";
+import { makeAiVoiceover, type AiVoice } from "@/lib/voiceover.functions";
 import type { Range } from "@/lib/auto-cut";
 import {
   captureFilmstrip,
@@ -165,6 +167,7 @@ import {
   planMagneticInsert,
   videoEndMs,
   planPlacement,
+  voiceoverAt,
 } from "@/lib/timeline-layout";
 import {
   IMAGE_DEFAULT_MS,
@@ -172,17 +175,21 @@ import {
   isHeicFile,
   isImageFile,
   isImageFilename,
+  isAudioRole,
 } from "@/lib/media-kind";
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId")({
   head: () => ({ meta: [{ title: "Editor — Stuccord Motion" }] }),
-  // ?thumbnail=1 opens the Thumbnail maker and ?autocut=1 Auto-cut silences
-  // (Home's tools link here).
-  validateSearch: (s: Record<string, unknown>): { thumbnail?: 1; autocut?: 1 } => {
+  // ?thumbnail=1 opens the Thumbnail maker, ?autocut=1 Auto-cut silences and
+  // ?voiceover=1 the voiceover recorder (Home's tools link here).
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { thumbnail?: 1; autocut?: 1; voiceover?: 1 } => {
     const on = (v: unknown) => v === 1 || v === "1" || v === true;
     return {
       ...(on(s.thumbnail) ? { thumbnail: 1 as const } : {}),
       ...(on(s.autocut) ? { autocut: 1 as const } : {}),
+      ...(on(s.voiceover) ? { voiceover: 1 as const } : {}),
     };
   },
   component: EditorPage,
@@ -272,6 +279,7 @@ function EditorPage() {
 
   const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
   const cutRangesFn = useServerFn(cutClipRanges);
+  const makeAiVoiceoverFn = useServerFn(makeAiVoiceover);
   const restoreLayoutFn = useServerFn(restoreClipLayout);
 
   const { data, isLoading, refetch } = useQuery({
@@ -368,6 +376,20 @@ function EditorPage() {
     // Only when the flag arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.autocut]);
+  // The voiceover recorder / AI voice (?voiceover=1 opens it from Home).
+  const [voiceoverOpen, setVoiceoverOpen] = useState(!!search.voiceover);
+  useEffect(() => {
+    if (!search.voiceover) return;
+    setVoiceoverOpen(true);
+    void navigate({
+      to: "/projects/$projectId",
+      params: { projectId },
+      search: search.thumbnail ? { thumbnail: 1 } : {},
+      replace: true,
+    });
+    // Only when the flag arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.voiceover]);
   // Source-file time (ms) to jump to once the selected clip's video loads.
   const pendingSourceSeekMs = useRef<number | null>(null);
 
@@ -642,7 +664,7 @@ function EditorPage() {
       for (const [path, group] of byPath) {
         try {
           const { url } = await signClip({ data: { path } });
-          const isAudio = group[0].role === "music" || group[0].role === "sfx";
+          const isAudio = isAudioRole(group[0].role);
           const ms = await probeMediaDurationMs(url, isAudio ? "audio" : "video");
           if (ms == null) continue;
           for (const c of group) await durationFn({ data: { id: c.id, duration_ms: ms } });
@@ -663,7 +685,7 @@ function EditorPage() {
     if (!data) return;
     const todo = (data.clips as ClipRow[]).filter(
       (c) =>
-        c.role !== "music" && c.role !== "sfx" && !thumbnailsRequested.current.has(thumbnailKey(c)),
+        !isAudioRole(c.role) && !thumbnailsRequested.current.has(thumbnailKey(c)),
     );
     if (todo.length === 0) return;
     for (const c of todo) thumbnailsRequested.current.add(thumbnailKey(c));
@@ -705,7 +727,7 @@ function EditorPage() {
   // thumbnail_path is missing (undefined) until its migration has run.
   useThumbnailMaker(
     (data?.clips ?? []).filter(
-      (c) => c.thumbnail_path === null && c.role !== "music" && c.role !== "sfx",
+      (c) => c.thumbnail_path === null && !isAudioRole(c.role),
     ),
     signClip,
     recordThumbFn,
@@ -730,7 +752,7 @@ function EditorPage() {
     if (!data) return;
     const todo = new Map<string, ClipRow>();
     for (const c of data.clips as ClipRow[]) {
-      if (c.role === "music" || c.role === "sfx" || isImageFilename(c.filename)) continue;
+      if (isAudioRole(c.role) || isImageFilename(c.filename)) continue;
       if (c.duration_ms == null || stripsRequested.current.has(c.storage_path)) continue;
       todo.set(c.storage_path, c);
     }
@@ -1151,7 +1173,7 @@ function EditorPage() {
     if (target.track === "music" || target.startMs == null || added.length === 0 || !data) return;
     const addedIds = new Set(added.map((c) => c.id));
     const existing = (data.clips as ClipRow[]).filter(
-      (c) => c.role !== "music" && c.role !== "sfx" && !addedIds.has(c.id),
+      (c) => !isAudioRole(c.role) && !addedIds.has(c.id),
     );
     const existingA = existing.filter((c) => c.role !== "broll");
     const existingB = existing.filter((c) => c.role === "broll");
@@ -1178,7 +1200,7 @@ function EditorPage() {
     }
     const src = data?.clips.find((c) => c.id === source.clipId) as ClipRow | undefined;
     if (!src || !data) return;
-    const isAudio = src.role === "music" || src.role === "sfx";
+    const isAudio = isAudioRole(src.role);
     if (isAudio !== (target.track === "music")) {
       toast.error(isAudio ? "Music and SFX go on A2" : "Videos and images go on V1 or V2");
       return;
@@ -1347,7 +1369,7 @@ function EditorPage() {
   // These hooks MUST be above the early return to avoid "rendered more hooks" errors.
   // They use null-safe access since `data` may be undefined during loading.
   const videoClipsForHooks = ((data?.clips ?? []) as ClipRow[]).filter(
-    (c) => c.role !== "music" && c.role !== "sfx",
+    (c) => !isAudioRole(c.role),
   );
 
   // Where each clip starts in the rendered program, matching the export and the
@@ -1484,6 +1506,7 @@ function EditorPage() {
     audioClips: ((data?.clips ?? []) as ClipRow[]).filter(
       (c) => c.role === "music" || c.role === "sfx",
     ),
+    voiceClips: ((data?.clips ?? []) as ClipRow[]).filter((c) => c.role === "voiceover"),
     urls: clipUrls,
     lengthMs: clipVisibleMs,
     endMs: programEndForHooks,
@@ -1515,8 +1538,10 @@ function EditorPage() {
 
   const { project, clips: clipsRaw, latestJob } = data;
   const clips = clipsRaw as ClipRow[];
-  const videoClips = clips.filter((c) => c.role !== "music" && c.role !== "sfx");
+  const videoClips = clips.filter((c) => !isAudioRole(c.role));
+  // A2 (music and SFX) and the VO track.
   const audioClips = clips.filter((c) => c.role === "music" || c.role === "sfx");
+  const voiceClips = clips.filter((c) => c.role === "voiceover");
   const aRoll = videoClips.filter((c) => c.role === "aroll" || c.role === "auto");
   const bRoll = videoClips.filter((c) => c.role === "broll");
 
@@ -1557,6 +1582,89 @@ function EditorPage() {
     } else {
       pendingSourceSeekMs.current = sourceMs;
       setSelectedClipId(word.clipId);
+    }
+  }
+
+  // ---------- Voiceover ----------
+  /** Puts a saved voiceover file on the VO track at `startMs`. */
+  async function attachVoiceover(file: {
+    path: string;
+    filename: string;
+    size_bytes: number;
+    duration_ms: number;
+    startMs: number;
+  }) {
+    await attachFn({
+      data: {
+        project_id: projectId,
+        storage_path: file.path,
+        filename: file.filename,
+        size_bytes: file.size_bytes,
+        role: "voiceover",
+        ordinal: clips.length,
+        duration_ms: file.duration_ms,
+        start_ms: Math.max(0, Math.round(file.startMs)),
+      },
+    });
+    await refetch();
+  }
+  /** A recording (WAV): uploaded like any file, then put at the playhead. */
+  async function addRecordedVoiceover(wav: Blob, lengthMs: number) {
+    const startMs = timelinePlayheadMs;
+    const filename = "Voiceover (recorded).wav";
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      if (auth?.session?.access_token) {
+        headers.Authorization = `Bearer ${auth.session.access_token}`;
+      }
+      const res = await fetch("/api/authenticated/uploads/presign", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ projectId, filename, contentType: "audio/wav", size: wav.size }),
+      });
+      if (!res.ok) throw new Error((await res.text()).trim().slice(0, 200) || "Upload failed");
+      const { bucket, path, token } = (await res.json()) as {
+        bucket: string;
+        path: string;
+        token: string;
+      };
+      const file = new File([wav], filename, { type: "audio/wav" });
+      await uploadToSignedUrlWithProgress(bucket, path, token, file, () => {}).done;
+      await attachVoiceover({
+        path,
+        filename,
+        size_bytes: wav.size,
+        duration_ms: lengthMs,
+        startMs,
+      });
+      toast.success("Voiceover added");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add the voiceover");
+      throw e;
+    }
+  }
+  /** An AI voiceover: made on the server, then put at the playhead. */
+  async function addAiVoiceover(text: string, voice: AiVoice) {
+    const startMs = timelinePlayheadMs;
+    try {
+      const made = await makeAiVoiceoverFn({
+        data: { project_id: projectId, text, voice_id: voice.voice_id, voice_name: voice.name },
+      });
+      const { url } = await signClip({ data: { path: made.path } });
+      const ms = await probeMediaDurationMs(url, "audio");
+      await attachVoiceover({
+        path: made.path,
+        filename: made.filename,
+        size_bytes: made.size_bytes,
+        // Roughly 15 characters a second if the length can't be read.
+        duration_ms: ms ?? Math.max(1000, Math.round((made.characters / 15) * 1000)),
+        startMs,
+      });
+      toast.success("AI voiceover added");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't make the voiceover");
+      throw e;
     }
   }
 
@@ -1650,7 +1758,7 @@ function EditorPage() {
     setSelectedClipId(id);
     const c = clips.find((x) => x.id === id);
     const v = videoRef.current;
-    if (!c || !v || !showingProgram || c.role === "music" || c.role === "sfx") return;
+    if (!c || !v || !showingProgram || isAudioRole(c.role)) return;
     const start = programOffsets.get(id) ?? 0;
     const end = start + clipVisibleMs(c);
     if (timelinePlayheadMs < start || timelinePlayheadMs >= end) {
@@ -1718,7 +1826,7 @@ function EditorPage() {
 
   /** [ / ]: the selected clip starts (or ends) at the playhead, where it fits. */
   function moveToPlayhead(edge: "start" | "end") {
-    if (!selectedClip || selectedClip.role === "music" || selectedClip.role === "sfx") {
+    if (!selectedClip || isAudioRole(selectedClip.role)) {
       toast("Select a clip on V1 or V2 first");
       return;
     }
@@ -1749,7 +1857,7 @@ function EditorPage() {
 
   /** Alt+[ / Alt+]: the selected clip starts or ends at the playhead. */
   function trimToPlayhead(edge: "in" | "out") {
-    if (!selectedClip || selectedClip.role === "music" || selectedClip.role === "sfx") {
+    if (!selectedClip || isAudioRole(selectedClip.role)) {
       toast("Select a clip on V1 or V2 first");
       return;
     }
@@ -2094,6 +2202,7 @@ function EditorPage() {
               onSelectClip: (id) => setSelectedClipId(id),
               onTransform: transformClip,
               onStall: resignClipLink,
+              duckAt: (t) => voiceoverAt(voiceClips, clipVisibleMs, t),
             }}
             sourceIsImage={selectedIsImage}
             imageLengthMs={selectedClip ? clipVisibleMs(selectedClip) : undefined}
@@ -2280,6 +2389,9 @@ function EditorPage() {
             waveforms={waveforms}
             pauseMarks={pauseMarks}
             onAutoCut={openAutoCut}
+            voiceClips={voiceClips}
+            onAddVoiceover={() => setVoiceoverOpen(true)}
+            onRemoveClip={(id) => removeClipMut.mutate(id)}
             music={musicEnabled}
             snapEnabled={snapEnabled}
             onSnapToggle={() => setSnapEnabled((s) => !s)}
@@ -2328,6 +2440,14 @@ function EditorPage() {
         defaultFileName={project.title || "stuccord-export"}
         progressPct={renderPct}
         progressMsg={renderMsg}
+      />
+
+      <VoiceoverDialog
+        open={voiceoverOpen}
+        onOpenChange={setVoiceoverOpen}
+        startMs={timelinePlayheadMs}
+        onAddRecording={addRecordedVoiceover}
+        onMakeAi={addAiVoiceover}
       />
 
       <ThumbnailMaker

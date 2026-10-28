@@ -7,7 +7,8 @@
 // Env vars:
 //   RENDER_WORKER_SECRET   shared HMAC secret (matches the Lovable app)
 //   LOVABLE_API_KEY        optional — enables AI edit-plan generation
-//   ELEVENLABS_API_KEY     optional — enables speech-to-text (Scribe v2) for captions
+//   ELEVENLABS_API_KEY     optional — enables speech-to-text (Scribe v2) for captions,
+//                          and AI voiceovers (text-to-speech, /voices and /tts)
 //
 // The worker receives signed download/upload URLs from the app, so it does
 // NOT need any Supabase service keys. It uses ffmpeg to normalize each
@@ -128,6 +129,81 @@ app.get("/health", (_req, res) => {
     });
   } catch {
     return res.status(503).json({ ok: false, ffmpeg: false, error: "FFmpeg unavailable" });
+  }
+});
+
+// ---------- AI voiceovers (ElevenLabs text-to-speech) ----------
+// Both are signed like /jobs; the app checks the user's monthly limit first.
+
+const TTS_MODEL = "eleven_multilingual_v2";
+const TTS_MAX_CHARS = 2500;
+let voicesCache = null; // { at, voices }
+
+// The voices the account can use: { voices: [{ voice_id, name, category, labels, preview_url }] }.
+app.post("/voices", async (req, res) => {
+  if (!verifySignature(req)) return res.status(401).send("bad signature");
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return res.status(503).json({ ok: false, error: "AI voices aren't set up" });
+  try {
+    if (!voicesCache || Date.now() - voicesCache.at > 60 * 60 * 1000) {
+      const r = await fetch("https://api.elevenlabs.io/v1/voices", {
+        headers: { "xi-api-key": key },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!r.ok) throw new Error(`voices failed: ${r.status}`);
+      const data = await r.json();
+      const voices = (Array.isArray(data?.voices) ? data.voices : [])
+        .filter((v) => typeof v?.voice_id === "string" && typeof v?.name === "string")
+        .map((v) => ({
+          voice_id: v.voice_id,
+          name: v.name,
+          category: typeof v.category === "string" ? v.category : null,
+          labels: v.labels && typeof v.labels === "object" ? v.labels : {},
+          preview_url: isAbsoluteHttpUrl(v.preview_url) ? v.preview_url : null,
+        }));
+      voicesCache = { at: Date.now(), voices };
+    }
+    res.json({ ok: true, voices: voicesCache.voices });
+  } catch (e) {
+    console.warn("[Worker] Listing voices failed:", e?.message || e);
+    res.status(502).json({ ok: false, error: "Couldn't load the voices" });
+  }
+});
+
+// Speaks { text, voice_id } and returns the MP3.
+app.post("/tts", async (req, res) => {
+  if (!verifySignature(req)) return res.status(401).send("bad signature");
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return res.status(503).json({ ok: false, error: "AI voices aren't set up" });
+  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  const voiceId = typeof req.body?.voice_id === "string" ? req.body.voice_id : "";
+  if (!text || text.length > TTS_MAX_CHARS) {
+    return res.status(400).json({ ok: false, error: `Text must be 1-${TTS_MAX_CHARS} characters` });
+  }
+  if (!/^[A-Za-z0-9]{8,64}$/.test(voiceId)) {
+    return res.status(400).json({ ok: false, error: "Unknown voice" });
+  }
+  try {
+    const r = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+      {
+        method: "POST",
+        headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
+        body: JSON.stringify({ text, model_id: TTS_MODEL }),
+        signal: AbortSignal.timeout(2 * 60 * 1000),
+      },
+    );
+    if (!r.ok) {
+      const detail = await r.text().catch(() => "");
+      console.warn(`[Worker] TTS failed: ${r.status} ${detail.slice(0, 200)}`);
+      return res.status(502).json({ ok: false, error: "The AI voice couldn't be made" });
+    }
+    const audio = Buffer.from(await r.arrayBuffer());
+    res.setHeader("content-type", "audio/mpeg");
+    res.send(audio);
+  } catch (e) {
+    console.warn("[Worker] TTS failed:", e?.message || e);
+    res.status(502).json({ ok: false, error: "The AI voice couldn't be made" });
   }
 });
 
@@ -577,6 +653,8 @@ const MUSIC_FADE_OUT_S = 1.5;
 const SFX_LEAD_MS = 150; // start an SFX just before the cut so it leads in
 const SFX_GAIN = 0.8;
 const MAX_SFX = 100;
+const VO_GAIN = 1.0;
+const MAX_VO = 50;
 const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 
 /** Music level (linear gain) from the editor's 0–100 volume slider. */
@@ -593,9 +671,21 @@ function musicGain(volume) {
  *    musicPlan { mode: "sequence", paths } plays the files one after another
  *    from 0:00, looped to the end of the video; { mode: "segments",
  *    segments: [{ path, startMs, endMs }] } loops each file over its own span,
- *  - sfxEvents: [{ path, atMs }], each SFX played once at its time.
+ *  - sfxEvents: [{ path, atMs }], each SFX played once at its time,
+ *  - voiceovers: [{ path, atMs, inMs, outMs }], each played once at its
+ *    time (the part from inMs to outMs); the video's own sound and the
+ *    music get quieter under them.
  */
-function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPlan, sfxEvents, volume, out }) {
+function buildAudioMixArgs({
+  videoPath,
+  hasVoice,
+  durationMs,
+  musicPlan,
+  sfxEvents,
+  voiceovers = [],
+  volume,
+  out,
+}) {
   const D = (durationMs / 1000).toFixed(3);
   const inputs = ["-i", videoPath];
   const graph = [];
@@ -603,12 +693,46 @@ function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPlan, sfxEven
   const musicPaths = musicPlan.mode === "sequence" ? musicPlan.paths : [];
   const segments = musicPlan.mode === "segments" ? musicPlan.segments : [];
   const hasMusic = musicPaths.length > 0 || segments.length > 0;
+  const vos = voiceovers.slice(0, MAX_VO);
+  const hasVo = vos.length > 0;
+  // Inputs: the video, the music files, the SFX, then the voiceovers.
+  const firstVo = 1 + musicPaths.length + segments.length + Math.min(sfxEvents.length, MAX_SFX);
 
-  // Voice: the video's audio, or silence the length of the video.
+  // Voiceovers: each part at its time, all on one bus the length of the video.
+  if (hasVo) {
+    vos.forEach((vo, k) => {
+      const from = (Math.max(0, vo.inMs) / 1000).toFixed(3);
+      const to = vo.outMs != null ? `:end=${(vo.outMs / 1000).toFixed(3)}` : "";
+      const at = Math.max(0, Math.round(vo.atMs));
+      graph.push(
+        `[${firstVo + k}:a]${AUDIO_FMT},atrim=start=${from}${to},asetpts=PTS-STARTPTS,` +
+          `volume=${VO_GAIN},adelay=${at}:all=1[vo${k}]`,
+      );
+    });
+    // Mixed onto silence the length of the video, which places each one by
+    // its delayed timestamps (adelay shifts them at the start of a stream).
+    graph.push(`anullsrc=r=48000:cl=stereo,atrim=0:${D}[vosil]`);
+    graph.push(
+      `[vosil]${vos.map((_, k) => `[vo${k}]`).join("")}amix=inputs=${vos.length + 1}:` +
+        `duration=first:dropout_transition=0:normalize=0,asplit=${hasMusic ? 3 : 2}[vo][vokey]` +
+        (hasMusic ? "[vokeym]" : ""),
+    );
+  }
+
+  // Voice: the video's audio (quieter under a voiceover), or silence the
+  // length of the video.
   if (hasVoice) {
-    graph.push(`[0:a]${AUDIO_FMT}${hasMusic ? ",asplit=2[voice][voicekey]" : "[voice]"}`);
+    graph.push(
+      `[0:a]${AUDIO_FMT}${hasMusic ? ",asplit=2[voiceraw][voicekey]" : "[voiceraw]"}`,
+    );
+    graph.push(
+      hasVo
+        ? "[voiceraw][vokey]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=400[voice]"
+        : "[voiceraw]anull[voice]",
+    );
   } else {
     graph.push(`anullsrc=r=48000:cl=stereo,atrim=0:${D}[voice]`);
+    if (hasVo) graph.push("[vokey]anullsink");
   }
   mixInputs.push("[voice]");
 
@@ -654,15 +778,22 @@ function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPlan, sfxEven
       );
       graph.push(`[mseq]apad,atrim=0:${D},asetpts=N/SR/TB[mbus]`);
     }
+    const ducked = hasVoice || hasVo;
     graph.push(
       `[mbus]volume=${musicGain(volume)},afade=t=out:st=${fadeOutStart}:d=${MUSIC_FADE_OUT_S}` +
-        (hasVoice ? "[mraw]" : "[music]"),
+        (ducked ? "[mraw]" : "[music]"),
     );
-    if (hasVoice) {
+    if (ducked) {
+      // Ducked under the voice and any voiceover.
+      if (hasVoice && hasVo) {
+        graph.push("[voicekey][vokeym]amix=inputs=2:normalize=0[mkey]");
+      } else {
+        graph.push(`${hasVoice ? "[voicekey]" : "[vokeym]"}anull[mkey]`);
+      }
       // About an 8 dB dip under normal speech (~-20 dBFS), less for quiet
       // speech, more for shouting; back up within ~0.4s of a pause.
       graph.push(
-        "[mraw][voicekey]sidechaincompress=threshold=0.03:ratio=4:attack=15:release=350[music]",
+        "[mraw][mkey]sidechaincompress=threshold=0.03:ratio=4:attack=15:release=350[music]",
       );
     }
     mixInputs.push("[music]");
@@ -676,6 +807,12 @@ function buildAudioMixArgs({ videoPath, hasVoice, durationMs, musicPlan, sfxEven
     graph.push(`[${firstSfx + k}:a]${AUDIO_FMT},volume=${SFX_GAIN},adelay=${at}:all=1[s${k}]`);
     mixInputs.push(`[s${k}]`);
   });
+
+  // Voiceover inputs (their filters are above).
+  if (hasVo) {
+    vos.forEach((vo) => inputs.push("-i", vo.path));
+    mixInputs.push("[vo]");
+  }
 
   graph.push(
     `${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=first:dropout_transition=0:normalize=0,` +
@@ -928,7 +1065,7 @@ async function runRender(job) {
     // on top of it, muted, and is cut where the A-roll ends: the same layout
     // the editor timeline shows. With no A-roll, the B-roll is the main track.
     const videoClips = job.clips.filter(
-      (c) => c.download_url && c.role !== "music" && c.role !== "sfx",
+      (c) => c.download_url && c.role !== "music" && c.role !== "sfx" && c.role !== "voiceover",
     );
     if (!videoClips.length) throw new Error("No downloadable clips provided");
     let mainClips = videoClips.filter((c) => c.role !== "broll");
@@ -1265,13 +1402,19 @@ async function runRender(job) {
     // 4c. Music and SFX (best-effort; skipped when the user turned Music
     //     off). Music loops under the whole video and ducks while the voice
     //     speaks; an SFX plays at each cut between main clips.
+    //     Voiceovers are mixed in either way.
     const musicOn = job.music?.enabled !== false;
-    const musicClips = job.clips.filter((c) => c.download_url && c.role === "music");
-    const sfxClips = job.clips.filter((c) => c.download_url && c.role === "sfx");
-    if (musicOn && (musicClips.length || sfxClips.length)) {
+    const musicClips = musicOn
+      ? job.clips.filter((c) => c.download_url && c.role === "music")
+      : [];
+    const sfxClips = musicOn ? job.clips.filter((c) => c.download_url && c.role === "sfx") : [];
+    const voClips = (Array.isArray(job.voiceovers) ? job.voiceovers : []).filter(
+      (c) => c && isAbsoluteHttpUrl(c.download_url),
+    );
+    if (musicClips.length || sfxClips.length || voClips.length) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 80,
-        stage_message: "Mixing music & SFX",
+        stage_message: voClips.length ? "Mixing voiceover & music" : "Mixing music & SFX",
       });
       try {
         const fetchAudio = async (clips, prefix) => {
@@ -1286,6 +1429,7 @@ async function runRender(job) {
         };
         const musicPaths = await fetchAudio(musicClips, "music");
         const sfxPaths = await fetchAudio(sfxClips, "sfx");
+        const voPaths = await fetchAudio(voClips, "vo");
 
         const video = await probeMedia(composedOut);
         if (video.durationMs == null) throw new Error("could not read the video length");
@@ -1329,6 +1473,14 @@ async function runRender(job) {
             durationMs: video.durationMs,
             musicPlan,
             sfxEvents: sfxEvents.filter((e) => e.atMs < video.durationMs),
+            voiceovers: voClips
+              .map((c, i) => ({
+                path: voPaths[i],
+                atMs: Number(c.start_ms ?? 0),
+                inMs: Number(c.trim_in_ms ?? 0),
+                outMs: c.trim_out_ms != null ? Number(c.trim_out_ms) : null,
+              }))
+              .filter((v) => Number.isFinite(v.atMs) && v.atMs < video.durationMs),
             volume: job.music?.volume,
             out: mixedOut,
           }),

@@ -21,7 +21,7 @@ import {
   setClipThumbnail,
 } from "@/lib/projects.functions";
 import { useThumbnailMaker } from "@/lib/clip-thumbnails";
-import { isImageFilename } from "@/lib/media-kind";
+import { isAudioRole, isImageFilename } from "@/lib/media-kind";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
@@ -56,7 +56,7 @@ function AssetsPage() {
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useThumbnailMaker(
     (clips ?? []).filter(
-      (c) => c.has_thumbnail === false && c.role !== "music" && c.role !== "sfx",
+      (c) => c.has_thumbnail === false && !isAudioRole(c.role),
     ),
     signFn,
     recordThumbFn,
@@ -155,7 +155,7 @@ function AssetsPage() {
               <div className="w-10 h-10 grid place-items-center rounded-lg bg-neutral-100 shrink-0 overflow-hidden">
                 {c.thumbnail_url ? (
                   <img src={c.thumbnail_url} alt="" loading="lazy" className="w-full h-full object-cover" />
-                ) : c.role === "music" || c.role === "sfx" ? (
+                ) : isAudioRole(c.role) ? (
                   <Music2 className="w-4 h-4 text-neutral-500" />
                 ) : isImageFilename(c.filename) ? (
                   <ImageIcon className="w-4 h-4 text-neutral-500" />

@@ -26,3 +26,8 @@ export const isImageFile = (f: File) =>
 /** iPhone photos (HEIC/HEIF) don't show in most browsers. */
 export const isHeicFile = (f: File) =>
   /image\/hei[cf]/.test(f.type) || /\.(heic|heif)$/i.test(f.name);
+
+/** Clip roles that are sound only: music and SFX (A2) and voiceovers (VO). */
+export const AUDIO_ROLES = ["music", "sfx", "voiceover"] as const;
+export const isAudioRole = (role: string | null | undefined) =>
+  role === "music" || role === "sfx" || role === "voiceover";

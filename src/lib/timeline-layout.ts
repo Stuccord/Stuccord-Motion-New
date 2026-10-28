@@ -279,6 +279,29 @@ export type MusicBar<T> = {
 };
 
 /**
+ * Where each voiceover plays (the VO track): from its start (0:00 when it
+ * has none) for its length, like the cloud export.
+ */
+export function voiceoverSpans<T extends Placeable>(
+  voiceovers: T[],
+  lengthMs: (c: T) => number,
+): { clip: T; startMs: number; endMs: number }[] {
+  return voiceovers.map((clip) => {
+    const startMs = Math.max(0, clip.start_ms ?? 0);
+    return { clip, startMs, endMs: startMs + Math.max(1, lengthMs(clip)) };
+  });
+}
+
+/** Whether a voiceover is playing at `timeMs`. */
+export function voiceoverAt<T extends Placeable>(
+  voiceovers: T[],
+  lengthMs: (c: T) => number,
+  timeMs: number,
+): boolean {
+  return voiceoverSpans(voiceovers, lengthMs).some((s) => timeMs >= s.startMs && timeMs < s.endMs);
+}
+
+/**
  * The music as the cloud export mixes it, up to `endMs` (the end of the
  * video). With no song placed: the songs one after another from 0:00, the
  * whole run looped. Once any song is placed: each song from its start,

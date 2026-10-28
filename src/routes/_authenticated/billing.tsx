@@ -8,6 +8,7 @@ import { Check, Clock, Mail } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getUsageStats } from "@/lib/projects.functions";
+import { AI_VOICE_MONTHLY_CHARS, getAiVoiceUsage } from "@/lib/voiceover.functions";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({ meta: [{ title: "Billing — Stuccord Motion" }] }),
@@ -16,13 +17,16 @@ export const Route = createFileRoute("/_authenticated/billing")({
 
 // What the free plan really includes (and enforces): see submitRender and
 // startBrowserRender in src/lib/projects.functions.ts, and the upload limit
-// in src/routes/api/authenticated/uploads/presign.ts.
+// in src/routes/api/authenticated/uploads/presign.ts; AI voice in
+// src/lib/voiceover.functions.ts.
 const INCLUDED = [
   "5 exports a month (cloud or browser)",
   "Cloud exports in 1080p; browser exports up to 4K",
   "No watermark",
   "Word-by-word captions from your speech",
   "Music and sound effects, quieter under your voice",
+  "Voiceovers: record your own (no limit) or AI voice, " +
+    `${AI_VOICE_MONTHLY_CHARS.toLocaleString("en")} characters a month`,
   "B-roll, images and picture-in-picture",
   "9:16, 16:9 and 1:1 videos",
   "Uploads up to 500 MB per file",
@@ -37,6 +41,12 @@ function nextResetLabel() {
 function BillingPage() {
   const fetchStats = useServerFn(getUsageStats);
   const { data, isLoading } = useQuery({ queryKey: ["usage-stats"], queryFn: () => fetchStats() });
+  const fetchVoiceUsage = useServerFn(getAiVoiceUsage);
+  const voice = useQuery({
+    queryKey: ["ai-voice-usage"],
+    queryFn: () => fetchVoiceUsage(),
+    retry: false,
+  });
 
   const used = data?.rendersThisMonth ?? 0;
   const cap = data?.renderCap ?? 5;
@@ -68,6 +78,21 @@ function BillingPage() {
           <div className="mt-3 max-w-sm">
             <Progress value={pct} className="h-1.5 bg-white/10" />
           </div>
+          {voice.data && (
+            <div className="mt-4 max-w-sm">
+              <div className="text-sm text-white/70">
+                AI voice:{" "}
+                <span className="tabular-nums font-medium text-white">
+                  {voice.data.used.toLocaleString()}
+                </span>{" "}
+                of {voice.data.limit.toLocaleString()} characters used this month
+              </div>
+              <Progress
+                value={Math.min(100, Math.round((voice.data.used / voice.data.limit) * 100))}
+                className="h-1.5 bg-white/10 mt-2"
+              />
+            </div>
+          )}
         </div>
       </Card>
 

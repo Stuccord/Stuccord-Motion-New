@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { listAllClips, listProjects } from "@/lib/projects.functions";
 import { TEMPLATES } from "@/lib/templates.data";
-import { isImageFilename } from "@/lib/media-kind";
+import { isAudioRole, isImageFilename } from "@/lib/media-kind";
 import {
   Command,
   CommandEmpty,
@@ -180,7 +180,7 @@ export function GlobalSearch() {
                           alt=""
                           className="w-5 h-5 rounded object-cover"
                         />
-                      ) : c.role === "music" || c.role === "sfx" ? (
+                      ) : isAudioRole(c.role) ? (
                         <Music2 />
                       ) : isImageFilename(c.filename) ? (
                         <ImageIcon />

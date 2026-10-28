@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { parseTransform } from "@/lib/clip-transform";
 import { parseBrandKit } from "@/lib/brand-kit";
+import { isAudioRole } from "@/lib/media-kind";
 
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
@@ -230,7 +231,7 @@ export const listProjects = createServerFn({ method: "GET" })
     if (cErr) throw new Error(cErr.message);
     const firstClip = new Map<string, NonNullable<typeof clipRows>[number]>();
     for (const c of clipRows ?? []) {
-      if (c.role === "music" || c.role === "sfx") continue;
+      if (isAudioRole(c.role)) continue;
       const current = firstClip.get(c.project_id);
       const isMain = c.role !== "broll";
       if (!current || (isMain && current.role === "broll")) firstClip.set(c.project_id, c);
@@ -518,12 +519,14 @@ const AttachClipInput = z.object({
   storage_path: z.string().min(1),
   filename: z.string().min(1),
   size_bytes: z.number().int().nonnegative(),
-  role: z.enum(["auto", "aroll", "broll", "music", "sfx"]).default("auto"),
+  role: z.enum(["auto", "aroll", "broll", "music", "sfx", "voiceover"]).default("auto"),
   ordinal: z.number().int().nonnegative().default(0),
   duration_ms: z.number().int().nonnegative().optional(),
   trim_in_ms: z.number().int().nonnegative().optional(),
   trim_out_ms: z.number().int().nonnegative().optional(),
   parent_clip_id: z.string().uuid().optional(),
+  /** Where it starts on the timeline (a voiceover starts at the playhead). */
+  start_ms: z.number().int().nonnegative().optional(),
 });
 
 export const attachClip = createServerFn({ method: "POST" })
@@ -542,6 +545,7 @@ export const attachClip = createServerFn({ method: "POST" })
       trim_out_ms: data.trim_out_ms ?? null,
       duration_ms: data.duration_ms ?? null,
       parent_clip_id: data.parent_clip_id ?? null,
+      ...(data.start_ms !== undefined ? { start_ms: data.start_ms } : {}),
     };
     const { data: row, error } = await context.supabase
       .from("clips")
@@ -617,7 +621,7 @@ export const updateClipOrder = createServerFn({ method: "POST" })
           z.object({
             id: z.string().uuid(),
             ordinal: z.number().int().nonnegative(),
-            role: z.enum(["auto", "aroll", "broll", "music", "sfx"]).optional(),
+            role: z.enum(["auto", "aroll", "broll", "music", "sfx", "voiceover"]).optional(),
             // Where it starts on the timeline; null follows the clip before it.
             // Left out: unchanged.
             start_ms: z.number().int().nonnegative().nullable().optional(),
@@ -808,7 +812,7 @@ export const cutClipRanges = createServerFn({ method: "POST" })
     for (const [id, keep] of cuts) {
       const c = byId.get(id);
       if (!c) throw new Error("A clip to cut isn't in this project any more");
-      if (c.role === "music" || c.role === "sfx") throw new Error("Only video clips can be cut");
+      if (isAudioRole(c.role)) throw new Error("Only video clips can be cut");
       const end = c.duration_ms ?? Infinity;
       let at = 0;
       for (const k of keep) {
@@ -1195,6 +1199,9 @@ export const submitRender = createServerFn({ method: "POST" })
       .order("ordinal", { ascending: true });
     if (cErr) throw new Error(cErr.message);
     if (!clips?.length) throw new Error("Upload at least one clip before rendering");
+    if (!clips.some((c) => !isAudioRole(c.role))) {
+      throw new Error("Add a video or picture before rendering: sound alone can't be exported");
+    }
 
     // Create job row
     const { data: job, error: jErr } = await context.supabase
@@ -1303,7 +1310,10 @@ export const submitRender = createServerFn({ method: "POST" })
         captions: data.captions,
         music: data.music,
         brand_kit: brandKit,
-        clips: clipUrls,
+        // Voiceovers go apart from the clips, so a worker from before
+        // voiceovers leaves them out instead of taking them for videos.
+        clips: clipUrls.filter((c) => c.role !== "voiceover"),
+        voiceovers: clipUrls.filter((c) => c.role === "voiceover"),
         output: {
           path: outputPath,
           upload_url: uploadSigned.signedUrl,

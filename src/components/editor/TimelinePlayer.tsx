@@ -45,6 +45,8 @@ type Props = {
   /** The frame's shape (width / height). */
   frameRatio: number;
   muted: boolean;
+  /** Whether the clips' own sound is lowered at a time (under a voiceover). */
+  duckAt?: (timeMs: number) => boolean;
   /** The playhead moved (seconds); called a few times a second while playing. */
   onTime?: (seconds: number) => void;
   /** The length of the edit (seconds), when it's known or changes. */
@@ -76,6 +78,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     lengthMs,
     frameRatio,
     muted,
+    duckAt,
     onTime,
     onDuration,
     onPlayingChange,
@@ -135,8 +138,17 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   const videos = useRef(new Map<string, HTMLVideoElement>());
 
   // Latest values for the stable handle and the clock.
-  const latest = useRef({ placed, endMs, mainEndMs, muted, onTime, onPlayingChange, onTick });
-  latest.current = { placed, endMs, mainEndMs, muted, onTime, onPlayingChange, onTick };
+  const latest = useRef({
+    placed,
+    endMs,
+    mainEndMs,
+    muted,
+    duckAt,
+    onTime,
+    onPlayingChange,
+    onTick,
+  });
+  latest.current = { placed, endMs, mainEndMs, muted, duckAt, onTime, onPlayingChange, onTick };
 
   const activeAt = (list: Placed[], t: number) => list.find((p) => t >= p.start && t < p.end);
   const findPlaced = (id: string) =>
@@ -147,6 +159,8 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   const sync = useCallback((time: number) => {
     // At the very end, the last frame stays on screen.
     const t = Math.min(time, Math.max(0, latest.current.endMs - 1));
+    // Under a voiceover the clips are quieter, like the export (about 10 dB).
+    const volume = latest.current.duckAt?.(t) ? 0.32 : 1;
     for (const [id, el] of videos.current) {
       const p = findPlaced(id);
       if (!p) continue;
@@ -156,6 +170,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
       el.playbackRate = rateRef.current;
       // B-roll is silent over the main track, heard once the main track ends.
       el.muted = (p.track === "over" && t < latest.current.mainEndMs) || latest.current.muted;
+      if (el.volume !== volume) el.volume = volume;
       if (active && playingRef.current) {
         if (Math.abs(el.currentTime - target) > 0.3) el.currentTime = target;
         if (el.paused) el.play().catch(() => {});

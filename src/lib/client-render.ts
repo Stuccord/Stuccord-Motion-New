@@ -6,7 +6,7 @@
 // need an external ffmpeg worker to produce a deliverable. Respects each
 // clip's trim_in / trim_out and fits each clip to the frame like the cloud export.
 
-import { IMAGE_DEFAULT_MS, IMAGE_ZOOM, isImageFilename } from "@/lib/media-kind";
+import { IMAGE_DEFAULT_MS, IMAGE_ZOOM, isAudioRole, isImageFilename } from "@/lib/media-kind";
 import { layoutTrack } from "@/lib/timeline-layout";
 import { parseTransform, transformedBox, type ClipTransform } from "@/lib/clip-transform";
 
@@ -229,7 +229,7 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
   const { width, height } = opts;
   const fps = opts.fps ?? 30;
   const videoClips = opts.clips.filter(
-    (c) => c.role !== "music" && c.role !== "sfx" && c.download_url,
+    (c) => !isAudioRole(c.role) && c.download_url,
   );
   if (videoClips.length === 0) throw new Error("Add at least one video clip before exporting.");
 

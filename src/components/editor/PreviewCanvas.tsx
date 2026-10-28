@@ -27,6 +27,8 @@ interface PreviewCanvasProps {
     renderOverlay?: (timeMs: number) => React.ReactNode;
     /** A clip's download stalled: re-sign its link. */
     onStall?: (storagePath: string) => void;
+    /** Whether the clips' own sound is lowered at a time (under a voiceover). */
+    duckAt?: (timeMs: number) => boolean;
     /** The selected clip, which gets a box with handles in the picture. */
     selectedClipId?: string | null;
     onSelectClip?: (id: string) => void;
@@ -459,6 +461,7 @@ export function PreviewCanvas({
               onTick={timeline!.onTick}
               renderOverlay={timeline!.renderOverlay}
               onStall={timeline!.onStall}
+              duckAt={timeline!.duckAt}
               selectedClipId={timeline!.selectedClipId}
               onSelectClip={timeline!.onSelectClip}
               onTransform={timeline!.onTransform}

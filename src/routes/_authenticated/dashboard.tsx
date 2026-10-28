@@ -203,10 +203,17 @@ function Home() {
         {/* Quick tools */}
         <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           {/* Tools that aren't built yet say so and do nothing. */}
-          {/* Auto-cut and Thumbnail open in the latest project (or start one). */}
+          {/* Voiceover, Auto-cut and Thumbnail open in the latest project (or start one). */}
           {[
             { label: "Captions", icon: Captions, to: "/projects/new" },
-            { label: "Voiceover", icon: Mic, to: null },
+            {
+              label: "Voiceover",
+              icon: Mic,
+              to: recent[0] ? "/projects/$projectId" : "/projects/new",
+              params: recent[0] ? { projectId: recent[0].id } : undefined,
+              search: recent[0] ? { voiceover: 1 as const } : undefined,
+              title: recent[0] ? `Opens in “${recent[0].title}”` : "Start a project first",
+            },
             { label: "Music & SFX", icon: Music2, to: "/projects/new" },
             {
               label: "Auto-cut",
@@ -278,6 +285,7 @@ function Home() {
                   "Browser exports up to 4K",
                   "Thumbnails & project covers",
                   "Auto-cut silences",
+                  "Voiceovers: your mic or AI voice",
                 ].map((f) => (
                   <div key={f} className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
@@ -292,7 +300,6 @@ function Home() {
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-background/50 mb-2">Coming next</div>
                 <ul className="space-y-1 text-[12.5px] text-background/80">
                   {[
-                    "Voiceover",
                     "Publishing",
                     "Teams & API",
                   ].map((f) => (

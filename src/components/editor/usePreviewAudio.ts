@@ -3,10 +3,11 @@
 // (render-worker/server.js: buildAudioMixArgs): the music where the A2 row
 // shows it, at the Music volume, quieter while the voice is on, faded in at
 // the start and out at the end; each SFX once at its time (or just before
-// each cut).
+// each cut). Voiceovers (the VO track) play at their time whatever the
+// Music switch says, with the music quieter under them.
 
 import { useCallback, useEffect, useRef } from "react";
-import { musicBars, sfxPlays } from "@/lib/timeline-layout";
+import { musicBars, sfxPlays, voiceoverSpans } from "@/lib/timeline-layout";
 import type { ClipRow } from "./types";
 
 // The export's levels: music at volume/100 × 0.5 of the voice, SFX at 0.8,
@@ -23,6 +24,8 @@ const MAX_DRIFT_S = 0.3;
 type Options = {
   /** Music and SFX clips (A2). */
   audioClips: ClipRow[];
+  /** Voiceover clips (VO): each plays once from where it's placed. */
+  voiceClips?: ClipRow[];
   /** Signed links to the files, by storage path. */
   urls: Record<string, string>;
   lengthMs: (clip: ClipRow) => number;
@@ -70,10 +73,36 @@ export function usePreviewAudio(options: Options) {
     const o = latest.current;
     const prev = lastTick.current;
     lastTick.current = { t, playing };
-    if (!playing || !o.enabled) {
+    if (!playing) {
       stopAll();
       return;
     }
+
+    // Voiceovers: the part under the playhead, at full volume.
+    const vo = voiceoverSpans(o.voiceClips ?? [], o.lengthMs);
+    for (const span of vo) {
+      const el = elements.current.get(span.clip.id);
+      if (t < span.startMs || t >= span.endMs) {
+        if (el && !el.paused) el.pause();
+        continue;
+      }
+      const audio = audioFor(span.clip);
+      if (!audio) continue;
+      const want = ((span.clip.trim_in_ms ?? 0) + (t - span.startMs)) / 1000;
+      audio.muted = o.muted;
+      audio.volume = 1;
+      audio.playbackRate = rate;
+      if (Math.abs(audio.currentTime - want) > MAX_DRIFT_S) audio.currentTime = want;
+      if (audio.paused) audio.play().catch(() => {});
+    }
+    if (!o.enabled) {
+      for (const c of o.audioClips) {
+        const el = elements.current.get(c.id);
+        if (el && !el.paused) el.pause();
+      }
+      return;
+    }
+    const voiceoverOn = vo.some((s) => t >= s.startMs && t < s.endMs);
 
     const songs = o.audioClips.filter((c) => c.role !== "sfx");
     const sfx = o.audioClips.filter((c) => c.role === "sfx");
@@ -82,7 +111,7 @@ export function usePreviewAudio(options: Options) {
     const bars = musicBars(songs, o.lengthMs, o.endMs);
     const bar = bars.find((b) => t >= b.startMs && t < b.startMs + b.lengthMs);
     // Duck under the voice, easing so it doesn't jump.
-    const duckTarget = o.voiceAt(t) ? DUCK : 1;
+    const duckTarget = o.voiceAt(t) || voiceoverOn ? DUCK : 1;
     duckLevel.current += (duckTarget - duckLevel.current) * 0.15;
     const fade = Math.min(1, t / FADE_IN_MS, Math.max(0, o.endMs - t) / FADE_OUT_MS);
     const musicVolume =
@@ -122,7 +151,8 @@ export function usePreviewAudio(options: Options) {
     }
   }, []);
 
-  // Mute and the Music switch apply straight away, even while paused.
+  // Mute and the Music switch apply straight away, even while paused (the
+  // next frame starts any voiceover again).
   useEffect(() => {
     for (const el of elements.current.values()) el.muted = options.muted;
     if (!options.enabled) stopAll();

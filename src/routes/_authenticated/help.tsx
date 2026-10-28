@@ -14,6 +14,7 @@ import {
   Keyboard,
   ImageIcon,
   Scissors,
+  Mic,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -86,6 +87,17 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
       "Import audio and it lands on A2. Music plays under the whole video, looping, and gets quieter while someone speaks.",
       "Files named like whoosh, impact, riser or sfx become sound effects, played on each cut. Drag one on A2 to play it once at that spot.",
       "The speaker button on the A2 track turns music and SFX on or off for the export, and the volume slider sets how loud the music is.",
+    ],
+  },
+  {
+    icon: Mic,
+    title: "Voiceovers",
+    steps: [
+      "Move the playhead to where it should start, then press + on the VO track (or Voiceover on Home).",
+      "Record my voice: allow the microphone, press record, then Stop. Listen back, record again if you like, then add it. Recording has no limit.",
+      "AI voice: pick a voice (press play to hear it), type the script and press Make voiceover. The free plan includes 5,000 AI voice characters a month (about 5 minutes); see Billing.",
+      "Drag a voiceover along the VO track to move it; right-click it to start it at the playhead or delete it.",
+      "Your clips' own sound and the music get quieter while a voiceover plays, in the preview and the cloud export. Browser exports don't include voiceovers yet.",
     ],
   },
   {

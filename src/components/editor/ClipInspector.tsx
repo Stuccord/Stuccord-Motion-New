@@ -32,7 +32,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { IMAGE_DEFAULT_MS, isImageFilename } from "@/lib/media-kind";
+import { IMAGE_DEFAULT_MS, isAudioRole, isImageFilename } from "@/lib/media-kind";
 import {
   cleanTransform,
   IDENTITY_TRANSFORM,
@@ -72,6 +72,8 @@ function trackBadge(role: string): { label: string; className: string } {
     return { label: "A2 · Music", className: "bg-amber-950/40 border-amber-500/30 text-amber-300" };
   if (role === "sfx")
     return { label: "A2 · SFX", className: "bg-amber-950/40 border-amber-500/30 text-amber-300" };
+  if (role === "voiceover")
+    return { label: "VO · Voiceover", className: "bg-sky-950/40 border-sky-500/30 text-sky-300" };
   return {
     label: "V1 · A-Roll",
     className: "bg-violet-950/40 border-violet-500/30 text-violet-300",
@@ -327,7 +329,7 @@ export function ClipInspector({
           </div>
 
           {/* Transform: where the clip sits in the frame (also in the preview's box) */}
-          {onTransform && clip.role !== "music" && clip.role !== "sfx" && (
+          {onTransform && !isAudioRole(clip.role) && (
             <TransformFields
               key={clip.id}
               transform={parseTransform(clip.transform)}

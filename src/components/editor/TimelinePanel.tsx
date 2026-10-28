@@ -28,6 +28,7 @@ import {
   LocateFixed,
   Wand2,
   ScissorsLineDashed,
+  AudioLines,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -936,6 +937,12 @@ type TimelineTracksProps = {
   waveforms: Record<string, Waveform | null>;
   /** Auto-cut's pauses by clip id, marked on the clips. */
   pauseMarks: Record<string, Range[]>;
+  /** Voiceovers (the VO track). */
+  voiceClips: ClipRow[];
+  /** Opens the voiceover recorder / AI voice. */
+  onAddVoiceover?: () => void;
+  /** Deletes a clip (a voiceover, from its menu). */
+  onRemoveClip?: (id: string) => void;
 };
 
 function TimelineTracks({
@@ -967,6 +974,9 @@ function TimelineTracks({
   filmstrips,
   waveforms,
   pauseMarks,
+  voiceClips,
+  onAddVoiceover,
+  onRemoveClip,
 }: TimelineTracksProps) {
   // Clip being dragged to a new place: how far it's drawn from its place
   // (to where it will land). `settling`: dropped, waiting for the save.
@@ -1449,7 +1459,7 @@ function TimelineTracks({
 
   /** Saves music/SFX placements, with undo. */
   function saveAudio(placements: ClipPlacement[], description: string) {
-    const before = currentAudioPlacements(audioClips);
+    const before = currentAudioPlacements([...audioClips, ...voiceClips]);
     const beforeById = new Map(before.map((p) => [p.id, p]));
     const unchanged = placements.every((p) => {
       const b = beforeById.get(p.id);
@@ -1465,6 +1475,13 @@ function TimelineTracks({
   }
   /** Puts a song's start, or an SFX, at a time (null: SFX back on every cut). */
   function placeAudio(clip: ClipRow, startMs: number | null) {
+    if (clip.role === "voiceover") {
+      saveAudio(
+        [{ id: clip.id, ordinal: clip.ordinal, role: "voiceover", start_ms: startMs ?? 0 }],
+        "Move voiceover",
+      );
+      return;
+    }
     saveAudio(
       planAudioPlacement(audioClips, clip.id, startMs, clipVisibleMs),
       clip.role === "sfx" ? "Move SFX" : "Move music",
@@ -1877,12 +1894,14 @@ function TimelineTracks({
     const el = e.target as HTMLElement;
     const trackEl = el.closest<HTMLElement>("[data-track]");
     const clipId = el.closest<HTMLElement>("[data-clip-id]")?.dataset.clipId;
-    if (!trackEl && !clipId) return;
+    const audioEl = el.closest<HTMLElement>("[data-audio-id]");
+    if (!trackEl && !clipId && !audioEl) return;
     e.preventDefault();
     const clip = clipId ? (videoClips.find((c) => c.id === clipId) ?? null) : null;
     if (clip) onSelect(clip.id);
-    const audioEl = el.closest<HTMLElement>("[data-audio-id]");
-    const audioClip = audioEl ? audioClips.find((c) => c.id === audioEl.dataset.audioId) : null;
+    const audioClip = audioEl
+      ? [...audioClips, ...voiceClips].find((c) => c.id === audioEl.dataset.audioId)
+      : null;
     setMenu({
       x: e.clientX,
       y: e.clientY,
@@ -2112,7 +2131,23 @@ function TimelineTracks({
                 <DropdownMenuLabel className="text-[11px] truncate">
                   {baseName(menu.audio.clip.filename)}
                 </DropdownMenuLabel>
-                {menu.audio.clip.role === "sfx" ? (
+                {menu.audio.clip.role === "voiceover" ? (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={() => placeAudio(menu.audio!.clip, Math.round(currentTimeMs))}
+                    >
+                      <LocateFixed className="w-3.5 h-3.5" /> Start at the playhead
+                    </DropdownMenuItem>
+                    {onRemoveClip && (
+                      <DropdownMenuItem
+                        onSelect={() => onRemoveClip(menu.audio!.clip.id)}
+                        className="text-rose-300 focus:text-rose-200 focus:bg-rose-500/15"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete voiceover
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                ) : menu.audio.clip.role === "sfx" ? (
                   menu.audio.onCut ? (
                     <DropdownMenuItem
                       onSelect={() => placeAudio(menu.audio!.clip, Math.round(menu.audio!.atMs))}
@@ -2142,9 +2177,17 @@ function TimelineTracks({
                   </>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => pickFiles({ track: "music", startMs: null })}>
-                  <Plus className="w-3.5 h-3.5" /> Add music or SFX…
-                </DropdownMenuItem>
+                {menu.audio.clip.role === "voiceover" ? (
+                  onAddVoiceover && (
+                    <DropdownMenuItem onSelect={onAddVoiceover}>
+                      <Plus className="w-3.5 h-3.5" /> Add a voiceover…
+                    </DropdownMenuItem>
+                  )
+                ) : (
+                  <DropdownMenuItem onSelect={() => pickFiles({ track: "music", startMs: null })}>
+                    <Plus className="w-3.5 h-3.5" /> Add music or SFX…
+                  </DropdownMenuItem>
+                )}
               </>
             ) : menu?.track ? (
               <>
@@ -2476,6 +2519,48 @@ function TimelineTracks({
               </>
             )}
           </TrackRow>
+
+          {/* VO Voiceover: recorded or AI voiceovers, each played once from
+              where it sits; the clips' sound and the music dip under it. */}
+          {(voiceClips.length > 0 || onAddVoiceover) && (
+            <TrackRow
+              label="VO"
+              name="Voiceover"
+              icon={AudioLines}
+              toneClass="text-sky-400"
+              note="Clips & music dip under it"
+              size="slim"
+              onAdd={onAddVoiceover}
+              addLabel="a voiceover"
+              innerWidth={trackWidthPx}
+              contentHandlers={scrubHandlers}
+            >
+              {voiceClips.length === 0 ? (
+                <div className="absolute inset-0 flex items-center px-3 text-[12px] italic text-neutral-500 pointer-events-none">
+                  Record or make an AI voiceover with +
+                </div>
+              ) : (
+                voiceClips.map((c) => {
+                  const at = Math.max(0, c.start_ms ?? 0);
+                  return (
+                    <AudioBlock
+                      key={c.id}
+                      audioId={c.id}
+                      audioKey={c.id}
+                      atMs={at}
+                      leftPx={(at / 1000) * pxPerSec}
+                      widthPx={(clipVisibleMs(c) / 1000) * pxPerSec}
+                      shiftPx={audioShift(c, c.id)}
+                      text={baseName(c.filename)}
+                      title={`${c.filename} at ${formatPlaybackTime(at / 1000)}. Drag to move; right-click for more.`}
+                      className="bg-sky-500/20 border-sky-400/50 text-sky-100"
+                      onPointerDown={(e) => startAudioPress(e, c, c.id, at)}
+                    />
+                  );
+                })
+              )}
+            </TrackRow>
+          )}
         </div>
       </div>
     </>
@@ -2558,9 +2643,16 @@ export interface TimelinePanelProps {
   pauseMarks?: Record<string, Range[]>;
   /** Opens Auto-cut silences. */
   onAutoCut?: () => void;
+  /** Voiceovers (the VO track). */
+  voiceClips?: ClipRow[];
+  /** Opens the voiceover recorder / AI voice. */
+  onAddVoiceover?: () => void;
+  /** Deletes a clip (a voiceover, from its menu). */
+  onRemoveClip?: (id: string) => void;
 }
 
 const NO_MARKS: Record<string, Range[]> = {};
+const NO_CLIPS: ClipRow[] = [];
 
 export function TimelinePanel({
   projectTitle,
@@ -2601,6 +2693,9 @@ export function TimelinePanel({
   waveforms = {},
   pauseMarks = NO_MARKS,
   onAutoCut,
+  voiceClips = NO_CLIPS,
+  onAddVoiceover,
+  onRemoveClip,
 }: TimelinePanelProps) {
   // Length of the exported video: until the last clip on V1 or V2 ends.
   const programMs = videoEndMs(aRoll, bRoll, clipVisibleMs);
@@ -2779,6 +2874,9 @@ export function TimelinePanel({
         filmstrips={filmstrips}
         waveforms={waveforms}
         pauseMarks={pauseMarks}
+        voiceClips={voiceClips}
+        onAddVoiceover={onAddVoiceover}
+        onRemoveClip={onRemoveClip}
       />
     </div>
   );

@@ -167,6 +167,33 @@ export type Database = {
         }
         Relationships: []
       }
+      tts_usage: {
+        Row: {
+          characters: number
+          created_at: string
+          id: string
+          project_id: string | null
+          user_id: string
+          voice_id: string | null
+        }
+        Insert: {
+          characters: number
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          user_id: string
+          voice_id?: string | null
+        }
+        Update: {
+          characters?: number
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          user_id?: string
+          voice_id?: string | null
+        }
+        Relationships: []
+      }
       render_jobs: {
         Row: {
           created_at: string
@@ -265,7 +292,7 @@ export type Database = {
     }
     Enums: {
       aspect_ratio: "9:16" | "16:9" | "1:1"
-      clip_role: "auto" | "aroll" | "broll" | "music" | "sfx"
+      clip_role: "auto" | "aroll" | "broll" | "music" | "sfx" | "voiceover"
       job_status:
         | "queued"
         | "transcribing"
@@ -402,7 +429,7 @@ export const Constants = {
   public: {
     Enums: {
       aspect_ratio: ["9:16", "16:9", "1:1"],
-      clip_role: ["auto", "aroll", "broll", "music", "sfx"],
+      clip_role: ["auto", "aroll", "broll", "music", "sfx", "voiceover"],
       job_status: [
         "queued",
         "transcribing",
