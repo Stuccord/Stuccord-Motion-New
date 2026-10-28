@@ -3,8 +3,10 @@ import { AppShell } from "@/components/app-shell";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getUsageStats } from "@/lib/projects.functions";
+import { listPosts } from "@/lib/publishing.functions";
+import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { Eye, Play, Clock, TrendingUp, Film, TrendingDown } from "lucide-react";
+import { Eye, Play, Clock, TrendingUp, Film, TrendingDown, ThumbsUp, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/analytics")({
@@ -22,6 +24,17 @@ const PRESET_LABEL: Record<string, string> = {
 function AnalyticsPage() {
   const fetchStats = useServerFn(getUsageStats);
   const { data, isLoading } = useQuery({ queryKey: ["usage-stats"], queryFn: () => fetchStats() });
+  const fetchPosts = useServerFn(listPosts);
+  const posts = useQuery({ queryKey: ["social-posts"], queryFn: () => fetchPosts(), retry: false });
+
+  // Reach from posted videos (view counts are updated daily).
+  const reach = useMemo(() => {
+    const posted = (posts.data ?? []).filter((p) => p.status === "published");
+    const sum = (k: "views" | "likes") => posted.reduce((a, p) => a + (p[k] ?? 0), 0);
+    const top = [...posted].sort((a, b) => (b.views ?? -1) - (a.views ?? -1)).slice(0, 5);
+    return { count: posted.length, views: sum("views"), likes: sum("likes"), top };
+  }, [posts.data]);
+  const compact = (n: number) => new Intl.NumberFormat(undefined, { notation: "compact" }).format(n);
 
   const chart = useMemo(() => {
     const days = data?.days ?? [];
@@ -45,7 +58,17 @@ function AnalyticsPage() {
         <StatCard label="Projects created" value={total} icon={Film} tone="primary" />
         <StatCard label="Shorts rendered" value={ready} icon={Play} tone="success" />
         <StatCard label="Minutes rendered" value={`${minutes}m`} icon={Clock} />
-        <StatCard label="External reach" value="—" icon={Eye} tone="muted" trend="Publishing hub coming" />
+        <StatCard
+          label="Views on posted videos"
+          value={reach.count ? compact(reach.views) : "—"}
+          icon={Eye}
+          tone={reach.count ? "primary" : "muted"}
+          trend={
+            reach.count
+              ? `${reach.count} post${reach.count === 1 ? "" : "s"} · ${compact(reach.likes)} likes`
+              : "Post a video from Publishing"
+          }
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -151,6 +174,54 @@ function AnalyticsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-white border border-black/5 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-sm font-semibold">Top posts</div>
+            <div className="text-xs text-neutral-500 mt-0.5">Views are updated once a day.</div>
+          </div>
+          <Link to="/publishing" className="text-xs font-medium text-violet-700 hover:underline">
+            Publishing
+          </Link>
+        </div>
+        {reach.top.length === 0 ? (
+          <div className="text-xs text-neutral-500 py-6 text-center">
+            Nothing posted yet. Publish a video and its views show here.
+          </div>
+        ) : (
+          <div className="divide-y divide-black/5">
+            {reach.top.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium truncate">{p.title}</div>
+                  <div className="text-[11px] text-neutral-500 truncate">
+                    {p.account_name}
+                    {p.published_at ? ` · ${new Date(p.published_at).toLocaleDateString()}` : ""}
+                  </div>
+                </div>
+                <span className="flex items-center gap-1 text-xs tabular-nums text-neutral-700">
+                  <Eye className="w-3.5 h-3.5" /> {p.views == null ? "—" : compact(p.views)}
+                </span>
+                <span className="flex items-center gap-1 text-xs tabular-nums text-neutral-500">
+                  <ThumbsUp className="w-3.5 h-3.5" /> {p.likes == null ? "—" : compact(p.likes)}
+                </span>
+                {p.external_url && (
+                  <a
+                    href={p.external_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open post"
+                    className="text-violet-700"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </AppShell>
   );

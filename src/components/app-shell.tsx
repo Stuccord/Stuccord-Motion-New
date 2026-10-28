@@ -20,6 +20,7 @@ import {
   Wand2,
   FolderOpen,
   BarChart3,
+  Send,
   Settings,
   HelpCircle,
   LogOut,
@@ -48,6 +49,7 @@ const workspaceNav: NavItem[] = [
   { to: "/projects", label: "Projects", icon: Film },
   { to: "/templates", label: "Templates", icon: Wand2, badge: "New" },
   { to: "/assets", label: "Assets", icon: FolderOpen },
+  { to: "/publishing", label: "Publishing", icon: Send },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 

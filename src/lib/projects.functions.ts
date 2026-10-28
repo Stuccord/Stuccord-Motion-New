@@ -395,7 +395,7 @@ export const listNotifications = createServerFn({ method: "GET" })
   });
 
 /** A cover file made by the Thumbnail maker (anything else in thumbnail_url is ignored). */
-const isCoverPath = (p: string | null | undefined): p is string =>
+export const isCoverPath = (p: string | null | undefined): p is string =>
   !!p && /^[^/]+\/thumbs\/cover-[^/]+\.jpg$/.test(p);
 
 /**
@@ -501,6 +501,13 @@ export const deleteProject = createServerFn({ method: "POST" })
       .select("thumbnail_url")
       .eq("id", data.id)
       .maybeSingle();
+    // Posts of it that haven't gone out yet are called off.
+    const { error: postErr } = await context.supabase
+      .from("social_posts")
+      .update({ status: "canceled", error: "The project was deleted" })
+      .eq("project_id", data.id)
+      .eq("status", "scheduled");
+    if (postErr) console.error("[deleteProject] Canceling posts failed:", postErr.message);
     const { error } = await context.supabase.from("projects").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     const paths = [

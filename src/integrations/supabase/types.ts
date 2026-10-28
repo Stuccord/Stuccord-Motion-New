@@ -203,6 +203,153 @@ export type Database = {
         }
         Relationships: []
       }
+      social_accounts: {
+        Row: {
+          access_token_enc: string
+          avatar_url: string | null
+          created_at: string
+          external_id: string
+          id: string
+          name: string
+          platform: string
+          refresh_token_enc: string | null
+          scopes: string | null
+          status: string
+          token_expires_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token_enc: string
+          avatar_url?: string | null
+          created_at?: string
+          external_id: string
+          id?: string
+          name: string
+          platform: string
+          refresh_token_enc?: string | null
+          scopes?: string | null
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token_enc?: string
+          avatar_url?: string | null
+          created_at?: string
+          external_id?: string
+          id?: string
+          name?: string
+          platform?: string
+          refresh_token_enc?: string | null
+          scopes?: string | null
+          status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      social_posts: {
+        Row: {
+          account_id: string | null
+          account_name: string
+          attempts: number
+          caption: string
+          comments: number | null
+          cover_path: string | null
+          created_at: string
+          error: string | null
+          external_id: string | null
+          external_url: string | null
+          id: string
+          likes: number | null
+          made_for_kids: boolean
+          platform: string
+          privacy: string
+          project_id: string | null
+          published_at: string | null
+          scheduled_at: string
+          stats_updated_at: string | null
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+          video_path: string
+          views: number | null
+        }
+        Insert: {
+          account_id?: string | null
+          account_name: string
+          attempts?: number
+          caption?: string
+          comments?: number | null
+          cover_path?: string | null
+          created_at?: string
+          error?: string | null
+          external_id?: string | null
+          external_url?: string | null
+          id?: string
+          likes?: number | null
+          made_for_kids?: boolean
+          platform: string
+          privacy?: string
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string
+          stats_updated_at?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id: string
+          video_path: string
+          views?: number | null
+        }
+        Update: {
+          account_id?: string | null
+          account_name?: string
+          attempts?: number
+          caption?: string
+          comments?: number | null
+          cover_path?: string | null
+          created_at?: string
+          error?: string | null
+          external_id?: string | null
+          external_url?: string | null
+          id?: string
+          likes?: number | null
+          made_for_kids?: boolean
+          platform?: string
+          privacy?: string
+          project_id?: string | null
+          published_at?: string | null
+          scheduled_at?: string
+          stats_updated_at?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+          video_path?: string
+          views?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_posts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "social_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_posts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tts_usage: {
         Row: {
           characters: number

@@ -6,6 +6,7 @@ import {
   BookOpen,
   Mail,
   Upload,
+  Send,
   Film,
   Captions,
   Music2,
@@ -121,6 +122,17 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
       "Set as project cover shows it on Home and Projects instead of the first clip's frame.",
     ],
   },
+  {
+    icon: Send,
+    title: "Publishing to YouTube",
+    steps: [
+      "On the Publishing page, press Connect YouTube and sign in with the Google account that owns your channel.",
+      "Export your video, then press Publish in the editor (or New post on the Publishing page).",
+      "Add a title and description, choose who can watch, and post now or pick a date and time. Your project cover becomes the video's thumbnail when YouTube allows it.",
+      "Scheduled posts go out within a minute or two of the time. You can move or cancel them until then.",
+      "Views, likes and comments are updated once a day, on the Publishing page and in Analytics.",
+    ],
+  },
 ];
 
 const SHORTCUTS: [string, string][] = [
@@ -195,7 +207,7 @@ const FAQS = [
   },
   {
     q: "Can I post straight to TikTok, Reels or Shorts?",
-    a: "Not yet: publishing is planned. For now, download your export and upload it to each app.",
+    a: "YouTube, yes: connect your channel on the Publishing page and post now or on a schedule. TikTok and Instagram are next; until then, download your export and upload it in each app.",
   },
   {
     q: "Is there a paid plan?",

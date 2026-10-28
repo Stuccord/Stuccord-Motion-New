@@ -40,7 +40,7 @@ export async function hashApiKey(key: string): Promise<string> {
 }
 
 /** With two-factor on, keys can only be managed after the code is entered. */
-async function requireSecondStep(userId: string, claims: unknown) {
+export async function requireSecondStep(userId: string, claims: unknown) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
   const hasTwoFactor = (data?.user?.factors ?? []).some((f) => f.status === "verified");

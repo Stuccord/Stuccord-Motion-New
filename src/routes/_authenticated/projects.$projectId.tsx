@@ -144,6 +144,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import logoUrl from "@/assets/logo.png";
 import { ExportDialog, type ExportSettings } from "@/components/export-dialog";
+import { PublishDialog } from "@/components/publish-dialog";
 import {
   EditorShell,
   EditorTopBar,
@@ -1239,6 +1240,7 @@ function EditorPage() {
   const [downloading, setDownloading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [thumbOpen, setThumbOpen] = useState(!!search.thumbnail);
+  const [publishOpen, setPublishOpen] = useState(false);
   const closeThumbnailMaker = (open: boolean) => {
     setThumbOpen(open);
     if (!open && search.thumbnail) {
@@ -2145,6 +2147,8 @@ function EditorPage() {
               project.status === "ready" ? setExportOpen(true) : render.mutate()
             }
             onOpenThumbnail={() => setThumbOpen(true)}
+            onOpenPublish={() => setPublishOpen(true)}
+            canPublish={!!project.output_path}
             isRenderDisabled={
               render.isPending || (inProgress && project.status !== "ready")
             }
@@ -2462,6 +2466,14 @@ function EditorPage() {
         kit={brand.data?.kit}
         logoUrl={brand.data?.logoUrl}
         hasCover={!!project.thumbnail_url}
+      />
+
+      <PublishDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        projectId={projectId}
+        defaultTitle={project.title.slice(0, 100)}
+        dark
       />
     </div>
   );

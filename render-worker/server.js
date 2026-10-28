@@ -9,6 +9,8 @@
 //   LOVABLE_API_KEY        optional — enables AI edit-plan generation
 //   ELEVENLABS_API_KEY     optional — enables speech-to-text (Scribe v2) for captions,
 //                          and AI voiceovers (text-to-speech, /voices and /tts)
+//   PUBLIC_APP_URL         optional — the app's address; enables the once-a-minute
+//                          tick that sends scheduled posts (see publish.js)
 //
 // The worker receives signed download/upload URLs from the app, so it does
 // NOT need any Supabase service keys. It uses ffmpeg to normalize each
@@ -28,6 +30,7 @@ import os from "os";
 import path from "path";
 import ffmpegPath from "ffmpeg-static";
 import { fileURLToPath } from "url";
+import { registerPublishing } from "./publish.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -98,9 +101,11 @@ function validateJobPayload(job) {
   return null;
 }
 
+const signBody = (body) => crypto.createHmac("sha256", SECRET || "").update(body).digest("hex");
+
 async function callback(url, payload) {
   const body = JSON.stringify(payload);
-  const signature = crypto.createHmac("sha256", SECRET || "").update(body).digest("hex");
+  const signature = signBody(body);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -206,6 +211,9 @@ app.post("/tts", async (req, res) => {
     res.status(502).json({ ok: false, error: "The AI voice couldn't be made" });
   }
 });
+
+// Posting to YouTube (and later TikTok and Instagram), and the scheduled-post tick.
+registerPublishing(app, { verifySignature, callback, signBody });
 
 app.post("/jobs", async (req, res) => {
   if (!verifySignature(req)) return res.status(401).send("bad signature");

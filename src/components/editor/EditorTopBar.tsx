@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Check, Loader2, Sparkles, Undo2, Redo2, Film, Smartphone, Monitor, Square, ImageIcon } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Sparkles, Undo2, Redo2, Film, Smartphone, Monitor, Square, ImageIcon, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,9 @@ interface EditorTopBarProps {
   onOpenRender: () => void;
   /** Opens the Thumbnail maker. */
   onOpenThumbnail?: () => void;
+  /** Opens Publish; disabled until there's an export (canPublish). */
+  onOpenPublish?: () => void;
+  canPublish?: boolean;
   isRenderDisabled?: boolean;
   clipCount: number;
   onUndo?: () => void;
@@ -33,6 +36,8 @@ export function EditorTopBar({
   onAspectRatioChange,
   onOpenRender,
   onOpenThumbnail,
+  onOpenPublish,
+  canPublish = false,
   isRenderDisabled = false,
   clipCount,
   onUndo,
@@ -218,6 +223,28 @@ export function EditorTopBar({
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {clipCount === 0 ? "Upload a clip first" : "Make a thumbnail or project cover"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {onOpenPublish && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={canPublish ? -1 : 0}>
+                  <Button
+                    variant="ghost"
+                    onClick={onOpenPublish}
+                    disabled={!canPublish}
+                    className="h-9 px-3 text-xs text-neutral-300 hover:text-white hover:bg-white/5 border border-white/10 rounded-lg disabled:opacity-40"
+                  >
+                    <Send className="w-3.5 h-3.5 sm:mr-1.5" />
+                    <span className="hidden sm:inline">Publish</span>
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {canPublish
+                  ? "Post your export to YouTube"
+                  : "Export the video first, then post it"}
               </TooltipContent>
             </Tooltip>
           )}

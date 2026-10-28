@@ -23,8 +23,11 @@ import { Route as AuthenticatedAssetsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
+import { Route as AuthenticatedPublishingIndexRouteImport } from './routes/_authenticated/publishing.index'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects.index'
 import { Route as ApiPublicRenderWebhookRouteImport } from './routes/api/public/render-webhook'
+import { Route as ApiPublicPublishingTickRouteImport } from './routes/api/public/publishing-tick'
+import { Route as ApiPublicPublishWebhookRouteImport } from './routes/api/public/publish-webhook'
 import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects.new'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects.$projectId'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
@@ -32,6 +35,7 @@ import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.
 import { Route as ApiV1ProjectsIndexRouteImport } from './routes/api/v1/projects.index'
 import { Route as ApiV1ExportsExportIdRouteImport } from './routes/api/v1/exports.$exportId'
 import { Route as ApiAuthenticatedUploadsPresignRouteImport } from './routes/api/authenticated/uploads/presign'
+import { Route as AuthenticatedPublishingConnectPlatformRouteImport } from './routes/_authenticated/publishing.connect.$platform'
 import { Route as ApiV1ProjectsProjectIdIndexRouteImport } from './routes/api/v1/projects.$projectId.index'
 import { Route as ApiV1ProjectsProjectIdUploadsRouteImport } from './routes/api/v1/projects.$projectId.uploads'
 import { Route as ApiV1ProjectsProjectIdExportsRouteImport } from './routes/api/v1/projects.$projectId.exports'
@@ -108,6 +112,12 @@ const Char91DotmcpChar93ListToolsRoute =
     path: '/.mcp/list-tools',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedPublishingIndexRoute =
+  AuthenticatedPublishingIndexRouteImport.update({
+    id: '/publishing/',
+    path: '/publishing/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsIndexRoute =
   AuthenticatedProjectsIndexRouteImport.update({
     id: '/projects/',
@@ -117,6 +127,16 @@ const AuthenticatedProjectsIndexRoute =
 const ApiPublicRenderWebhookRoute = ApiPublicRenderWebhookRouteImport.update({
   id: '/api/public/render-webhook',
   path: '/api/public/render-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicPublishingTickRoute = ApiPublicPublishingTickRouteImport.update({
+  id: '/api/public/publishing-tick',
+  path: '/api/public/publishing-tick',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicPublishWebhookRoute = ApiPublicPublishWebhookRouteImport.update({
+  id: '/api/public/publish-webhook',
+  path: '/api/public/publish-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedProjectsNewRoute =
@@ -157,6 +177,12 @@ const ApiAuthenticatedUploadsPresignRoute =
     id: '/api/authenticated/uploads/presign',
     path: '/api/authenticated/uploads/presign',
     getParentRoute: () => rootRouteImport,
+  } as any)
+const AuthenticatedPublishingConnectPlatformRoute =
+  AuthenticatedPublishingConnectPlatformRouteImport.update({
+    id: '/publishing/connect/$platform',
+    path: '/publishing/connect/$platform',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const ApiV1ProjectsProjectIdIndexRoute =
   ApiV1ProjectsProjectIdIndexRouteImport.update({
@@ -201,8 +227,12 @@ export interface FileRoutesByFullPath {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
+  '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/publishing/': typeof AuthenticatedPublishingIndexRoute
+  '/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
   '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
   '/api/v1/projects/': typeof ApiV1ProjectsIndexRoute
@@ -229,8 +259,12 @@ export interface FileRoutesByTo {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
+  '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/publishing': typeof AuthenticatedPublishingIndexRoute
+  '/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
   '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
   '/api/v1/projects': typeof ApiV1ProjectsIndexRoute
@@ -259,8 +293,12 @@ export interface FileRoutesById {
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
+  '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/_authenticated/publishing/': typeof AuthenticatedPublishingIndexRoute
+  '/_authenticated/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
   '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
   '/api/v1/projects/': typeof ApiV1ProjectsIndexRoute
@@ -289,8 +327,12 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/api/public/publish-webhook'
+    | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
     | '/projects/'
+    | '/publishing/'
+    | '/publishing/connect/$platform'
     | '/api/authenticated/uploads/presign'
     | '/api/v1/exports/$exportId'
     | '/api/v1/projects/'
@@ -317,8 +359,12 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/api/public/publish-webhook'
+    | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
     | '/projects'
+    | '/publishing'
+    | '/publishing/connect/$platform'
     | '/api/authenticated/uploads/presign'
     | '/api/v1/exports/$exportId'
     | '/api/v1/projects'
@@ -346,8 +392,12 @@ export interface FileRouteTypes {
     | '/.mcp/invoke-tool/$tool'
     | '/_authenticated/projects/$projectId'
     | '/_authenticated/projects/new'
+    | '/api/public/publish-webhook'
+    | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
     | '/_authenticated/projects/'
+    | '/_authenticated/publishing/'
+    | '/_authenticated/publishing/connect/$platform'
     | '/api/authenticated/uploads/presign'
     | '/api/v1/exports/$exportId'
     | '/api/v1/projects/'
@@ -367,6 +417,8 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
+  ApiPublicPublishWebhookRoute: typeof ApiPublicPublishWebhookRoute
+  ApiPublicPublishingTickRoute: typeof ApiPublicPublishingTickRoute
   ApiPublicRenderWebhookRoute: typeof ApiPublicRenderWebhookRoute
   ApiAuthenticatedUploadsPresignRoute: typeof ApiAuthenticatedUploadsPresignRoute
   ApiV1ExportsExportIdRoute: typeof ApiV1ExportsExportIdRoute
@@ -477,6 +529,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/publishing/': {
+      id: '/_authenticated/publishing/'
+      path: '/publishing'
+      fullPath: '/publishing/'
+      preLoaderRoute: typeof AuthenticatedPublishingIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/projects/': {
       id: '/_authenticated/projects/'
       path: '/projects'
@@ -489,6 +548,20 @@ declare module '@tanstack/react-router' {
       path: '/api/public/render-webhook'
       fullPath: '/api/public/render-webhook'
       preLoaderRoute: typeof ApiPublicRenderWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/publishing-tick': {
+      id: '/api/public/publishing-tick'
+      path: '/api/public/publishing-tick'
+      fullPath: '/api/public/publishing-tick'
+      preLoaderRoute: typeof ApiPublicPublishingTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/publish-webhook': {
+      id: '/api/public/publish-webhook'
+      path: '/api/public/publish-webhook'
+      fullPath: '/api/public/publish-webhook'
+      preLoaderRoute: typeof ApiPublicPublishWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/projects/new': {
@@ -540,6 +613,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthenticatedUploadsPresignRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/publishing/connect/$platform': {
+      id: '/_authenticated/publishing/connect/$platform'
+      path: '/publishing/connect/$platform'
+      fullPath: '/publishing/connect/$platform'
+      preLoaderRoute: typeof AuthenticatedPublishingConnectPlatformRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/v1/projects/$projectId/': {
       id: '/api/v1/projects/$projectId/'
       path: '/api/v1/projects/$projectId'
@@ -582,6 +662,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProjectsProjectIdRoute: typeof AuthenticatedProjectsProjectIdRoute
   AuthenticatedProjectsNewRoute: typeof AuthenticatedProjectsNewRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
+  AuthenticatedPublishingIndexRoute: typeof AuthenticatedPublishingIndexRoute
+  AuthenticatedPublishingConnectPlatformRoute: typeof AuthenticatedPublishingConnectPlatformRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -595,6 +677,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProjectsProjectIdRoute: AuthenticatedProjectsProjectIdRoute,
   AuthenticatedProjectsNewRoute: AuthenticatedProjectsNewRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
+  AuthenticatedPublishingIndexRoute: AuthenticatedPublishingIndexRoute,
+  AuthenticatedPublishingConnectPlatformRoute:
+    AuthenticatedPublishingConnectPlatformRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -611,6 +696,8 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
+  ApiPublicPublishWebhookRoute: ApiPublicPublishWebhookRoute,
+  ApiPublicPublishingTickRoute: ApiPublicPublishingTickRoute,
   ApiPublicRenderWebhookRoute: ApiPublicRenderWebhookRoute,
   ApiAuthenticatedUploadsPresignRoute: ApiAuthenticatedUploadsPresignRoute,
   ApiV1ExportsExportIdRoute: ApiV1ExportsExportIdRoute,
