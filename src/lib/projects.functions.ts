@@ -763,6 +763,156 @@ export const splitClip = createServerFn({ method: "POST" })
     return { left_id: src.id, right_id: right.id };
   });
 
+/**
+ * Auto-cut: replaces clips with the pieces of them to keep (pauses cut out).
+ * Each clip keeps its id for its first piece; the others are new clips right
+ * after it, like split halves. Every change goes out as one upsert, so the
+ * timeline is never left half cut. Returns each clip's piece ids, in order.
+ */
+export const cutClipRanges = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        project_id: z.string().uuid(),
+        cuts: z
+          .array(
+            z.object({
+              id: z.string().uuid(),
+              keep: z
+                .array(
+                  z.object({
+                    in_ms: z.number().int().min(0),
+                    out_ms: z.number().int().positive(),
+                  }),
+                )
+                .min(1)
+                .max(500),
+            }),
+          )
+          .min(1)
+          .max(200),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: all, error: aErr } = await context.supabase
+      .from("clips")
+      .select("*")
+      .eq("project_id", data.project_id)
+      .order("ordinal", { ascending: true });
+    if (aErr) throw new Error(aErr.message);
+    const clips = all ?? [];
+    const byId = new Map(clips.map((c) => [c.id, c]));
+    const cuts = new Map(data.cuts.map((c) => [c.id, c.keep]));
+    for (const [id, keep] of cuts) {
+      const c = byId.get(id);
+      if (!c) throw new Error("A clip to cut isn't in this project any more");
+      if (c.role === "music" || c.role === "sfx") throw new Error("Only video clips can be cut");
+      const end = c.duration_ms ?? Infinity;
+      let at = 0;
+      for (const k of keep) {
+        if (k.out_ms - k.in_ms < 50 || k.in_ms < at || k.out_ms > end) {
+          throw new Error("The parts to keep don't fit the clip; find the pauses again");
+        }
+        at = k.out_ms;
+      }
+    }
+
+    // Every clip after a cut one moves down by the number of new pieces.
+    const rows: ClipRow[] = [];
+    const pieces: Record<string, string[]> = {};
+    let shift = 0;
+    const now = new Date().toISOString();
+    for (const c of clips) {
+      const keep = cuts.get(c.id);
+      if (!keep) {
+        if (shift > 0) rows.push({ ...c, ordinal: c.ordinal + shift });
+        continue;
+      }
+      const ordinal = c.ordinal + shift;
+      rows.push({ ...c, ordinal, trim_in_ms: keep[0].in_ms, trim_out_ms: keep[0].out_ms });
+      pieces[c.id] = [c.id];
+      keep.slice(1).forEach((k, i) => {
+        const id = crypto.randomUUID();
+        pieces[c.id].push(id);
+        rows.push({
+          ...c,
+          id,
+          ordinal: ordinal + 1 + i,
+          trim_in_ms: k.in_ms,
+          trim_out_ms: k.out_ms,
+          ...("start_ms" in c ? { start_ms: null } : {}),
+          ...("thumbnail_path" in c ? { thumbnail_path: null } : {}),
+          parent_clip_id: c.parent_clip_id ?? c.id,
+          created_at: now,
+        });
+      });
+      shift += keep.length - 1;
+    }
+    const { error } = await context.supabase.from("clips").upsert(rows, { onConflict: "id" });
+    if (error) throw new Error(error.message);
+    await markProjectEdited(context.supabase, data.project_id);
+    return { pieces };
+  });
+
+/**
+ * Undoes an Auto-cut: removes the pieces it added and puts the clips' trims
+ * and places back as they were. The pieces share their clip's file, so no
+ * file is deleted (only the pieces' own thumbnails).
+ */
+export const restoreClipLayout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        project_id: z.string().uuid(),
+        remove_ids: z.array(z.string().uuid()).max(5000),
+        clips: z
+          .array(
+            z.object({
+              id: z.string().uuid(),
+              ordinal: z.number().int(),
+              trim_in_ms: z.number().int().min(0).nullable(),
+              trim_out_ms: z.number().int().positive().nullable(),
+            }),
+          )
+          .max(5000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: all, error: aErr } = await context.supabase
+      .from("clips")
+      .select("*")
+      .eq("project_id", data.project_id);
+    if (aErr) throw new Error(aErr.message);
+    const byId = new Map((all ?? []).map((c) => [c.id, c]));
+    const remove = data.remove_ids.filter((id) => byId.has(id));
+    if (remove.length > 0) {
+      const thumbs = await thumbnailPaths(context.supabase, remove);
+      const { error } = await context.supabase.from("clips").delete().in("id", remove);
+      if (error) throw new Error(error.message);
+      const files = [...(thumbs?.values() ?? [])];
+      if (files.length > 0) {
+        const { error: thErr } = await context.supabase.storage.from("raw-clips").remove(files);
+        if (thErr) console.error("[restoreClipLayout] Couldn't delete thumbnails:", thErr.message);
+      }
+    }
+    const rows = data.clips.flatMap((c) => {
+      const row = byId.get(c.id);
+      return row && !remove.includes(c.id)
+        ? [{ ...row, ordinal: c.ordinal, trim_in_ms: c.trim_in_ms ?? 0, trim_out_ms: c.trim_out_ms }]
+        : [];
+    });
+    if (rows.length > 0) {
+      const { error } = await context.supabase.from("clips").upsert(rows, { onConflict: "id" });
+      if (error) throw new Error(error.message);
+    }
+    await markProjectEdited(context.supabase, data.project_id);
+    return { ok: true };
+  });
+
 export const duplicateClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))

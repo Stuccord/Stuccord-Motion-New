@@ -22,6 +22,8 @@ import {
   listProjectTranscripts,
   saveTranscriptWords,
   getSignedClipUploadUrl,
+  cutClipRanges,
+  restoreClipLayout,
 } from "@/lib/projects.functions";
 import { renderProjectInBrowser, aspectDims } from "@/lib/client-render";
 import {
@@ -54,6 +56,8 @@ import {
 import { uploadSummary, useUploadQueue } from "@/components/editor/useUploadQueue";
 import { UploadList } from "@/components/editor/UploadList";
 import { ThumbnailMaker } from "@/components/editor/ThumbnailMaker";
+import { AutoCutPanel, type AutoCutClip } from "@/components/editor/AutoCutPanel";
+import type { Range } from "@/lib/auto-cut";
 import {
   captureFilmstrip,
   computeWaveform,
@@ -172,9 +176,15 @@ import {
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId")({
   head: () => ({ meta: [{ title: "Editor — Stuccord Motion" }] }),
-  // ?thumbnail=1 opens the Thumbnail maker (Home's Thumbnail tool links here).
-  validateSearch: (s: Record<string, unknown>): { thumbnail?: 1 } =>
-    s.thumbnail === 1 || s.thumbnail === "1" || s.thumbnail === true ? { thumbnail: 1 } : {},
+  // ?thumbnail=1 opens the Thumbnail maker and ?autocut=1 Auto-cut silences
+  // (Home's tools link here).
+  validateSearch: (s: Record<string, unknown>): { thumbnail?: 1; autocut?: 1 } => {
+    const on = (v: unknown) => v === 1 || v === "1" || v === true;
+    return {
+      ...(on(s.thumbnail) ? { thumbnail: 1 as const } : {}),
+      ...(on(s.autocut) ? { autocut: 1 as const } : {}),
+    };
+  },
   component: EditorPage,
   errorComponent: ({ error }) => (
     <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4 text-white">
@@ -261,6 +271,8 @@ function EditorPage() {
   const [dragActive, setDragActive] = useState(false);
 
   const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
+  const cutRangesFn = useServerFn(cutClipRanges);
+  const restoreLayoutFn = useServerFn(restoreClipLayout);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["project", projectId],
@@ -331,7 +343,31 @@ function EditorPage() {
   const [mobileTab, setMobileTab] = useState<"edit" | "media" | "ai">("edit");
   const [mobileFullscreen, setMobileFullscreen] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "captions">("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "captions" | "autocut">(
+    search.autocut ? "autocut" : "edit",
+  );
+  // Auto-cut: the pauses it will cut (marked on the timeline), and whether a
+  // cut is being saved.
+  const [pauseMarks, setPauseMarks] = useState<Record<string, Range[]>>({});
+  const [autoCutting, setAutoCutting] = useState(false);
+  const openAutoCut = () => {
+    setRightTab("autocut");
+    setShowRightPanel(true);
+    setMobileTab("ai");
+  };
+  // Opened from Home (?autocut=1): show it, then drop the flag from the address.
+  useEffect(() => {
+    if (!search.autocut) return;
+    openAutoCut();
+    void navigate({
+      to: "/projects/$projectId",
+      params: { projectId },
+      search: search.thumbnail ? { thumbnail: 1 } : {},
+      replace: true,
+    });
+    // Only when the flag arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.autocut]);
   // Source-file time (ms) to jump to once the selected clip's video loads.
   const pendingSourceSeekMs = useRef<number | null>(null);
 
@@ -1523,6 +1559,78 @@ function EditorPage() {
       setSelectedClipId(word.clipId);
     }
   }
+
+  // ---------- Auto-cut silences ----------
+  /** Moves the playhead to a time in a clip's file (like seekToCaption). */
+  function seekToClipMs(clipId: string, sourceMs: number) {
+    const c = clips.find((x) => x.id === clipId);
+    if (!c) return;
+    const v = videoRef.current;
+    if (showingProgram) {
+      const t = (programOffsets.get(clipId) ?? 0) + (sourceMs - (c.trim_in_ms ?? 0));
+      if (v) v.currentTime = t / 1000;
+      setCurrentTime(t / 1000);
+    } else if (selectedClipId === clipId && v) {
+      v.currentTime = sourceMs / 1000;
+      setCurrentTime(sourceMs / 1000);
+    } else {
+      pendingSourceSeekMs.current = sourceMs;
+      setSelectedClipId(clipId);
+    }
+  }
+  /** Reads a clip's sound now (Auto-cut needs it before the timeline gets to it). */
+  async function loadClipWaveform(clip: AutoCutClip) {
+    const row = clips.find((c) => c.id === clip.id);
+    const { url } = await signClip({ data: { path: clip.storage_path } });
+    const wave = await computeWaveform(url, row?.size_bytes ?? null);
+    setWaveforms((w) => ({ ...w, [clip.storage_path]: wave }));
+    return wave;
+  }
+  /** Cuts the pauses out; undo removes the new pieces and restores the clips. */
+  async function applyAutoCut(cuts: { id: string; keep: Range[] }[], summary: string) {
+    const before = clips.map((c) => ({
+      id: c.id,
+      ordinal: c.ordinal,
+      trim_in_ms: c.trim_in_ms ?? null,
+      trim_out_ms: c.trim_out_ms ?? null,
+    }));
+    const payload = {
+      project_id: projectId,
+      cuts: cuts.map((c) => ({
+        id: c.id,
+        keep: c.keep.map((k) => ({ in_ms: Math.round(k.fromMs), out_ms: Math.round(k.toMs) })),
+      })),
+    };
+    const cut = async () => {
+      const { pieces } = await cutRangesFn({ data: payload });
+      return Object.entries(pieces).flatMap(([id, ids]) => ids.filter((x) => x !== id));
+    };
+    setAutoCutting(true);
+    try {
+      let added = await cut();
+      await refetch();
+      toast.success(summary);
+      pushToHistory({
+        description: "Auto-cut silences",
+        undo: async () => {
+          await restoreLayoutFn({
+            data: { project_id: projectId, remove_ids: added, clips: before },
+          });
+          await refetch();
+        },
+        redo: async () => {
+          added = await cut();
+          await refetch();
+        },
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't cut the pauses");
+      void refetch();
+    } finally {
+      setAutoCutting(false);
+    }
+  }
+
   const inProgress =
     latestJob && ["queued", "transcribing", "planning", "rendering"].includes(latestJob.status);
   // The AI hook from the last cloud render (shown for the first 3 seconds).
@@ -2043,7 +2151,7 @@ function EditorPage() {
           <div className="flex flex-col h-full min-h-0">
             {/* Edit (clip inspector / AI) or Captions */}
             <div className="h-9 border-b border-white/[0.06] flex items-center px-1 gap-0.5 shrink-0">
-              {(["edit", "captions"] as const).map((tab) => (
+              {(["edit", "captions", "autocut"] as const).map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -2056,12 +2164,37 @@ function EditorPage() {
                       : "text-neutral-500 hover:text-neutral-300 hover:bg-white/[0.03]",
                   )}
                 >
-                  {tab === "edit" ? (selectedClip ? "Clip" : "AI") : "Captions"}
+                  {tab === "edit"
+                    ? selectedClip
+                      ? "Clip"
+                      : "AI"
+                    : tab === "captions"
+                      ? "Captions"
+                      : "Auto-cut"}
                 </button>
               ))}
             </div>
             <div className="flex-1 min-h-0">
-              {rightTab === "captions" ? (
+              {rightTab === "autocut" ? (
+                <AutoCutPanel
+                  trackClips={aRoll.filter((c) => !isImageFilename(c.filename))}
+                  selectedClip={
+                    selectedClip &&
+                    selectedClip.role !== "music" &&
+                    selectedClip.role !== "sfx" &&
+                    !isImageFilename(selectedClip.filename)
+                      ? selectedClip
+                      : null
+                  }
+                  clipStartMs={programOffsets}
+                  waveforms={waveforms}
+                  loadWaveform={loadClipWaveform}
+                  onMarksChange={setPauseMarks}
+                  onSeek={seekToClipMs}
+                  onApply={applyAutoCut}
+                  isApplying={autoCutting}
+                />
+              ) : rightTab === "captions" ? (
                 <CaptionsPanel
                   segments={captionSegments}
                   transcripts={transcriptMap}
@@ -2145,6 +2278,8 @@ function EditorPage() {
             thumbnails={thumbnails}
             filmstrips={filmstrips}
             waveforms={waveforms}
+            pauseMarks={pauseMarks}
+            onAutoCut={openAutoCut}
             music={musicEnabled}
             snapEnabled={snapEnabled}
             onSnapToggle={() => setSnapEnabled((s) => !s)}

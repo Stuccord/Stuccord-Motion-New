@@ -27,6 +27,7 @@ import {
   Repeat,
   LocateFixed,
   Wand2,
+  ScissorsLineDashed,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -52,6 +53,7 @@ import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { FPS, formatFrameTimecode } from "./timecode";
 import { thumbnailKey } from "@/lib/video-thumbnail";
 import { frameAt, type Filmstrip, type Waveform } from "@/lib/clip-strips";
+import type { Range } from "@/lib/auto-cut";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
 import {
   closeGapsPlacements,
@@ -351,6 +353,7 @@ function TimelineClipBlock({
   filmstrip,
   waveform,
   cutAtMs,
+  pauses,
   sliding = false,
 }: {
   clip: ClipRow;
@@ -376,6 +379,8 @@ function TimelineClipBlock({
   waveform?: Waveform | null;
   /** Where in this clip the exported video ends (ms); the rest is cut. */
   cutAtMs?: number | null;
+  /** Pauses Auto-cut will cut (ms into the file), marked in red. */
+  pauses?: Range[];
   /** A clip is being dragged: move to new places smoothly. */
   sliding?: boolean;
 }) {
@@ -607,6 +612,27 @@ function TimelineClipBlock({
           </div>
         )}
       </div>
+
+      {/* Pauses Auto-cut will cut */}
+      {pauses?.map((p) => {
+        const from = Math.max(p.fromMs, effIn);
+        const to = Math.min(p.toMs, effOut);
+        if (to <= from) return null;
+        return (
+          <div
+            key={`${p.fromMs}-${p.toMs}`}
+            data-pause
+            className="absolute inset-y-0 pointer-events-none border-x border-rose-400/80"
+            style={{
+              left: ((from - effIn) / 1000) * pxPerSec,
+              width: Math.max(2, ((to - from) / 1000) * pxPerSec),
+              background:
+                "repeating-linear-gradient(135deg, rgba(244,63,94,0.55) 0 4px, rgba(244,63,94,0.3) 4px 8px)",
+            }}
+            title="Pause: Auto-cut will cut this"
+          />
+        );
+      })}
 
       {/* Part past the end of the exported video: cut */}
       {cutAtMs != null && (
@@ -908,6 +934,8 @@ type TimelineTracksProps = {
   filmstrips: Record<string, Filmstrip>;
   /** Waveforms by file (storage path); null: no sound. */
   waveforms: Record<string, Waveform | null>;
+  /** Auto-cut's pauses by clip id, marked on the clips. */
+  pauseMarks: Record<string, Range[]>;
 };
 
 function TimelineTracks({
@@ -938,6 +966,7 @@ function TimelineTracks({
   thumbnails,
   filmstrips,
   waveforms,
+  pauseMarks,
 }: TimelineTracksProps) {
   // Clip being dragged to a new place: how far it's drawn from its place
   // (to where it will land). `settling`: dropped, waiting for the save.
@@ -2248,6 +2277,7 @@ function TimelineTracks({
                   thumbnail={thumbnails[thumbnailKey(c)]}
                   filmstrip={filmstrips[c.storage_path]}
                   waveform={waveforms[c.storage_path]}
+                  pauses={pauseMarks[c.id]}
                 />
               ))
             )}
@@ -2300,6 +2330,7 @@ function TimelineTracks({
                   thumbnail={thumbnails[thumbnailKey(c)]}
                   filmstrip={filmstrips[c.storage_path]}
                   waveform={waveforms[c.storage_path]}
+                  pauses={pauseMarks[c.id]}
                   cutAtMs={cutAtFor(c)}
                 />
               ))
@@ -2523,7 +2554,13 @@ export interface TimelinePanelProps {
   filmstrips?: Record<string, Filmstrip>;
   /** Waveforms by file (storage path); null: no sound. */
   waveforms?: Record<string, Waveform | null>;
+  /** Auto-cut's pauses by clip id, marked on the clips. */
+  pauseMarks?: Record<string, Range[]>;
+  /** Opens Auto-cut silences. */
+  onAutoCut?: () => void;
 }
+
+const NO_MARKS: Record<string, Range[]> = {};
 
 export function TimelinePanel({
   projectTitle,
@@ -2562,6 +2599,8 @@ export function TimelinePanel({
   thumbnails = {},
   filmstrips = {},
   waveforms = {},
+  pauseMarks = NO_MARKS,
+  onAutoCut,
 }: TimelinePanelProps) {
   // Length of the exported video: until the last clip on V1 or V2 ends.
   const programMs = videoEndMs(aRoll, bRoll, clipVisibleMs);
@@ -2627,6 +2666,14 @@ export function TimelinePanel({
           onClick={onDelete}
           disabled={!selectedClipId || isDeleting}
         />
+        {onAutoCut && (
+          <ToolBtn
+            icon={ScissorsLineDashed}
+            title="Auto-cut silences"
+            onClick={onAutoCut}
+            disabled={aRoll.length === 0 && bRoll.length === 0}
+          />
+        )}
 
         {/* Center: timecode */}
         <div className="hidden md:flex flex-1 items-center justify-center gap-3">
@@ -2731,6 +2778,7 @@ export function TimelinePanel({
         thumbnails={thumbnails}
         filmstrips={filmstrips}
         waveforms={waveforms}
+        pauseMarks={pauseMarks}
       />
     </div>
   );

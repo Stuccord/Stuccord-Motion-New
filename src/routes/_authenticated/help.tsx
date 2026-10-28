@@ -13,6 +13,7 @@ import {
   Download,
   Keyboard,
   ImageIcon,
+  Scissors,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -45,6 +46,17 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
       "Drag a clip's edges to trim it. Press S to split the selected clip at the playhead.",
       "Clips snap to edges and the playhead; hold Alt while dragging to place them freely.",
       "Ctrl+Z undoes, Ctrl+Shift+Z redoes. Right-click a clip or track for more.",
+    ],
+  },
+  {
+    icon: Scissors,
+    title: "Cutting out pauses",
+    steps: [
+      "Press the dashed scissors on the timeline (or open Auto-cut on Home): the Auto-cut tab opens on the right.",
+      "Choose all of V1 or just the selected clip, and how much to cut: Gentle (pauses over 1 s), Normal (over 0.6 s) or Tight (over 0.35 s).",
+      "Press Find pauses. Each one is marked in red on the timeline and listed; click a time to see it, untick any to keep.",
+      "Press Cut: the pauses are removed and the clips close up. Ctrl+Z puts everything back.",
+      "It listens for quiet, so music or background noise under your voice can hide pauses.",
     ],
   },
   {
