@@ -12,10 +12,21 @@ export type Plan = {
   teamExports: number;
   /** People in a team, the owner included. */
   teamSeats: number;
+  /** AI graphics plans (Motion Explainer) a month in a personal workspace. */
+  personalPlans: number;
+  /** AI graphics plans a month for a team, shared by its members. */
+  teamPlans: number;
 };
 
 export const PLANS: Record<PlanId, Plan> = {
-  free: { label: "Free", personalExports: 5, teamExports: 5, teamSeats: 3 },
+  free: {
+    label: "Free",
+    personalExports: 5,
+    teamExports: 5,
+    teamSeats: 3,
+    personalPlans: 20,
+    teamPlans: 20,
+  },
 };
 
 export function planFor(id: string | null | undefined): Plan {

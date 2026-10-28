@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createHmac, timingSafeEqual } from "crypto";
+import { saveIncomingTranscripts } from "@/lib/transcripts.server";
 
 /**
  * Render worker callback. The external worker POSTs progress updates and
@@ -13,35 +14,6 @@ import { createHmac, timingSafeEqual } from "crypto";
  * transcripts: newly transcribed source files,
  *  [{ storage_path, provider?, model?, language?, words: [{ text, start_ms, end_ms }] }]
  */
-
-type TranscriptWord = { text: string; start_ms: number; end_ms: number };
-type IncomingTranscript = {
-  storage_path?: unknown;
-  provider?: unknown;
-  model?: unknown;
-  language?: unknown;
-  words?: unknown;
-};
-
-const optionalString = (v: unknown) => (typeof v === "string" ? v.slice(0, 64) : null);
-
-function cleanWords(words: unknown): TranscriptWord[] {
-  if (!Array.isArray(words)) return [];
-  return words
-    .filter(
-      (w): w is TranscriptWord =>
-        !!w &&
-        typeof w.text === "string" &&
-        Number.isFinite(w.start_ms) &&
-        Number.isFinite(w.end_ms),
-    )
-    .slice(0, 50_000)
-    .map((w) => ({
-      text: w.text.slice(0, 100),
-      start_ms: Math.round(w.start_ms),
-      end_ms: Math.round(w.end_ms),
-    }));
-}
 
 export const Route = createFileRoute("/api/public/render-webhook")({
   server: {
@@ -68,7 +40,7 @@ export const Route = createFileRoute("/api/public/render-webhook")({
           output_path?: string;
           edit_plan?: unknown;
           error?: string;
-          transcripts?: IncomingTranscript[];
+          transcripts?: unknown;
         };
         try {
           payload = JSON.parse(body);
@@ -98,38 +70,15 @@ export const Route = createFileRoute("/api/public/render-webhook")({
           .single();
         if (jErr) return new Response(jErr.message, { status: 500 });
 
-        // Save newly transcribed source files. Only paths inside the
-        // project's storage folder are accepted (the job owner's, or the
-        // team's), and an existing transcript is never overwritten, so the
-        // user's corrections are kept.
-        if (Array.isArray(payload.transcripts) && job) {
-          const { data: proj } = await supabaseAdmin
-            .from("projects")
-            .select("user_id, team_id")
-            .eq("id", job.project_id)
-            .maybeSingle();
-          const folder = proj?.team_id ? `teams/${proj.team_id}` : job.user_id;
-          const rows = payload.transcripts
-            .filter(
-              (t) =>
-                typeof t?.storage_path === "string" &&
-                t.storage_path.startsWith(`${folder}/`) &&
-                !t.storage_path.includes(".."),
-            )
-            .map((t) => ({
-              user_id: job.user_id,
-              storage_path: t.storage_path as string,
-              provider: optionalString(t.provider),
-              model: optionalString(t.model),
-              language: optionalString(t.language),
-              words: cleanWords(t.words),
-            }));
-          if (rows.length) {
-            const { error: tErr } = await supabaseAdmin
-              .from("transcripts")
-              .upsert(rows, { onConflict: "user_id,storage_path", ignoreDuplicates: true });
-            if (tErr) console.error("[render-webhook] Saving transcripts failed:", tErr.message);
-          }
+        // Save newly transcribed source files (kept even if the render
+        // fails later; never overwriting the user's corrections).
+        if (payload.transcripts !== undefined && job) {
+          await saveIncomingTranscripts(
+            supabaseAdmin,
+            job.project_id,
+            job.user_id,
+            payload.transcripts,
+          );
         }
 
         // Map to project status

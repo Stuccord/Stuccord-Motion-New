@@ -7,8 +7,9 @@
 // Env vars:
 //   RENDER_WORKER_SECRET   shared HMAC secret (matches the Lovable app)
 //   LOVABLE_API_KEY        optional — enables AI edit-plan generation
-//   ELEVENLABS_API_KEY     optional — enables speech-to-text (Scribe v2) for captions,
-//                          and AI voiceovers (text-to-speech, /voices and /tts)
+//   ELEVENLABS_API_KEY     optional — enables speech-to-text (Scribe v2) for captions
+//                          and /transcribe (words for planning graphics), and AI
+//                          voiceovers (text-to-speech, /voices and /tts)
 //   PUBLIC_APP_URL         optional — the app's address; enables the once-a-minute
 //                          tick that sends scheduled posts (see publish.js)
 //
@@ -252,6 +253,100 @@ app.post("/jobs", async (req, res) => {
         console.error(`[Worker] Failed error-callback for job=${job.job_id}:`, cbErr?.message || cbErr);
       }
     } finally {
+      currentJobId = null;
+    }
+  })();
+});
+
+// ---------- transcribing before an export (for planning graphics) ----------
+//
+// The app sends the project's files that have no transcript yet, each with a
+// signed download link; the worker transcribes them and reports back to the
+// app's /api/public/transcribe-webhook (signed like the render callback).
+// It shares the export's lock, so it never runs alongside an export.
+
+function validateTranscribePayload(p) {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return "Payload must be a JSON object";
+  if (typeof p.project_id !== "string" || !UUID_REGEX.test(p.project_id)) return "Invalid project_id";
+  if (typeof p.user_id !== "string" || !UUID_REGEX.test(p.user_id)) return "Invalid user_id";
+  if (!isAbsoluteHttpUrl(p.callback_url)) return "callback_url must be an absolute http or https URL";
+  if (!Array.isArray(p.files) || p.files.length === 0 || p.files.length > 50) {
+    return "files must be a list of 1 to 50 files";
+  }
+  const ok = p.files.every(
+    (f) => f && typeof f === "object" && isSafeRelativePath(f.storage_path) && isAbsoluteHttpUrl(f.download_url),
+  );
+  return ok ? null : "Each file needs a safe storage_path and an http(s) download_url";
+}
+
+app.post("/transcribe", async (req, res) => {
+  if (!verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body;
+  const validationError = validateTranscribePayload(p);
+  if (validationError) {
+    console.warn(`[Worker] Rejected transcribe payload: ${validationError}`);
+    return res.status(400).json({ ok: false, error: "Invalid transcribe payload" });
+  }
+  if (currentJobId !== null) {
+    res.setHeader("Retry-After", "30");
+    return res.status(503).json({ ok: false, error: "Worker is busy" });
+  }
+
+  currentJobId = `transcribe:${p.project_id}`;
+  res.status(202).json({ ok: true });
+
+  (async () => {
+    const report = (status, extra) =>
+      callback(p.callback_url, { project_id: p.project_id, user_id: p.user_id, status, ...extra });
+    let workdir = null;
+    try {
+      if (!process.env.ELEVENLABS_API_KEY) {
+        await report("failed", { error: "Speech-to-text isn't set up on the worker (ELEVENLABS_API_KEY)." });
+        return;
+      }
+      if (!ffmpegPath) throw new Error("ffmpeg binary not available");
+      workdir = await fsp.mkdtemp(path.join(os.tmpdir(), `stuccord-transcribe-`));
+      const transcripts = [];
+      const errors = [];
+      for (let i = 0; i < p.files.length; i++) {
+        const f = p.files[i];
+        try {
+          const src = path.join(workdir, `src_${i}`);
+          await download(f.download_url, src);
+          const audioPath = path.join(workdir, `speech_${i}.m4a`);
+          await run(ffmpegPath, [
+            "-y", "-i", src,
+            "-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "64k",
+            audioPath,
+          ]);
+          await fsp.rm(src, { force: true });
+          const t = await transcribe(audioPath);
+          if (!t) continue;
+          transcripts.push({
+            storage_path: f.storage_path,
+            provider: t.provider,
+            model: t.model,
+            language: t.language,
+            words: t.words,
+          });
+        } catch (e) {
+          console.error(`[Worker] Transcribing failed for project=${p.project_id}:`, e?.message || e);
+          errors.push(`${f.filename || `File ${i + 1}`}: ${String(e?.message ?? e).slice(0, 200)}`);
+        }
+      }
+      if (errors.length) {
+        await report("failed", {
+          transcripts,
+          error: `Couldn't transcribe ${errors.length} of ${p.files.length} file(s). ${errors[0]}`.slice(0, 500),
+        });
+      } else {
+        await report("done", { transcripts });
+      }
+    } catch (err) {
+      console.error(`[Worker] Transcribe run failed for project=${p.project_id}:`, err?.message || err);
+      await report("failed", { error: String(err?.message ?? err).slice(0, 500) });
+    } finally {
+      if (workdir) await fsp.rm(workdir, { recursive: true, force: true }).catch(() => {});
       currentJobId = null;
     }
   })();

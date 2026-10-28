@@ -80,7 +80,7 @@ const ACTIVE_JOB_STATUSES = ["queued", "transcribing", "planning", "rendering"] 
  * reached through team membership (viewers can only look). The database's
  * rules check the same thing (project_access in the team_projects migration).
  */
-async function projectAccess(
+export async function projectAccess(
   supabase: SupabaseClient<Database>,
   projectId: string,
   userId: string,

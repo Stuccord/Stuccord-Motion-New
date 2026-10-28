@@ -6,5 +6,6 @@ export * from "./MediaUploadZone";
 export * from "./PreviewCanvas";
 export * from "./PlaybackControls";
 export * from "./AIMotionPanel";
+export * from "./MotionPlanSection";
 export * from "./TimelinePanel";
 export * from "./ClipInspector";

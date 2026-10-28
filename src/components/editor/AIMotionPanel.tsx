@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { RenderJobRow } from "./types";
+import { presetLabel } from "@/lib/presets";
 
 /* ---------- types ---------- */
 export interface EditPlan {
@@ -46,6 +47,8 @@ export interface AIMotionPanelProps {
   /** Called once the user lets go of the volume slider. */
   onMusicVolumeCommit?: (vol: number) => void;
   onCaptionsEnabledChange: (enabled: boolean) => void;
+  /** The Motion Explainer graphics section, shown first in the AI Director tab. */
+  graphics?: React.ReactNode;
 }
 
 /* ---------- sub-components ---------- */
@@ -241,6 +244,7 @@ export function AIMotionPanel({
   onMusicVolumeChange,
   onMusicVolumeCommit,
   onCaptionsEnabledChange,
+  graphics,
 }: AIMotionPanelProps) {
   const [activeTab, setActiveTab] = useState<"director" | "notes">("director");
 
@@ -255,7 +259,7 @@ export function AIMotionPanel({
     },
     {
       n: 2,
-      text: `Applied ${preset.toUpperCase()} preset — pacing, cut cadence, color signature.`,
+      text: `Applied the ${presetLabel(preset)} preset — pacing, cut cadence, color signature.`,
       done: true,
     },
     {
@@ -296,6 +300,8 @@ export function AIMotionPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {activeTab === "director" ? (
           <>
+            {graphics}
+
             {/* Status row */}
             <div className="flex items-center gap-2">
               <SectionHeader label="Status" icon={Sparkles} />

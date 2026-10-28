@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { presetLabel } from "@/lib/presets";
 
 export const Route = createFileRoute("/_authenticated/projects/")({
   head: () => ({ meta: [{ title: "Projects — Stuccord Motion" }] }),
@@ -329,7 +330,7 @@ function ProjectsPage() {
               <div className="mt-3 flex items-center justify-between">
                 <StatusPill status={p.status} />
                 <div className="relative z-10 flex items-center gap-1">
-                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-medium">{p.style_preset}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-medium">{presetLabel(p.style_preset)}</span>
                   <ProjectMenu p={p} onDelete={() => del.mutate(p.id)} onMove={(to) => move.mutate({ id: p.id, to })} />
                 </div>
               </div>
@@ -349,7 +350,7 @@ function ProjectsPage() {
                   <div className="w-10 h-10 rounded-md overflow-hidden shrink-0"><ProjectThumb ratio="1:1" title={p.title} src={p.thumbnail_signed_url} /></div>
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{p.title}</div>
-                    <div className="text-[11px] text-neutral-500 truncate">{p.style_preset}</div>
+                    <div className="text-[11px] text-neutral-500 truncate">{presetLabel(p.style_preset)}</div>
                   </div>
                 </div>
                 <div className="hidden md:block"><StatusPill status={p.status} /></div>

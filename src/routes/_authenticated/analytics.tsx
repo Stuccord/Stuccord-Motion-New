@@ -9,18 +9,12 @@ import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { Eye, Play, Clock, TrendingUp, Film, TrendingDown, ThumbsUp, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { presetLabel } from "@/lib/presets";
 
 export const Route = createFileRoute("/_authenticated/analytics")({
   head: () => ({ meta: [{ title: "Analytics — Stuccord Motion" }] }),
   component: AnalyticsPage,
 });
-
-const PRESET_LABEL: Record<string, string> = {
-  gadzhi: "Gadzhi — high-retention",
-  hormozi: "Hormozi — pattern-interrupt",
-  cinematic: "Cinematic — slow & moody",
-  podcast: "Podcast clip",
-};
 
 function AnalyticsPage() {
   const fetchStats = useServerFn(getUsageStats);
@@ -175,7 +169,7 @@ function AnalyticsPage() {
             {topPreset ? (
               <div className="rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 p-3 text-white">
                 <div className="text-[10px] uppercase tracking-wider text-white/70">Preset</div>
-                <div className="text-sm font-semibold mt-0.5">{PRESET_LABEL[topPreset.preset] ?? topPreset.preset}</div>
+                <div className="text-sm font-semibold mt-0.5">{presetLabel(topPreset.preset)}</div>
                 <div className="text-[11px] text-white/70 mt-1">Used in {topPreset.count} project{topPreset.count === 1 ? "" : "s"}</div>
               </div>
             ) : (

@@ -25,6 +25,9 @@ services:
         sync: false
       - key: PUBLIC_APP_URL
         sync: false
+      # Motion Explainer: Claude plans the graphics (Anthropic API key)
+      - key: ANTHROPIC_API_KEY
+        sync: false
       # Publishing: encrypts connected accounts' sign-ins (32 random bytes, base64)
       - key: PUBLISHING_TOKEN_KEY
         sync: false

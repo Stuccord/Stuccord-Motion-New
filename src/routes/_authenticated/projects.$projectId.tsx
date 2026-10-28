@@ -153,6 +153,7 @@ import {
   MediaLibrary,
   PreviewCanvas,
   AIMotionPanel,
+  MotionPlanSection,
   TimelinePanel,
   ClipInspector,
   type AspectRatio,
@@ -1611,7 +1612,9 @@ function EditorPage() {
     offsetMs: programOffsets.get(c.id) ?? 0,
   }));
   // The phrases the export burns in, word by word (for the live preview).
-  const captionWordPhrases = groupIntoPhrases(placeTranscripts(captionSegments, transcriptMap));
+  // Every word on the timeline, in order (captions and the graphics plan).
+  const captionWords = placeTranscripts(captionSegments, transcriptMap);
+  const captionWordPhrases = groupIntoPhrases(captionWords);
   // The same phrases the Captions tab lists, for the timeline's caption track.
   const captionPhrases: CaptionPhrase[] = captionWordPhrases.map((phrase) => ({
     key: phrase[0].key,
@@ -2430,6 +2433,13 @@ function EditorPage() {
                   }}
                   onCaptionsEnabledChange={(on) =>
                     saveExportSwitches.mutate({ captions_enabled: on })
+                  }
+                  graphics={
+                    <MotionPlanSection
+                      projectId={projectId}
+                      words={captionWords}
+                      onSeekWord={seekToCaption}
+                    />
                   }
                 />
               )}

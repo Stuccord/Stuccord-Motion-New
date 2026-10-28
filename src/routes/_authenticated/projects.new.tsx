@@ -261,7 +261,7 @@ function NewProject() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gadzhi">Gadzhi — high-retention creator</SelectItem>
+                    <SelectItem value="gadzhi">Motion Explainer — premium motion graphics</SelectItem>
                     <SelectItem value="hormozi">Hormozi — pattern-interrupt captions</SelectItem>
                     <SelectItem value="cinematic">Cinematic — slower, moody cuts</SelectItem>
                     <SelectItem value="podcast">Podcast clip — 2-cam bounces</SelectItem>
@@ -365,7 +365,7 @@ function NewProject() {
             </p>
             <Textarea
               className="mt-4 min-h-24"
-              placeholder="Edit like Iman Gadzhi. Hard zoom-ins on emphasis words. Word-by-word captions in white with yellow highlights. Whoosh SFX on cuts. Background music at -14 LUFS, duck to -22 under VO."
+              placeholder="Premium motion-graphics edit. Hard zoom-ins on emphasis words. Word-by-word captions in white with yellow highlights. Whoosh SFX on cuts. Background music at -14 LUFS, duck to -22 under VO."
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
             />

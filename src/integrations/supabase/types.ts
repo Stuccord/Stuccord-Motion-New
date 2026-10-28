@@ -119,6 +119,8 @@ export type Database = {
           duration_seconds: number | null
           id: string
           music_enabled: boolean
+          motion_plan: Json | null
+          motion_plan_previous: Json | null
           music_volume: number
           output_path: string | null
           script: string | null
@@ -127,6 +129,9 @@ export type Database = {
           team_id: string | null
           thumbnail_url: string | null
           title: string
+          transcribe_error: string | null
+          transcribe_started_at: string | null
+          transcribe_status: string | null
           updated_at: string
           user_id: string
         }
@@ -138,6 +143,8 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           music_enabled?: boolean
+          motion_plan?: Json | null
+          motion_plan_previous?: Json | null
           music_volume?: number
           output_path?: string | null
           script?: string | null
@@ -146,6 +153,9 @@ export type Database = {
           team_id?: string | null
           thumbnail_url?: string | null
           title?: string
+          transcribe_error?: string | null
+          transcribe_started_at?: string | null
+          transcribe_status?: string | null
           updated_at?: string
           user_id: string
         }
@@ -157,6 +167,8 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           music_enabled?: boolean
+          motion_plan?: Json | null
+          motion_plan_previous?: Json | null
           music_volume?: number
           output_path?: string | null
           script?: string | null
@@ -165,6 +177,9 @@ export type Database = {
           team_id?: string | null
           thumbnail_url?: string | null
           title?: string
+          transcribe_error?: string | null
+          transcribe_started_at?: string | null
+          transcribe_status?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -492,6 +507,39 @@ export type Database = {
           project_id?: string | null
           user_id?: string
           voice_id?: string | null
+        }
+        Relationships: []
+      }
+      motion_plan_runs: {
+        Row: {
+          created_at: string
+          id: string
+          input_tokens: number | null
+          model: string | null
+          output_tokens: number | null
+          project_id: string | null
+          team_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          project_id?: string | null
+          team_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          project_id?: string | null
+          team_id?: string | null
+          user_id?: string
         }
         Relationships: []
       }

@@ -25,6 +25,7 @@ import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } fr
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as AuthenticatedPublishingIndexRouteImport } from './routes/_authenticated/publishing.index'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects.index'
+import { Route as ApiPublicTranscribeWebhookRouteImport } from './routes/api/public/transcribe-webhook'
 import { Route as ApiPublicRenderWebhookRouteImport } from './routes/api/public/render-webhook'
 import { Route as ApiPublicPublishingTickRouteImport } from './routes/api/public/publishing-tick'
 import { Route as ApiPublicPublishWebhookRouteImport } from './routes/api/public/publish-webhook'
@@ -125,6 +126,12 @@ const AuthenticatedProjectsIndexRoute =
     id: '/projects/',
     path: '/projects/',
     getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const ApiPublicTranscribeWebhookRoute =
+  ApiPublicTranscribeWebhookRouteImport.update({
+    id: '/api/public/transcribe-webhook',
+    path: '/api/public/transcribe-webhook',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicRenderWebhookRoute = ApiPublicRenderWebhookRouteImport.update({
   id: '/api/public/render-webhook',
@@ -245,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
+  '/api/public/transcribe-webhook': typeof ApiPublicTranscribeWebhookRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/publishing/': typeof AuthenticatedPublishingIndexRoute
   '/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
@@ -279,6 +287,7 @@ export interface FileRoutesByTo {
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
+  '/api/public/transcribe-webhook': typeof ApiPublicTranscribeWebhookRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/publishing': typeof AuthenticatedPublishingIndexRoute
   '/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
@@ -315,6 +324,7 @@ export interface FileRoutesById {
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
+  '/api/public/transcribe-webhook': typeof ApiPublicTranscribeWebhookRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/publishing/': typeof AuthenticatedPublishingIndexRoute
   '/_authenticated/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
@@ -351,6 +361,7 @@ export interface FileRouteTypes {
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
+    | '/api/public/transcribe-webhook'
     | '/projects/'
     | '/publishing/'
     | '/publishing/connect/$platform'
@@ -385,6 +396,7 @@ export interface FileRouteTypes {
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
+    | '/api/public/transcribe-webhook'
     | '/projects'
     | '/publishing'
     | '/publishing/connect/$platform'
@@ -420,6 +432,7 @@ export interface FileRouteTypes {
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
+    | '/api/public/transcribe-webhook'
     | '/_authenticated/projects/'
     | '/_authenticated/publishing/'
     | '/_authenticated/publishing/connect/$platform'
@@ -445,6 +458,7 @@ export interface RootRouteChildren {
   ApiPublicPublishWebhookRoute: typeof ApiPublicPublishWebhookRoute
   ApiPublicPublishingTickRoute: typeof ApiPublicPublishingTickRoute
   ApiPublicRenderWebhookRoute: typeof ApiPublicRenderWebhookRoute
+  ApiPublicTranscribeWebhookRoute: typeof ApiPublicTranscribeWebhookRoute
   ApiAuthenticatedUploadsPresignRoute: typeof ApiAuthenticatedUploadsPresignRoute
   ApiV1ExportsExportIdRoute: typeof ApiV1ExportsExportIdRoute
   ApiV1ProjectsIndexRoute: typeof ApiV1ProjectsIndexRoute
@@ -567,6 +581,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/'
       preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/public/transcribe-webhook': {
+      id: '/api/public/transcribe-webhook'
+      path: '/api/public/transcribe-webhook'
+      fullPath: '/api/public/transcribe-webhook'
+      preLoaderRoute: typeof ApiPublicTranscribeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/render-webhook': {
       id: '/api/public/render-webhook'
@@ -742,6 +763,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicPublishWebhookRoute: ApiPublicPublishWebhookRoute,
   ApiPublicPublishingTickRoute: ApiPublicPublishingTickRoute,
   ApiPublicRenderWebhookRoute: ApiPublicRenderWebhookRoute,
+  ApiPublicTranscribeWebhookRoute: ApiPublicTranscribeWebhookRoute,
   ApiAuthenticatedUploadsPresignRoute: ApiAuthenticatedUploadsPresignRoute,
   ApiV1ExportsExportIdRoute: ApiV1ExportsExportIdRoute,
   ApiV1ProjectsIndexRoute: ApiV1ProjectsIndexRoute,
