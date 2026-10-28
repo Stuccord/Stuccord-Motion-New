@@ -29,7 +29,13 @@ import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenti
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects.$projectId'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
+import { Route as ApiV1ProjectsIndexRouteImport } from './routes/api/v1/projects.index'
+import { Route as ApiV1ExportsExportIdRouteImport } from './routes/api/v1/exports.$exportId'
 import { Route as ApiAuthenticatedUploadsPresignRouteImport } from './routes/api/authenticated/uploads/presign'
+import { Route as ApiV1ProjectsProjectIdIndexRouteImport } from './routes/api/v1/projects.$projectId.index'
+import { Route as ApiV1ProjectsProjectIdUploadsRouteImport } from './routes/api/v1/projects.$projectId.uploads'
+import { Route as ApiV1ProjectsProjectIdExportsRouteImport } from './routes/api/v1/projects.$projectId.exports'
+import { Route as ApiV1ProjectsProjectIdClipsRouteImport } from './routes/api/v1/projects.$projectId.clips'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -136,10 +142,44 @@ const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
   path: '/.lovable/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiV1ProjectsIndexRoute = ApiV1ProjectsIndexRouteImport.update({
+  id: '/api/v1/projects/',
+  path: '/api/v1/projects/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiV1ExportsExportIdRoute = ApiV1ExportsExportIdRouteImport.update({
+  id: '/api/v1/exports/$exportId',
+  path: '/api/v1/exports/$exportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthenticatedUploadsPresignRoute =
   ApiAuthenticatedUploadsPresignRouteImport.update({
     id: '/api/authenticated/uploads/presign',
     path: '/api/authenticated/uploads/presign',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiV1ProjectsProjectIdIndexRoute =
+  ApiV1ProjectsProjectIdIndexRouteImport.update({
+    id: '/api/v1/projects/$projectId/',
+    path: '/api/v1/projects/$projectId/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiV1ProjectsProjectIdUploadsRoute =
+  ApiV1ProjectsProjectIdUploadsRouteImport.update({
+    id: '/api/v1/projects/$projectId/uploads',
+    path: '/api/v1/projects/$projectId/uploads',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiV1ProjectsProjectIdExportsRoute =
+  ApiV1ProjectsProjectIdExportsRouteImport.update({
+    id: '/api/v1/projects/$projectId/exports',
+    path: '/api/v1/projects/$projectId/exports',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiV1ProjectsProjectIdClipsRoute =
+  ApiV1ProjectsProjectIdClipsRouteImport.update({
+    id: '/api/v1/projects/$projectId/clips',
+    path: '/api/v1/projects/$projectId/clips',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -164,6 +204,12 @@ export interface FileRoutesByFullPath {
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
+  '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
+  '/api/v1/projects/': typeof ApiV1ProjectsIndexRoute
+  '/api/v1/projects/$projectId/clips': typeof ApiV1ProjectsProjectIdClipsRoute
+  '/api/v1/projects/$projectId/exports': typeof ApiV1ProjectsProjectIdExportsRoute
+  '/api/v1/projects/$projectId/uploads': typeof ApiV1ProjectsProjectIdUploadsRoute
+  '/api/v1/projects/$projectId/': typeof ApiV1ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -186,6 +232,12 @@ export interface FileRoutesByTo {
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
+  '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
+  '/api/v1/projects': typeof ApiV1ProjectsIndexRoute
+  '/api/v1/projects/$projectId/clips': typeof ApiV1ProjectsProjectIdClipsRoute
+  '/api/v1/projects/$projectId/exports': typeof ApiV1ProjectsProjectIdExportsRoute
+  '/api/v1/projects/$projectId/uploads': typeof ApiV1ProjectsProjectIdUploadsRoute
+  '/api/v1/projects/$projectId': typeof ApiV1ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -210,6 +262,12 @@ export interface FileRoutesById {
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
+  '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
+  '/api/v1/projects/': typeof ApiV1ProjectsIndexRoute
+  '/api/v1/projects/$projectId/clips': typeof ApiV1ProjectsProjectIdClipsRoute
+  '/api/v1/projects/$projectId/exports': typeof ApiV1ProjectsProjectIdExportsRoute
+  '/api/v1/projects/$projectId/uploads': typeof ApiV1ProjectsProjectIdUploadsRoute
+  '/api/v1/projects/$projectId/': typeof ApiV1ProjectsProjectIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -234,6 +292,12 @@ export interface FileRouteTypes {
     | '/api/public/render-webhook'
     | '/projects/'
     | '/api/authenticated/uploads/presign'
+    | '/api/v1/exports/$exportId'
+    | '/api/v1/projects/'
+    | '/api/v1/projects/$projectId/clips'
+    | '/api/v1/projects/$projectId/exports'
+    | '/api/v1/projects/$projectId/uploads'
+    | '/api/v1/projects/$projectId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -256,6 +320,12 @@ export interface FileRouteTypes {
     | '/api/public/render-webhook'
     | '/projects'
     | '/api/authenticated/uploads/presign'
+    | '/api/v1/exports/$exportId'
+    | '/api/v1/projects'
+    | '/api/v1/projects/$projectId/clips'
+    | '/api/v1/projects/$projectId/exports'
+    | '/api/v1/projects/$projectId/uploads'
+    | '/api/v1/projects/$projectId'
   id:
     | '__root__'
     | '/'
@@ -279,6 +349,12 @@ export interface FileRouteTypes {
     | '/api/public/render-webhook'
     | '/_authenticated/projects/'
     | '/api/authenticated/uploads/presign'
+    | '/api/v1/exports/$exportId'
+    | '/api/v1/projects/'
+    | '/api/v1/projects/$projectId/clips'
+    | '/api/v1/projects/$projectId/exports'
+    | '/api/v1/projects/$projectId/uploads'
+    | '/api/v1/projects/$projectId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -293,6 +369,12 @@ export interface RootRouteChildren {
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
   ApiPublicRenderWebhookRoute: typeof ApiPublicRenderWebhookRoute
   ApiAuthenticatedUploadsPresignRoute: typeof ApiAuthenticatedUploadsPresignRoute
+  ApiV1ExportsExportIdRoute: typeof ApiV1ExportsExportIdRoute
+  ApiV1ProjectsIndexRoute: typeof ApiV1ProjectsIndexRoute
+  ApiV1ProjectsProjectIdClipsRoute: typeof ApiV1ProjectsProjectIdClipsRoute
+  ApiV1ProjectsProjectIdExportsRoute: typeof ApiV1ProjectsProjectIdExportsRoute
+  ApiV1ProjectsProjectIdUploadsRoute: typeof ApiV1ProjectsProjectIdUploadsRoute
+  ApiV1ProjectsProjectIdIndexRoute: typeof ApiV1ProjectsProjectIdIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -437,11 +519,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DotlovableOauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/v1/projects/': {
+      id: '/api/v1/projects/'
+      path: '/api/v1/projects'
+      fullPath: '/api/v1/projects/'
+      preLoaderRoute: typeof ApiV1ProjectsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/v1/exports/$exportId': {
+      id: '/api/v1/exports/$exportId'
+      path: '/api/v1/exports/$exportId'
+      fullPath: '/api/v1/exports/$exportId'
+      preLoaderRoute: typeof ApiV1ExportsExportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/authenticated/uploads/presign': {
       id: '/api/authenticated/uploads/presign'
       path: '/api/authenticated/uploads/presign'
       fullPath: '/api/authenticated/uploads/presign'
       preLoaderRoute: typeof ApiAuthenticatedUploadsPresignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/v1/projects/$projectId/': {
+      id: '/api/v1/projects/$projectId/'
+      path: '/api/v1/projects/$projectId'
+      fullPath: '/api/v1/projects/$projectId/'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/v1/projects/$projectId/uploads': {
+      id: '/api/v1/projects/$projectId/uploads'
+      path: '/api/v1/projects/$projectId/uploads'
+      fullPath: '/api/v1/projects/$projectId/uploads'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdUploadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/v1/projects/$projectId/exports': {
+      id: '/api/v1/projects/$projectId/exports'
+      path: '/api/v1/projects/$projectId/exports'
+      fullPath: '/api/v1/projects/$projectId/exports'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdExportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/v1/projects/$projectId/clips': {
+      id: '/api/v1/projects/$projectId/clips'
+      path: '/api/v1/projects/$projectId/clips'
+      fullPath: '/api/v1/projects/$projectId/clips'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdClipsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -489,6 +613,12 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
   ApiPublicRenderWebhookRoute: ApiPublicRenderWebhookRoute,
   ApiAuthenticatedUploadsPresignRoute: ApiAuthenticatedUploadsPresignRoute,
+  ApiV1ExportsExportIdRoute: ApiV1ExportsExportIdRoute,
+  ApiV1ProjectsIndexRoute: ApiV1ProjectsIndexRoute,
+  ApiV1ProjectsProjectIdClipsRoute: ApiV1ProjectsProjectIdClipsRoute,
+  ApiV1ProjectsProjectIdExportsRoute: ApiV1ProjectsProjectIdExportsRoute,
+  ApiV1ProjectsProjectIdUploadsRoute: ApiV1ProjectsProjectIdUploadsRoute,
+  ApiV1ProjectsProjectIdIndexRoute: ApiV1ProjectsProjectIdIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

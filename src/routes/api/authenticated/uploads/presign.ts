@@ -1,28 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { IMAGE_MIME_TYPES } from "@/lib/media-kind";
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "@/lib/upload-rules";
 
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
-const ALLOWED_MIME_TYPES = new Set([
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
-  // Audio for the music / SFX tracks. Browsers report several names for the
-  // same formats (e.g. MP3 as audio/mpeg or audio/mp3, WAV as audio/wav,
-  // audio/x-wav or audio/wave), so accept each of them.
-  "audio/mpeg",
-  "audio/mp3",
-  "audio/wav",
-  "audio/x-wav",
-  "audio/wave",
-  "audio/mp4",
-  "audio/x-m4a",
-  "audio/aac",
-  "audio/ogg",
-  "audio/webm",
-  // Images (photos, screenshots) for the video tracks.
-  ...IMAGE_MIME_TYPES,
-]);
+const MAX_FILE_SIZE = MAX_UPLOAD_BYTES;
+const ALLOWED_MIME_TYPES = ALLOWED_UPLOAD_TYPES;
 
 /**
  * POST /api/authenticated/uploads/presign

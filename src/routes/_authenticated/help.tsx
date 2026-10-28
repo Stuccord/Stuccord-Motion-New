@@ -15,8 +15,9 @@ import {
   ImageIcon,
   Scissors,
   Mic,
+  Code2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/_authenticated/help")({
   head: () => ({ meta: [{ title: "Help & docs — Stuccord Motion" }] }),
@@ -132,6 +133,47 @@ const SHORTCUTS: [string, string][] = [
   ["Ctrl + D", "Duplicate the selected clip"],
   ["Del", "Delete the selected clip"],
   ["Ctrl + Z", "Undo (Shift: redo)"],
+];
+
+// The API (src/lib/api/v1.server.ts). Each step: what it does, then curl.
+const API_STEPS: { title: string; note: string; curl: string }[] = [
+  {
+    title: "1. Make a project",
+    note: "aspect_ratio is 9:16, 16:9 or 1:1 (default 9:16). Returns the project with its id.",
+    curl: `curl -X POST $BASE/api/v1/projects \
+  -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
+  -d '{"title":"My short","aspect_ratio":"9:16"}'`,
+  },
+  {
+    title: "2. Get an upload link",
+    note: "Give the file's name, type and size in bytes. Returns upload.url and upload.path (the link works for 2 hours).",
+    curl: `curl -X POST $BASE/api/v1/projects/$PROJECT/uploads \
+  -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
+  -d '{"filename":"talk.mp4","content_type":"video/mp4","size":12345678}'`,
+  },
+  {
+    title: "3. Upload the file",
+    note: "PUT the file itself to upload.url, with its content type.",
+    curl: `curl -X PUT "$UPLOAD_URL" -H "content-type: video/mp4" --data-binary @talk.mp4`,
+  },
+  {
+    title: "4. Put it on the timeline",
+    note: "track: V1 (main, after the last clip), V2 (B-roll), A2 (music or SFX) or VO (voiceover, with start_ms). Videos and pictures default to V1, audio to A2. duration_ms is optional; the editor reads it when you open the project.",
+    curl: `curl -X POST $BASE/api/v1/projects/$PROJECT/clips \
+  -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
+  -d '{"path":"<upload.path>","track":"V1"}'`,
+  },
+  {
+    title: "5. Start an export",
+    note: "A cloud export in 1080p. captions, music and music_volume (0-100) are optional and default to the project's switches. Counts toward your 5 exports a month.",
+    curl: `curl -X POST $BASE/api/v1/projects/$PROJECT/exports \
+  -H "Authorization: Bearer $KEY" -H "content-type: application/json" -d '{"captions":true}'`,
+  },
+  {
+    title: "6. Check it, then download",
+    note: "Check every 10-30 seconds. status goes queued → transcribing → planning → rendering → completed (or failed, with error). When completed, download_url works for an hour; ask again for a fresh one.",
+    curl: `curl $BASE/api/v1/exports/$EXPORT -H "Authorization: Bearer $KEY"`,
+  },
 ];
 
 const FAQS = [
@@ -263,6 +305,8 @@ function HelpPage() {
         </div>
       </section>
 
+      <ApiGuide />
+
       <section>
         <h3 className="text-sm font-semibold mb-3">Frequently asked</h3>
         <div className="rounded-2xl bg-white border border-black/5 divide-y divide-black/5">
@@ -310,6 +354,49 @@ function HelpPage() {
         </Button>
       </div>
     </AppShell>
+  );
+}
+
+function ApiGuide() {
+  // The address scripts call: this site's own.
+  const [base, setBase] = useState("https://your-stuccord-site");
+  useEffect(() => setBase(window.location.origin), []);
+  return (
+    <section id="api" className="mb-10 scroll-mt-24">
+      <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+        <Code2 className="w-4 h-4 text-violet-700" /> API for your own scripts
+      </h3>
+      <p className="text-[13px] text-neutral-600 mb-3 max-w-3xl leading-relaxed">
+        Make a key in{" "}
+        <Link to="/settings" search={{ tab: "api" }} className="underline">
+          Settings → API keys
+        </Link>{" "}
+        and send it with every request as <code className="font-mono">Authorization: Bearer smk_…</code>.
+        Full-access keys can do everything below; read-only keys can list projects (
+        <code className="font-mono">GET /api/v1/projects</code>), see one with its clips and latest
+        export (<code className="font-mono">GET /api/v1/projects/ID</code>) and check exports.
+        Answers are JSON; errors look like{" "}
+        <code className="font-mono">{'{"error":{"code","message"}}'}</code>. Up to 120 requests a
+        minute per key.
+      </p>
+      <div className="rounded-2xl bg-white border border-black/5 divide-y divide-black/5">
+        <div className="p-4 text-[12px] text-neutral-600">
+          In the examples: <code className="font-mono">BASE={base}</code>,{" "}
+          <code className="font-mono">KEY</code> is your key, and{" "}
+          <code className="font-mono">PROJECT</code>, <code className="font-mono">UPLOAD_URL</code>{" "}
+          and <code className="font-mono">EXPORT</code> come from the answers before.
+        </div>
+        {API_STEPS.map((s) => (
+          <div key={s.title} className="p-4 space-y-2">
+            <div className="text-sm font-medium">{s.title}</div>
+            <p className="text-[12.5px] text-neutral-600 leading-relaxed">{s.note}</p>
+            <pre className="text-[11.5px] leading-relaxed bg-neutral-950 text-neutral-100 rounded-lg p-3 overflow-x-auto">
+              <code>{s.curl.replaceAll("$BASE", base)}</code>
+            </pre>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

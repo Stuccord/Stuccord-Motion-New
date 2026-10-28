@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { readPrefs, savePrefs, type NotificationPrefs } from "@/lib/notification-prefs";
 import { SecuritySettings } from "@/components/settings-security";
 import { BrandKitSettings } from "@/components/settings-brand-kit";
+import { ApiKeySettings } from "@/components/settings-api-keys";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { User, Palette, Bell, Shield, KeyRound } from "lucide-react";
@@ -148,10 +149,10 @@ function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">API keys</CardTitle>
-                <CardDescription>Programmatic access to your workspace.</CardDescription>
+                <CardDescription>Use your workspace from your own scripts.</CardDescription>
               </CardHeader>
               <CardContent>
-                <NotYet what="Keys for starting exports from your own scripts" />
+                <ApiKeySettings />
               </CardContent>
             </Card>
           </TabsContent>
@@ -240,18 +241,6 @@ function NotificationSettings() {
       <p className="pt-3 text-xs text-neutral-500">
         Email notifications aren&apos;t available yet.
       </p>
-    </div>
-  );
-}
-
-/** A part of Settings that isn't built yet, said plainly (no pretend controls). */
-function NotYet({ what }: { what: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-black/10 bg-neutral-50 p-4 text-sm text-neutral-600">
-      <span className="mr-2 rounded-full border border-black/10 bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-500">
-        Soon
-      </span>
-      {what} isn&apos;t available yet. It&apos;s coming in an upcoming update.
     </div>
   );
 }

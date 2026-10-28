@@ -1145,6 +1145,282 @@ function resolveCallbackWebhookEndpoint(rawBaseUrl: string | undefined): URL {
   return parsed;
 }
 
+export type CloudRenderInput = {
+  project_id: string;
+  captions: boolean;
+  music: { enabled: boolean; volume: number };
+};
+
+/**
+ * Starts a cloud export of one of the user's projects: checks the monthly
+ * cap, makes the job and hands it to the render worker. Every query is
+ * limited to `userId`, so it's safe with the admin client too (the API,
+ * where an API key stands in for a signed-in user).
+ */
+export async function startCloudRender(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: CloudRenderInput,
+) {
+  // Enforce the free plan's monthly render cap.
+  // Counts every job created this billing month except failed ones so
+  // retries after a hard failure don't burn quota. Stale jobs are failed
+  // first so a dead render doesn't count against the cap.
+  await reapStaleRenderJobs(userId);
+  const RENDER_CAP = 5;
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const { count: usedThisMonth, error: countErr } = await db
+    .from("render_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .neq("status", "failed")
+    .gte("created_at", monthStart.toISOString());
+  if (countErr) throw new Error(countErr.message);
+  if ((usedThisMonth ?? 0) >= RENDER_CAP) {
+    throw new Error(
+      `You've used all ${RENDER_CAP} exports for this month on the free plan. Exporting opens again on the 1st; you can keep editing meanwhile.`,
+    );
+  }
+
+  // Verify ownership + fetch payload for worker
+  const { data: project, error: pErr } = await db
+    .from("projects")
+    .select("*")
+    .eq("id", data.project_id)
+    .eq("user_id", userId)
+    .single();
+  if (pErr || !project) throw new Error("Project not found");
+
+  const { data: clips, error: cErr } = await db
+    .from("clips")
+    .select("*")
+    .eq("project_id", data.project_id)
+    .eq("user_id", userId)
+    .order("ordinal", { ascending: true });
+  if (cErr) throw new Error(cErr.message);
+  if (!clips?.length) throw new Error("Upload at least one clip before rendering");
+  if (!clips.some((c) => !isAudioRole(c.role))) {
+    throw new Error("Add a video or picture before rendering: sound alone can't be exported");
+  }
+
+  // Create job row
+  const { data: job, error: jErr } = await db
+    .from("render_jobs")
+    .insert({
+      project_id: project.id,
+      user_id: userId,
+      status: "queued",
+      progress: 0,
+      stage_message: "Queued for editing",
+    })
+    .select("*")
+    .single();
+  if (jErr) throw new Error(jErr.message);
+
+  await db
+    .from("projects")
+    .update({ status: "queued" })
+    .eq("id", project.id)
+    .eq("user_id", userId);
+
+  // Dispatch to external worker with timeout and robust status validation
+  try {
+    const workerJobsUrl = resolveWorkerJobsEndpoint(process.env.RENDER_WORKER_URL);
+    const workerSecret = process.env.RENDER_WORKER_SECRET?.trim();
+    if (!workerSecret) {
+      throw new Error("RENDER_WORKER_SECRET is not configured");
+    }
+    const callbackWebhookUrl = resolveCallbackWebhookEndpoint(
+      process.env.PUBLIC_APP_URL || process.env.PUBLIC_URL,
+    );
+
+    // Saved transcripts (and the user's corrections) for these source files,
+    // so the worker only transcribes files it hasn't seen. Best-effort: if
+    // this lookup fails the worker simply transcribes again.
+    const savedWords = new Map<string, unknown>();
+    if (data.captions) {
+      const paths = [...new Set(clips.map((c) => c.storage_path))];
+      const { data: transcripts, error: tErr } = await db
+        .from("transcripts")
+        .select("storage_path, words")
+        .eq("user_id", userId)
+        .in("storage_path", paths);
+      if (tErr) console.error("[submitRender] Transcript lookup failed:", tErr.message);
+      for (const t of transcripts ?? []) savedWords.set(t.storage_path, t.words);
+    }
+
+    // Presign download URLs for each clip so the worker doesn't need service role.
+    const clipUrls = await Promise.all(
+      clips.map(async (c) => {
+        const { data: signed } = await db.storage
+          .from("raw-clips")
+          .createSignedUrl(c.storage_path, 60 * 60 * 6);
+        return {
+          id: c.id,
+          storage_path: c.storage_path,
+          filename: c.filename,
+          role: c.role,
+          ordinal: c.ordinal,
+          download_url: signed?.signedUrl ?? null,
+          duration_ms: c.duration_ms ?? null,
+          trim_in_ms: c.trim_in_ms ?? 0,
+          trim_out_ms: c.trim_out_ms ?? null,
+          // Where it starts on the timeline; null follows the clip before it.
+          start_ms: c.start_ms ?? null,
+          parent_clip_id: c.parent_clip_id ?? null,
+          // Moved, resized or rotated in the preview; null: the default fit.
+          transform: parseTransform(c.transform),
+          // Words in source-file time, or null when not transcribed yet.
+          transcript_words: savedWords.get(c.storage_path) ?? null,
+        };
+      }),
+    );
+
+    // Presign an upload URL for the final render output.
+    const outputPath = `${userId}/${project.id}/${job.id}.mp4`;
+    const { data: uploadSigned, error: uploadErr } = await db.storage
+      .from("renders")
+      .createSignedUploadUrl(outputPath);
+    if (uploadErr) throw new Error(uploadErr.message);
+
+    // The account's brand kit, read fresh (the sign-in token may be older
+    // than the last save), with a link to its logo for the worker.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: owner } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const kit = parseBrandKit(owner?.user?.user_metadata?.brand_kit);
+    let logoUrl: string | null = null;
+    if (kit.logo) {
+      const { data: signedLogo } = await db.storage
+        .from("raw-clips")
+        .createSignedUrl(kit.logo.path, 60 * 60 * 6);
+      logoUrl = signedLogo?.signedUrl ?? null;
+    }
+    const brandKit = {
+      ...kit,
+      logo: kit.logo && logoUrl ? { ...kit.logo, url: logoUrl } : null,
+    };
+
+    const payload = {
+      job_id: job.id,
+      project_id: project.id,
+      user_id: userId,
+      title: project.title,
+      script: project.script,
+      brief: project.brief,
+      style_preset: project.style_preset,
+      aspect_ratio: project.aspect_ratio,
+      captions: data.captions,
+      music: data.music,
+      brand_kit: brandKit,
+      // Voiceovers go apart from the clips, so a worker from before
+      // voiceovers leaves them out instead of taking them for videos.
+      clips: clipUrls.filter((c) => c.role !== "voiceover"),
+      voiceovers: clipUrls.filter((c) => c.role === "voiceover"),
+      output: {
+        path: outputPath,
+        upload_url: uploadSigned.signedUrl,
+        token: uploadSigned.token,
+      },
+      callback_url: callbackWebhookUrl.toString(),
+    };
+    const body = JSON.stringify(payload);
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(workerSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(body));
+    const signature = Array.from(new Uint8Array(sigBuf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let res: Response;
+    try {
+      res = await fetch(workerJobsUrl.toString(), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-stuccord-signature": signature,
+        },
+        body,
+        signal: controller.signal,
+      });
+    } catch (fetchErr: unknown) {
+      if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
+        throw new Error("Render worker connection timed out after 15 seconds");
+      }
+      throw new Error("Failed to connect to render worker");
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (res.status !== 202) {
+      throw new Error(`Render worker rejected job with HTTP status ${res.status}`);
+    }
+  } catch (dispatchErr: unknown) {
+    const sanitizedError =
+      dispatchErr instanceof Error
+        ? dispatchErr.message.slice(0, 500)
+        : "Cloud render dispatch failed";
+
+    console.error(`[Worker Dispatch Failed] job=${job.id} project=${project.id}`);
+
+    // Safely transition job and project rows to failed so they never stay stuck in queued
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const nowIso = new Date().toISOString();
+
+      const { data: updatedJobs, error: jErr } = await supabaseAdmin
+        .from("render_jobs")
+        .update({
+          status: "failed",
+          stage_message: "Dispatch failed",
+          error: sanitizedError,
+          updated_at: nowIso,
+        })
+        .eq("id", job.id)
+        .eq("project_id", project.id)
+        .eq("user_id", userId)
+        .select("id");
+
+      if (jErr || !updatedJobs || updatedJobs.length !== 1) {
+        console.error(`[Worker Dispatch] Failed to update render job row: ${jErr?.message}`);
+      }
+
+      const { data: updatedProjects, error: pErr } = await supabaseAdmin
+        .from("projects")
+        .update({
+          status: "failed",
+          updated_at: nowIso,
+        })
+        .eq("id", project.id)
+        .eq("user_id", userId)
+        .select("id");
+
+      if (pErr || !updatedProjects || updatedProjects.length !== 1) {
+        console.error(`[Worker Dispatch] Failed to update project row: ${pErr?.message}`);
+      }
+    } catch (adminErr) {
+      console.error(
+        `[Worker Dispatch] Admin failure update error: ${adminErr instanceof Error ? adminErr.message : "unknown"}`,
+      );
+    }
+
+    throw new Error(
+      "Cloud rendering is temporarily unavailable. The job could not be dispatched to the render worker.",
+    );
+  }
+
+  return job;
+}
+
 export const submitRender = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -1161,261 +1437,7 @@ export const submitRender = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    // Enforce the free plan's monthly render cap.
-    // Counts every job created this billing month except failed ones so
-    // retries after a hard failure don't burn quota. Stale jobs are failed
-    // first so a dead render doesn't count against the cap.
-    await reapStaleRenderJobs(context.userId);
-    const RENDER_CAP = 5;
-    const monthStart = new Date();
-    monthStart.setUTCDate(1);
-    monthStart.setUTCHours(0, 0, 0, 0);
-    const { count: usedThisMonth, error: countErr } = await context.supabase
-      .from("render_jobs")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", context.userId)
-      .neq("status", "failed")
-      .gte("created_at", monthStart.toISOString());
-    if (countErr) throw new Error(countErr.message);
-    if ((usedThisMonth ?? 0) >= RENDER_CAP) {
-      throw new Error(
-        `You've used all ${RENDER_CAP} exports for this month on the free plan. Exporting opens again on the 1st; you can keep editing meanwhile.`,
-      );
-    }
-
-    // Verify ownership + fetch payload for worker
-    const { data: project, error: pErr } = await context.supabase
-      .from("projects")
-      .select("*")
-      .eq("id", data.project_id)
-      .single();
-    if (pErr || !project) throw new Error("Project not found");
-
-    const { data: clips, error: cErr } = await context.supabase
-      .from("clips")
-      .select("*")
-      .eq("project_id", data.project_id)
-      .order("ordinal", { ascending: true });
-    if (cErr) throw new Error(cErr.message);
-    if (!clips?.length) throw new Error("Upload at least one clip before rendering");
-    if (!clips.some((c) => !isAudioRole(c.role))) {
-      throw new Error("Add a video or picture before rendering: sound alone can't be exported");
-    }
-
-    // Create job row
-    const { data: job, error: jErr } = await context.supabase
-      .from("render_jobs")
-      .insert({
-        project_id: project.id,
-        user_id: context.userId,
-        status: "queued",
-        progress: 0,
-        stage_message: "Queued for editing",
-      })
-      .select("*")
-      .single();
-    if (jErr) throw new Error(jErr.message);
-
-    await context.supabase
-      .from("projects")
-      .update({ status: "queued" })
-      .eq("id", project.id);
-
-    // Dispatch to external worker with timeout and robust status validation
-    try {
-      const workerJobsUrl = resolveWorkerJobsEndpoint(process.env.RENDER_WORKER_URL);
-      const workerSecret = process.env.RENDER_WORKER_SECRET?.trim();
-      if (!workerSecret) {
-        throw new Error("RENDER_WORKER_SECRET is not configured");
-      }
-      const callbackWebhookUrl = resolveCallbackWebhookEndpoint(
-        process.env.PUBLIC_APP_URL || process.env.PUBLIC_URL,
-      );
-
-      // Saved transcripts (and the user's corrections) for these source files,
-      // so the worker only transcribes files it hasn't seen. Best-effort: if
-      // this lookup fails the worker simply transcribes again.
-      const savedWords = new Map<string, unknown>();
-      if (data.captions) {
-        const paths = [...new Set(clips.map((c) => c.storage_path))];
-        const { data: transcripts, error: tErr } = await context.supabase
-          .from("transcripts")
-          .select("storage_path, words")
-          .in("storage_path", paths);
-        if (tErr) console.error("[submitRender] Transcript lookup failed:", tErr.message);
-        for (const t of transcripts ?? []) savedWords.set(t.storage_path, t.words);
-      }
-
-      // Presign download URLs for each clip so the worker doesn't need service role.
-      const clipUrls = await Promise.all(
-        clips.map(async (c) => {
-          const { data: signed } = await context.supabase.storage
-            .from("raw-clips")
-            .createSignedUrl(c.storage_path, 60 * 60 * 6);
-          return {
-            id: c.id,
-            storage_path: c.storage_path,
-            filename: c.filename,
-            role: c.role,
-            ordinal: c.ordinal,
-            download_url: signed?.signedUrl ?? null,
-            duration_ms: c.duration_ms ?? null,
-            trim_in_ms: c.trim_in_ms ?? 0,
-            trim_out_ms: c.trim_out_ms ?? null,
-            // Where it starts on the timeline; null follows the clip before it.
-            start_ms: c.start_ms ?? null,
-            parent_clip_id: c.parent_clip_id ?? null,
-            // Moved, resized or rotated in the preview; null: the default fit.
-            transform: parseTransform(c.transform),
-            // Words in source-file time, or null when not transcribed yet.
-            transcript_words: savedWords.get(c.storage_path) ?? null,
-          };
-        }),
-      );
-
-      // Presign an upload URL for the final render output.
-      const outputPath = `${context.userId}/${project.id}/${job.id}.mp4`;
-      const { data: uploadSigned, error: uploadErr } = await context.supabase.storage
-        .from("renders")
-        .createSignedUploadUrl(outputPath);
-      if (uploadErr) throw new Error(uploadErr.message);
-
-      // The account's brand kit, read fresh (the sign-in token may be older
-      // than the last save), with a link to its logo for the worker.
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: owner } = await supabaseAdmin.auth.admin.getUserById(context.userId);
-      const kit = parseBrandKit(owner?.user?.user_metadata?.brand_kit);
-      let logoUrl: string | null = null;
-      if (kit.logo) {
-        const { data: signedLogo } = await context.supabase.storage
-          .from("raw-clips")
-          .createSignedUrl(kit.logo.path, 60 * 60 * 6);
-        logoUrl = signedLogo?.signedUrl ?? null;
-      }
-      const brandKit = {
-        ...kit,
-        logo: kit.logo && logoUrl ? { ...kit.logo, url: logoUrl } : null,
-      };
-
-      const payload = {
-        job_id: job.id,
-        project_id: project.id,
-        user_id: context.userId,
-        title: project.title,
-        script: project.script,
-        brief: project.brief,
-        style_preset: project.style_preset,
-        aspect_ratio: project.aspect_ratio,
-        captions: data.captions,
-        music: data.music,
-        brand_kit: brandKit,
-        // Voiceovers go apart from the clips, so a worker from before
-        // voiceovers leaves them out instead of taking them for videos.
-        clips: clipUrls.filter((c) => c.role !== "voiceover"),
-        voiceovers: clipUrls.filter((c) => c.role === "voiceover"),
-        output: {
-          path: outputPath,
-          upload_url: uploadSigned.signedUrl,
-          token: uploadSigned.token,
-        },
-        callback_url: callbackWebhookUrl.toString(),
-      };
-      const body = JSON.stringify(payload);
-      const enc = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        "raw",
-        enc.encode(workerSecret),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"],
-      );
-      const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(body));
-      const signature = Array.from(new Uint8Array(sigBuf))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      let res: Response;
-      try {
-        res = await fetch(workerJobsUrl.toString(), {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-stuccord-signature": signature,
-          },
-          body,
-          signal: controller.signal,
-        });
-      } catch (fetchErr: unknown) {
-        if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
-          throw new Error("Render worker connection timed out after 15 seconds");
-        }
-        throw new Error("Failed to connect to render worker");
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      if (res.status !== 202) {
-        throw new Error(`Render worker rejected job with HTTP status ${res.status}`);
-      }
-    } catch (dispatchErr: unknown) {
-      const sanitizedError =
-        dispatchErr instanceof Error
-          ? dispatchErr.message.slice(0, 500)
-          : "Cloud render dispatch failed";
-
-      console.error(`[Worker Dispatch Failed] job=${job.id} project=${project.id}`);
-
-      // Safely transition job and project rows to failed so they never stay stuck in queued
-      try {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const nowIso = new Date().toISOString();
-
-        const { data: updatedJobs, error: jErr } = await supabaseAdmin
-          .from("render_jobs")
-          .update({
-            status: "failed",
-            stage_message: "Dispatch failed",
-            error: sanitizedError,
-            updated_at: nowIso,
-          })
-          .eq("id", job.id)
-          .eq("project_id", project.id)
-          .eq("user_id", context.userId)
-          .select("id");
-
-        if (jErr || !updatedJobs || updatedJobs.length !== 1) {
-          console.error(`[Worker Dispatch] Failed to update render job row: ${jErr?.message}`);
-        }
-
-        const { data: updatedProjects, error: pErr } = await supabaseAdmin
-          .from("projects")
-          .update({
-            status: "failed",
-            updated_at: nowIso,
-          })
-          .eq("id", project.id)
-          .eq("user_id", context.userId)
-          .select("id");
-
-        if (pErr || !updatedProjects || updatedProjects.length !== 1) {
-          console.error(`[Worker Dispatch] Failed to update project row: ${pErr?.message}`);
-        }
-      } catch (adminErr) {
-        console.error(
-          `[Worker Dispatch] Admin failure update error: ${adminErr instanceof Error ? adminErr.message : "unknown"}`,
-        );
-      }
-
-      throw new Error(
-        "Cloud rendering is temporarily unavailable. The job could not be dispatched to the render worker.",
-      );
-    }
-
-    return job;
-  });
+  .handler(async ({ data, context }) => startCloudRender(context.supabase, context.userId, data));
 
 /**
  * Client-side render pipeline (browser stitches clips with MediaRecorder).
