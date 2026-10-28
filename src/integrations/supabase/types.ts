@@ -124,6 +124,7 @@ export type Database = {
           script: string | null
           status: Database["public"]["Enums"]["project_status"]
           style_preset: string
+          team_id: string | null
           thumbnail_url: string | null
           title: string
           updated_at: string
@@ -142,6 +143,7 @@ export type Database = {
           script?: string | null
           status?: Database["public"]["Enums"]["project_status"]
           style_preset?: string
+          team_id?: string | null
           thumbnail_url?: string | null
           title?: string
           updated_at?: string
@@ -160,6 +162,7 @@ export type Database = {
           script?: string | null
           status?: Database["public"]["Enums"]["project_status"]
           style_preset?: string
+          team_id?: string | null
           thumbnail_url?: string | null
           title?: string
           updated_at?: string

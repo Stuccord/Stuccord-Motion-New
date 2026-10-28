@@ -6,6 +6,8 @@ import type { Database } from "@/integrations/supabase/types";
 import { parseTransform } from "@/lib/clip-transform";
 import { parseBrandKit } from "@/lib/brand-kit";
 import { isAudioRole } from "@/lib/media-kind";
+import { PERSONAL, inFolder, projectFolder, type ProjectAccess } from "@/lib/workspace";
+import type { TeamRole } from "@/lib/plans";
 
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
@@ -73,6 +75,60 @@ const STALE_RENDER_JOB_MS = 30 * 60 * 1000;
 const ACTIVE_JOB_STATUSES = ["queued", "transcribing", "planning", "rendering"] as const;
 
 /**
+ * A project the signed-in user can open, what they can do with it, and where
+ * its files live. Personal projects are their owner's; team projects are
+ * reached through team membership (viewers can only look). The database's
+ * rules check the same thing (project_access in the team_projects migration).
+ */
+async function projectAccess(
+  supabase: SupabaseClient<Database>,
+  projectId: string,
+  userId: string,
+) {
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!project) throw new Error("Project not found");
+  let teamRole: TeamRole | null = null;
+  let access: ProjectAccess | null = null;
+  if (!project.team_id) {
+    access = project.user_id === userId ? "edit" : null;
+  } else {
+    const { data: m } = await supabase
+      .from("team_members")
+      .select("role")
+      .eq("team_id", project.team_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    teamRole = (m?.role as TeamRole | undefined) ?? null;
+    access = !teamRole ? null : teamRole === "viewer" ? "view" : "edit";
+  }
+  if (!access) throw new Error("Project not found");
+  // Deleting: the owner of a personal project; for a team project its
+  // owner and admins, and the editor who made it.
+  const canDelete = !project.team_id
+    ? true
+    : teamRole === "owner" ||
+      teamRole === "admin" ||
+      (teamRole === "editor" && project.user_id === userId);
+  return { project, access, teamRole, canDelete, folder: projectFolder(project) };
+}
+
+/** As projectAccess, for changes: viewers are turned away. */
+export async function projectForEdit(
+  supabase: SupabaseClient<Database>,
+  projectId: string,
+  userId: string,
+) {
+  const a = await projectAccess(supabase, projectId, userId);
+  if (a.access !== "edit") throw new Error("You can view this project but not change it");
+  return a;
+}
+
+/**
  * Marks the user's stale in-progress render jobs as failed (optionally only
  * for one project), and fails their projects when no other job is active.
  * Best-effort: errors are logged and never block the caller. Uses the admin
@@ -100,11 +156,11 @@ async function reapStaleRenderJobs(userId: string, projectId?: string) {
     if (!reaped?.length) return;
 
     for (const pid of new Set(reaped.map((j) => j.project_id))) {
+      // Anyone's export still running on it (a team project has several people).
       const { count, error: countErr } = await supabaseAdmin
         .from("render_jobs")
         .select("id", { count: "exact", head: true })
         .eq("project_id", pid)
-        .eq("user_id", userId)
         .in("status", [...ACTIVE_JOB_STATUSES]);
       if (countErr) throw countErr;
       if ((count ?? 0) > 0) continue;
@@ -113,7 +169,6 @@ async function reapStaleRenderJobs(userId: string, projectId?: string) {
         .from("projects")
         .update({ status: "failed" })
         .eq("id", pid)
-        .eq("user_id", userId)
         .in("status", ["queued", "processing"]);
       if (pErr) throw pErr;
     }
@@ -131,6 +186,8 @@ const CreateInput = z.object({
   brief: z.string().max(4000).optional().nullable(),
   style_preset: z.string().max(64).default("gadzhi"),
   aspect_ratio: z.enum(["9:16", "16:9", "1:1"]).default("9:16"),
+  /** Make it in a team (Editors and up); personal when left out. */
+  team_id: z.string().uuid().nullable().optional(),
 });
 
 export const createProject = createServerFn({ method: "POST" })
@@ -146,10 +203,17 @@ export const createProject = createServerFn({ method: "POST" })
         brief: data.brief ?? null,
         style_preset: data.style_preset,
         aspect_ratio: data.aspect_ratio,
+        team_id: data.team_id ?? null,
       })
       .select("*")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      // The database only lets Editors and up make team projects.
+      if (data.team_id && /row-level security/i.test(error.message)) {
+        throw new Error("You can't make projects in this team (Viewers can only watch)");
+      }
+      throw new Error(error.message);
+    }
     return row;
   });
 
@@ -207,16 +271,34 @@ export type ThumbSource = {
   duration_ms: number | null;
 };
 
+/** Which workspace a list is for: "personal" (the default) or a team's id. */
+const WorkspaceInput = z
+  .object({ workspace: z.union([z.literal(PERSONAL), z.string().uuid()]).default(PERSONAL) })
+  .default({ workspace: PERSONAL });
+
+/** The caller's role in a team, or null (personal workspace, or not a member). */
+async function roleIn(supabase: SupabaseClient<Database>, teamId: string, userId: string) {
+  const { data } = await supabase
+    .from("team_members")
+    .select("role")
+    .eq("team_id", teamId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data?.role as TeamRole | undefined) ?? null;
+}
+
 export const listProjects = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("projects")
-      .select("*")
-      .order("created_at", { ascending: false });
+  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .handler(async ({ data: input, context }) => {
+    const team = input.workspace === PERSONAL ? null : input.workspace;
+    let q = context.supabase.from("projects").select("*").order("created_at", { ascending: false });
+    q = team ? q.eq("team_id", team) : q.is("team_id", null).eq("user_id", context.userId);
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     const projects = data ?? [];
     if (projects.length === 0) return [];
+    const role = team ? await roleIn(context.supabase, team, context.userId) : null;
 
     // Each project's picture: its first main-track clip (V1, or V2 when V1
     // is empty), shown as its saved thumbnail.
@@ -261,27 +343,54 @@ export const listProjects = createServerFn({ method: "GET" })
               duration_ms: c.duration_ms,
             }
           : null;
-      return { ...p, thumbnail_signed_url: thumb, thumbnail_source: source };
+      // What the caller can do with it (for the project's menu).
+      const access: ProjectAccess = !team || role !== "viewer" ? "edit" : "view";
+      const can_delete =
+        !team ||
+        role === "owner" ||
+        role === "admin" ||
+        (role === "editor" && p.user_id === context.userId);
+      return {
+        ...p,
+        thumbnail_signed_url: thumb,
+        thumbnail_source: source,
+        access,
+        can_delete,
+        made_by_you: p.user_id === context.userId,
+      };
     });
   });
 
 export const getUsageStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .handler(async ({ data: input, context }) => {
+    const team = input.workspace === PERSONAL ? null : input.workspace;
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const start30 = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
     const start30Iso = new Date(start30.getFullYear(), start30.getMonth(), start30.getDate()).toISOString();
 
-    const [{ data: projects }, { data: jobs30 }, { data: jobsMonth }] = await Promise.all([
-      context.supabase.from("projects").select("id, aspect_ratio, style_preset, status, created_at, duration_seconds"),
-      context.supabase
-        .from("render_jobs")
-        .select("id, status, created_at, updated_at")
-        .gte("created_at", start30Iso),
+    let pq = context.supabase
+      .from("projects")
+      .select("id, aspect_ratio, style_preset, status, created_at, duration_seconds");
+    pq = team ? pq.eq("team_id", team) : pq.is("team_id", null).eq("user_id", context.userId);
+    const { data: projects } = await pq;
+    const ids = (projects ?? []).map((p) => p.id);
+    const [{ data: jobs30 }, { data: jobsMonth }] = await Promise.all([
+      // The chart: exports of this workspace's projects.
+      ids.length
+        ? context.supabase
+            .from("render_jobs")
+            .select("id, status, created_at, updated_at")
+            .in("project_id", ids)
+            .gte("created_at", start30Iso)
+        : Promise.resolve({ data: [] as { created_at: string }[] }),
+      // The monthly allowance is the caller's own exports.
       context.supabase
         .from("render_jobs")
         .select("id, status, created_at")
+        .eq("user_id", context.userId)
         .gte("created_at", startOfMonth),
     ]);
 
@@ -340,12 +449,18 @@ export const getUsageStats = createServerFn({ method: "GET" })
 
 export const listAllClips = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .handler(async ({ data: input, context }) => {
+    const team = input.workspace === PERSONAL ? null : input.workspace;
+    let q = context.supabase
       .from("clips")
-      .select("id, filename, size_bytes, role, created_at, storage_path, project_id, trim_in_ms, trim_out_ms, duration_ms, projects!inner(title, aspect_ratio)")
+      .select("id, filename, size_bytes, role, created_at, storage_path, project_id, trim_in_ms, trim_out_ms, duration_ms, projects!inner(title, aspect_ratio, team_id, user_id)")
       .order("created_at", { ascending: false })
       .limit(200);
+    q = team
+      ? q.eq("projects.team_id", team)
+      : q.is("projects.team_id", null).eq("projects.user_id", context.userId);
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     const saved = await thumbnailPaths(
       context.supabase,
@@ -379,6 +494,7 @@ export const listNotifications = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("render_jobs")
       .select("id, project_id, status, error, updated_at, projects(title)")
+      .eq("user_id", context.userId)
       .in("status", ["completed", "failed"])
       .gte("updated_at", since)
       .order("updated_at", { ascending: false })
@@ -396,7 +512,7 @@ export const listNotifications = createServerFn({ method: "GET" })
 
 /** A cover file made by the Thumbnail maker (anything else in thumbnail_url is ignored). */
 export const isCoverPath = (p: string | null | undefined): p is string =>
-  !!p && /^[^/]+\/thumbs\/cover-[^/]+\.jpg$/.test(p);
+  !!p && /^(?:teams\/[0-9a-f-]{36}|[^/]+)\/thumbs\/cover-[^/]+\.jpg$/.test(p);
 
 /**
  * Sets a project's cover (made in the Thumbnail maker and uploaded to the
@@ -411,9 +527,10 @@ export const setProjectCover = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const prefix = `${context.userId}/thumbs/cover-${data.project_id}-`;
-    if (data.path !== null && (!data.path.startsWith(prefix) || !data.path.endsWith(".jpg"))) {
-      throw new Error("Covers are saved in your own folder");
+    const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
+    const prefix = `${folder}/thumbs/cover-${data.project_id}-`;
+    if (data.path !== null && (!inFolder(data.path, folder) || !data.path.startsWith(prefix) || !data.path.endsWith(".jpg"))) {
+      throw new Error("Covers are saved in the project's folder");
     }
     const { data: before, error: rErr } = await context.supabase
       .from("projects")
@@ -443,8 +560,15 @@ export const setClipThumbnail = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), path: z.string().min(1).max(300) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    if (data.path !== `${context.userId}/thumbs/${data.id}.jpg`) {
-      throw new Error("Thumbnails are saved in your own folder");
+    const { data: clip } = await context.supabase
+      .from("clips")
+      .select("project_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!clip) throw new Error("Clip not found");
+    const { folder } = await projectForEdit(context.supabase, clip.project_id, context.userId);
+    if (data.path !== `${folder}/thumbs/${data.id}.jpg`) {
+      throw new Error("Thumbnails are saved in the project's folder");
     }
     const { error } = await context.supabase
       .from("clips")
@@ -459,6 +583,12 @@ export const getProject = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await reapStaleRenderJobs(context.userId, data.id);
+    const { access, teamRole, canDelete, folder } = await projectAccess(
+      context.supabase,
+      data.id,
+      context.userId,
+    );
+    let team: { id: string; name: string; role: TeamRole } | null = null;
     const [{ data: project, error: pErr }, { data: clips, error: cErr }, { data: jobs, error: jErr }] =
       await Promise.all([
         context.supabase.from("projects").select("*").eq("id", data.id).maybeSingle(),
@@ -478,13 +608,33 @@ export const getProject = createServerFn({ method: "POST" })
     if (cErr) throw new Error(cErr.message);
     if (jErr) throw new Error(jErr.message);
     if (!project) throw new Error("Project not found");
-    return { project, clips: clips ?? [], latestJob: jobs?.[0] ?? null };
+    if (project.team_id && teamRole) {
+      const { data: t } = await context.supabase
+        .from("teams")
+        .select("id, name")
+        .eq("id", project.team_id)
+        .maybeSingle();
+      if (t) team = { id: t.id, name: t.name, role: teamRole };
+    }
+    return {
+      project,
+      clips: clips ?? [],
+      latestJob: jobs?.[0] ?? null,
+      access,
+      canDelete,
+      folder,
+      team,
+    };
   });
 
 export const deleteProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    const { canDelete } = await projectAccess(context.supabase, data.id, context.userId);
+    if (!canDelete) {
+      throw new Error("Only the team's owner and admins, or whoever made it, can delete this project");
+    }
     // Its clips' thumbnail pictures go with it.
     const { data: projectClips } = await context.supabase
       .from("clips")
@@ -508,8 +658,13 @@ export const deleteProject = createServerFn({ method: "POST" })
       .eq("project_id", data.id)
       .eq("status", "scheduled");
     if (postErr) console.error("[deleteProject] Canceling posts failed:", postErr.message);
-    const { error } = await context.supabase.from("projects").delete().eq("id", data.id);
+    const { data: gone, error } = await context.supabase
+      .from("projects")
+      .delete()
+      .eq("id", data.id)
+      .select("id");
     if (error) throw new Error(error.message);
+    if (!gone?.length) throw new Error("You can't delete this project");
     const paths = [
       ...(thumbs ?? []).flatMap((t) => (t.thumbnail_path ? [t.thumbnail_path] : [])),
       ...(isCoverPath(projectRow?.thumbnail_url) ? [projectRow.thumbnail_url] : []),
@@ -519,6 +674,149 @@ export const deleteProject = createServerFn({ method: "POST" })
       if (rmErr) console.error("[deleteProject] Failed to delete thumbnails:", rmErr.message);
     }
     return { ok: true };
+  });
+
+/**
+ * Moves a project between your personal space and a team, files and all.
+ * Into a team: only whoever made it, and only into a team where they're an
+ * Editor or up. Back out of a team: the team's owner and admins; it becomes
+ * theirs. Every file it uses (clips, thumbnails, cover, exports) is moved to
+ * the new folder first; if a move fails, the ones already moved go back.
+ */
+export const moveProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        to: z.union([z.literal(PERSONAL), z.string().uuid()]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { project, teamRole } = await projectAccess(context.supabase, data.id, context.userId);
+    const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
+
+    let target: { team_id: string | null; user_id: string };
+    if (data.to === PERSONAL) {
+      if (!project.team_id) throw new Error("It's already in your personal space");
+      if (teamRole !== "owner" && teamRole !== "admin") {
+        throw new Error("Only the team's owner and admins can move projects out of it");
+      }
+      target = { team_id: null, user_id: context.userId };
+    } else {
+      if (project.team_id) throw new Error("Move it to your personal space first");
+      if (project.user_id !== context.userId) throw new Error("Only whoever made it can move it");
+      const role = await roleIn(db, data.to, context.userId);
+      if (!role || role === "viewer") {
+        throw new Error("You need to be an Editor or up in that team to move projects into it");
+      }
+      target = { team_id: data.to, user_id: project.user_id };
+    }
+
+    // Not while it's exporting (the export would land in the old folder).
+    const { count: busy } = await db
+      .from("render_jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", project.id)
+      .in("status", [...ACTIVE_JOB_STATUSES]);
+    if ((busy ?? 0) > 0) throw new Error("Wait for its export to finish, then move it");
+
+    const from = projectFolder(project);
+    const to = projectFolder(target);
+    const moved = (path: string | null) =>
+      path && inFolder(path, from) ? `${to}${path.slice(from.length)}` : path;
+
+    const { data: clips } = await db
+      .from("clips")
+      .select("id, storage_path, thumbnail_path")
+      .eq("project_id", project.id);
+    const { data: jobs } = await db
+      .from("render_jobs")
+      .select("id, output_path")
+      .eq("project_id", project.id);
+
+    // Every file to move, once each (split clips share a file).
+    const files = new Map<string, "raw-clips" | "renders">();
+    for (const c of clips ?? []) {
+      files.set(c.storage_path, "raw-clips");
+      if (c.thumbnail_path) files.set(c.thumbnail_path, "raw-clips");
+    }
+    if (isCoverPath(project.thumbnail_url)) files.set(project.thumbnail_url, "raw-clips");
+    if (project.output_path) files.set(project.output_path, "renders");
+    for (const j of jobs ?? []) if (j.output_path) files.set(j.output_path, "renders");
+
+    const done: { bucket: "raw-clips" | "renders"; from: string; to: string }[] = [];
+    const undo = async () => {
+      for (const m of done.reverse()) {
+        await db.storage.from(m.bucket).move(m.to, m.from).catch(() => undefined);
+      }
+    };
+    for (const [path, bucket] of files) {
+      const dest = moved(path);
+      if (!dest || dest === path) continue;
+      const { error } = await db.storage.from(bucket).move(path, dest);
+      if (error) {
+        // A file that's already gone (e.g. an old export) is skipped.
+        if (/not.?found|does not exist/i.test(error.message)) continue;
+        await undo();
+        throw new Error(`Couldn't move its files (${error.message}). Nothing was changed.`);
+      }
+      done.push({ bucket, from: path, to: dest });
+    }
+
+    // The clips' files as they were (before the rows below are updated).
+    const clipFiles = [...new Set((clips ?? []).map((c) => c.storage_path))];
+    try {
+      for (const c of clips ?? []) {
+        const { error } = await db
+          .from("clips")
+          .update({ storage_path: moved(c.storage_path)!, thumbnail_path: moved(c.thumbnail_path) })
+          .eq("id", c.id);
+        if (error) throw error;
+      }
+      for (const j of jobs ?? []) {
+        if (!j.output_path) continue;
+        const { error } = await db
+          .from("render_jobs")
+          .update({ output_path: moved(j.output_path) })
+          .eq("id", j.id);
+        if (error) throw error;
+      }
+      // Captions follow their files.
+      for (const path of clipFiles) {
+        const dest = moved(path);
+        if (dest && dest !== path) {
+          await db.from("transcripts").update({ storage_path: dest }).eq("storage_path", path);
+        }
+      }
+      const { error: pErr } = await db
+        .from("projects")
+        .update({
+          team_id: target.team_id,
+          user_id: target.user_id,
+          thumbnail_url: isCoverPath(project.thumbnail_url)
+            ? moved(project.thumbnail_url)
+            : project.thumbnail_url,
+          output_path: moved(project.output_path),
+        })
+        .eq("id", project.id);
+      if (pErr) throw pErr;
+    } catch (e) {
+      await undo();
+      throw new Error(
+        `Couldn't move the project (${e instanceof Error ? e.message : "database error"})`,
+      );
+    }
+
+    // Scheduled posts pointed at the old files.
+    await db
+      .from("social_posts")
+      .update({ status: "canceled", error: "The project was moved" })
+      .eq("project_id", project.id)
+      .eq("status", "scheduled");
+
+    return { ok: true, moved: done.length };
   });
 
 const AttachClipInput = z.object({
@@ -540,6 +838,10 @@ export const attachClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => AttachClipInput.parse(d))
   .handler(async ({ data, context }) => {
+    const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
+    if (!inFolder(data.storage_path, folder)) {
+      throw new Error("That file isn't in this project's folder");
+    }
     const insert = {
       project_id: data.project_id,
       user_id: context.userId,
@@ -1082,8 +1384,9 @@ export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
     const safeName = data.filename.replace(/[^\w.\-]+/g, "_");
-    const path = `${context.userId}/${data.project_id}/${Date.now()}_${data.ordinal}_${safeName}`;
+    const path = `${folder}/${data.project_id}/${Date.now()}_${data.ordinal}_${safeName}`;
     const { data: signed, error } = await context.supabase.storage
       .from("raw-clips")
       .createSignedUploadUrl(path);
@@ -1159,10 +1462,11 @@ export type CloudRenderInput = {
 };
 
 /**
- * Starts a cloud export of one of the user's projects: checks the monthly
- * cap, makes the job and hands it to the render worker. Every query is
- * limited to `userId`, so it's safe with the admin client too (the API,
- * where an API key stands in for a signed-in user).
+ * Starts a cloud export of a project the user can edit (theirs, or a team's
+ * as an Editor or up): checks the monthly cap, makes the job and hands it to
+ * the render worker. Access is checked for `userId` explicitly, so it's safe
+ * with the admin client too (the API, where an API key stands in for a
+ * signed-in user).
  */
 export async function startCloudRender(
   db: SupabaseClient<Database>,
@@ -1191,20 +1495,13 @@ export async function startCloudRender(
     );
   }
 
-  // Verify ownership + fetch payload for worker
-  const { data: project, error: pErr } = await db
-    .from("projects")
-    .select("*")
-    .eq("id", data.project_id)
-    .eq("user_id", userId)
-    .single();
-  if (pErr || !project) throw new Error("Project not found");
+  // Check access + fetch payload for worker
+  const { project, folder } = await projectForEdit(db, data.project_id, userId);
 
   const { data: clips, error: cErr } = await db
     .from("clips")
     .select("*")
     .eq("project_id", data.project_id)
-    .eq("user_id", userId)
     .order("ordinal", { ascending: true });
   if (cErr) throw new Error(cErr.message);
   if (!clips?.length) throw new Error("Upload at least one clip before rendering");
@@ -1226,11 +1523,7 @@ export async function startCloudRender(
     .single();
   if (jErr) throw new Error(jErr.message);
 
-  await db
-    .from("projects")
-    .update({ status: "queued" })
-    .eq("id", project.id)
-    .eq("user_id", userId);
+  await db.from("projects").update({ status: "queued" }).eq("id", project.id);
 
   // Dispatch to external worker with timeout and robust status validation
   try {
@@ -1249,11 +1542,11 @@ export async function startCloudRender(
     const savedWords = new Map<string, unknown>();
     if (data.captions) {
       const paths = [...new Set(clips.map((c) => c.storage_path))];
-      const { data: transcripts, error: tErr } = await db
-        .from("transcripts")
-        .select("storage_path, words")
-        .eq("user_id", userId)
-        .in("storage_path", paths);
+      // A team's files are the team's, whoever transcribed them; personal
+      // files are looked up by their owner.
+      let tq = db.from("transcripts").select("storage_path, words").in("storage_path", paths);
+      if (!project.team_id) tq = tq.eq("user_id", userId);
+      const { data: transcripts, error: tErr } = await tq;
       if (tErr) console.error("[submitRender] Transcript lookup failed:", tErr.message);
       for (const t of transcripts ?? []) savedWords.set(t.storage_path, t.words);
     }
@@ -1286,7 +1579,7 @@ export async function startCloudRender(
     );
 
     // Presign an upload URL for the final render output.
-    const outputPath = `${userId}/${project.id}/${job.id}.mp4`;
+    const outputPath = `${folder}/${project.id}/${job.id}.mp4`;
     const { data: uploadSigned, error: uploadErr } = await db.storage
       .from("renders")
       .createSignedUploadUrl(outputPath);
@@ -1408,7 +1701,6 @@ export async function startCloudRender(
           updated_at: nowIso,
         })
         .eq("id", project.id)
-        .eq("user_id", userId)
         .select("id");
 
       if (pErr || !updatedProjects || updatedProjects.length !== 1) {
@@ -1480,13 +1772,11 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       );
     }
 
-    const { data: project, error: pErr } = await context.supabase
-      .from("projects")
-      .select("id, user_id, aspect_ratio")
-      .eq("id", data.project_id)
-      .eq("user_id", context.userId)
-      .maybeSingle();
-    if (pErr || !project) throw new Error("Project not found");
+    const { project, folder } = await projectForEdit(
+      context.supabase,
+      data.project_id,
+      context.userId,
+    );
 
     const { data: clips, error: cErr } = await context.supabase
       .from("clips")
@@ -1520,7 +1810,7 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       .single();
     if (jErr || !job) throw new Error(jErr?.message ?? "Failed to create render job");
 
-    const outputPath = `${context.userId}/${data.project_id}/${job.id}.${data.ext}`;
+    const outputPath = `${folder}/${data.project_id}/${job.id}.${data.ext}`;
     const { data: up, error: upErr } = await context.supabase.storage
       .from("renders")
       .createSignedUploadUrl(outputPath);
@@ -1529,8 +1819,7 @@ export const startBrowserRender = createServerFn({ method: "POST" })
     await context.supabase
       .from("projects")
       .update({ status: "processing" })
-      .eq("id", data.project_id)
-      .eq("user_id", context.userId);
+      .eq("id", data.project_id);
 
     return {
       job_id: job.id,
@@ -1560,9 +1849,12 @@ export const finishBrowserRender = createServerFn({ method: "POST" })
     let sanitizedOutputPath: string | null = null;
     let sanitizedError: string | null = null;
 
+    // The export is saved in the project's folder (a team's, for a team project).
+    const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
+
     if (data.status === "completed") {
       const rawPath = data.output_path.trim();
-      const expectedPrefix = `${context.userId}/${data.project_id}/`;
+      const expectedPrefix = `${folder}/${data.project_id}/`;
 
       if (
         !rawPath.startsWith(expectedPrefix) ||
@@ -1606,17 +1898,7 @@ export const finishBrowserRender = createServerFn({ method: "POST" })
       throw new Error("Render job not found or unauthorized");
     }
 
-    // Defense in depth: verify matching project ownership
-    const { data: existingProject, error: projectFetchErr } = await supabaseAdmin
-      .from("projects")
-      .select("id, user_id")
-      .eq("id", data.project_id)
-      .eq("user_id", context.userId)
-      .maybeSingle();
-
-    if (projectFetchErr || !existingProject) {
-      throw new Error("Project not found or unauthorized");
-    }
+    // (Access to the project was checked above, with the user's own client.)
 
     const nowIso = new Date().toISOString();
 
@@ -1660,7 +1942,6 @@ export const finishBrowserRender = createServerFn({ method: "POST" })
         .from("projects")
         .update(projectPatch)
         .eq("id", data.project_id)
-        .eq("user_id", context.userId)
         .select("id");
 
       if (pErr || !updatedProjects || updatedProjects.length !== 1) {
@@ -1691,7 +1972,6 @@ export const finishBrowserRender = createServerFn({ method: "POST" })
           updated_at: nowIso,
         })
         .eq("id", data.project_id)
-        .eq("user_id", context.userId)
         .select("id");
 
       if (pErr || !updatedProjects || updatedProjects.length !== 1) {

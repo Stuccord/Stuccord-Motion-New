@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "@/lib/upload-rules";
+import { projectFolder } from "@/lib/workspace";
 
 const MAX_FILE_SIZE = MAX_UPLOAD_BYTES;
 const ALLOWED_MIME_TYPES = ALLOWED_UPLOAD_TYPES;
@@ -96,26 +97,36 @@ export const Route = createFileRoute("/api/authenticated/uploads/presign")({
           return new Response("File size exceeds 500 MB limit", { status: 400 });
         }
 
-        // 4. Verify project ownership
+        // 4. Check the user can edit the project: their own, or a team's as
+        //    an Editor or up.
         const { data: project, error: pErr } = await supabaseAdmin
           .from("projects")
-          .select("id")
+          .select("id, user_id, team_id")
           .eq("id", projectId)
-          .eq("user_id", userId)
           .maybeSingle();
+        let canEdit = !!project && !project.team_id && project.user_id === userId;
+        if (project?.team_id) {
+          const { data: m } = await supabaseAdmin
+            .from("team_members")
+            .select("role")
+            .eq("team_id", project.team_id)
+            .eq("user_id", userId)
+            .maybeSingle();
+          canEdit = !!m && m.role !== "viewer";
+        }
 
-        if (pErr || !project) {
+        if (pErr || !project || !canEdit) {
           return new Response("Project not found or access denied", {
             status: 404,
           });
         }
 
-        // 5. Generate secure server-controlled storage path
-        // Starts with userId to satisfy Supabase storage RLS policy:
-        // auth.uid()::text = (storage.foldername(name))[1]
+        // 5. Generate secure server-controlled storage path, in the project's
+        // folder: the user's own, or teams/<team id> for a team project (the
+        // storage rules allow each).
         const safeFilename = filename.replace(/[^\w.\-]+/g, "_");
         const uniqueId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const storagePath = `${userId}/projects/${projectId}/clips/${uniqueId}-${safeFilename}`;
+        const storagePath = `${projectFolder(project)}/projects/${projectId}/clips/${uniqueId}-${safeFilename}`;
 
         // 6. Generate signed upload credential
         const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage

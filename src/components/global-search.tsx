@@ -2,6 +2,7 @@
 // files, templates and the app's pages, in one list. Enter or a click opens
 // the result.
 
+import { useWorkspace } from "@/lib/use-workspace";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -71,15 +72,16 @@ export function GlobalSearch() {
   // Loaded when it opens (shared with the Projects and Assets pages).
   const fetchProjects = useServerFn(listProjects);
   const fetchClips = useServerFn(listAllClips);
+  const ws = useWorkspace();
   const projects = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => fetchProjects(),
+    queryKey: ["projects", ws.id],
+    queryFn: () => fetchProjects({ data: { workspace: ws.id } }),
     enabled: open,
     staleTime: 30_000,
   });
   const clips = useQuery({
-    queryKey: ["all-clips"],
-    queryFn: () => fetchClips(),
+    queryKey: ["all-clips", ws.id],
+    queryFn: () => fetchClips({ data: { workspace: ws.id } }),
     enabled: open,
     staleTime: 30_000,
   });

@@ -188,6 +188,7 @@ async function ownProject(userId: string, projectId: string | undefined) {
     .select("*")
     .eq("id", id)
     .eq("user_id", userId)
+    .is("team_id", null)
     .maybeSingle();
   if (error) throw new ApiError(500, "server_error", "Couldn't load the project");
   if (!data) throw new ApiError(404, "not_found", "Project not found");
@@ -202,6 +203,7 @@ export async function listProjects({ userId }: Caller) {
     .from("projects")
     .select("id, title, aspect_ratio, status, created_at, updated_at")
     .eq("user_id", userId)
+    .is("team_id", null)
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw new ApiError(500, "server_error", "Couldn't list the projects");

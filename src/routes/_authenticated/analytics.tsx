@@ -3,6 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getUsageStats } from "@/lib/projects.functions";
+import { useWorkspace } from "@/lib/use-workspace";
 import { listPosts } from "@/lib/publishing.functions";
 import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
@@ -23,7 +24,11 @@ const PRESET_LABEL: Record<string, string> = {
 
 function AnalyticsPage() {
   const fetchStats = useServerFn(getUsageStats);
-  const { data, isLoading } = useQuery({ queryKey: ["usage-stats"], queryFn: () => fetchStats() });
+  const ws = useWorkspace();
+  const { data, isLoading } = useQuery({
+    queryKey: ["usage-stats", ws.id],
+    queryFn: () => fetchStats({ data: { workspace: ws.id } }),
+  });
   const fetchPosts = useServerFn(listPosts);
   const posts = useQuery({ queryKey: ["social-posts"], queryFn: () => fetchPosts(), retry: false });
 

@@ -5,10 +5,13 @@ import { useMemo, useRef, useState } from "react";
 import {
   listProjects,
   deleteProject,
+  moveProject,
   getClipSignedUrl,
   setClipThumbnail,
 } from "@/lib/projects.functions";
 import { useThumbnailMaker } from "@/lib/clip-thumbnails";
+import { useWorkspace } from "@/lib/use-workspace";
+import { PERSONAL } from "@/lib/workspace";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +19,8 @@ import {
   Film,
   MoreHorizontal,
   Trash2,
+  User,
+  Users,
   Clock,
   Search,
   LayoutGrid,
@@ -30,6 +35,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -91,7 +97,12 @@ function ProjectsPage() {
   const queryClient = useQueryClient();
   const fetchProjects = useServerFn(listProjects);
   const removeProject = useServerFn(deleteProject);
-  const { data, isLoading } = useQuery({ queryKey: ["projects"], queryFn: () => fetchProjects() });
+  const ws = useWorkspace();
+  const key = ["projects", ws.id];
+  const { data, isLoading } = useQuery({
+    queryKey: key,
+    queryFn: () => fetchProjects({ data: { workspace: ws.id } }),
+  });
 
   // Projects without a thumbnail get one in the background; the list
   // refreshes (at most every couple of seconds) as they come in.
@@ -111,6 +122,83 @@ function ProjectsPage() {
     },
   );
 
+  const moveFn = useServerFn(moveProject);
+  const move = useMutation({
+    mutationFn: (v: { id: string; to: string }) => moveFn({ data: v }),
+    onSuccess: (_r, v) => {
+      const name = v.to === PERSONAL ? "your personal space" : (ws.teams.find((t) => t.id === v.to)?.name ?? "the team");
+      toast.success(`Moved to ${name}`);
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["all-clips"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  /** The project's menu: move it, delete it (what the caller may do). */
+  function ProjectMenu({
+    p,
+    onDelete,
+    onMove,
+  }: {
+    p: NonNullable<typeof data>[number];
+    onDelete: () => void;
+    onMove: (to: string) => void;
+  }) {
+    // Into a team: whoever made it, to teams where they edit.
+    const intoTeams = !p.team_id && p.made_by_you ? ws.teams.filter((t) => t.role !== "viewer") : [];
+    // Out of a team: its owner and admins.
+    const outOfTeam = !!p.team_id && (ws.team?.role === "owner" || ws.team?.role === "admin");
+    if (!intoTeams.length && !outOfTeam && !p.can_delete) return null;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="p-1.5 rounded-md hover:bg-black/5"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`More for ${p.title}`}
+          >
+            <MoreHorizontal className="w-4 h-4 text-neutral-500" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {intoTeams.map((t) => (
+            <DropdownMenuItem
+              key={t.id}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Move "${p.title}" to ${t.name}? Everyone in the team will be able to open it.`)) onMove(t.id);
+              }}
+            >
+              <Users className="w-4 h-4 mr-2" /> Move to {t.name}
+            </DropdownMenuItem>
+          ))}
+          {outOfTeam && (
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Move "${p.title}" out of the team to your personal space? Only you will have it.`)) onMove(PERSONAL);
+              }}
+            >
+              <User className="w-4 h-4 mr-2" /> Move to Personal
+            </DropdownMenuItem>
+          )}
+          {(intoTeams.length > 0 || outOfTeam) && p.can_delete && <DropdownMenuSeparator />}
+          {p.can_delete && (
+            <DropdownMenuItem
+              className="text-red-600"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Delete "${p.title}"?`)) onDelete();
+              }}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> Delete
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | StatusKey>("all");
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -118,9 +206,9 @@ function ProjectsPage() {
   const del = useMutation({
     mutationFn: (id: string) => removeProject({ data: { id } }),
     onMutate: async (id: string) => {
-      await queryClient.cancelQueries({ queryKey: ["projects"] });
-      const previous = queryClient.getQueryData<any[]>(["projects"]);
-      queryClient.setQueryData(["projects"], (old: any[] | undefined) =>
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<any[]>(key);
+      queryClient.setQueryData(key, (old: any[] | undefined) =>
         (old ?? []).filter((p) => p.id !== id)
       );
       return { previous };
@@ -128,7 +216,7 @@ function ProjectsPage() {
     onError: (e: Error, _id, context) => {
       toast.error(e.message);
       if (context?.previous) {
-        queryClient.setQueryData(["projects"], context.previous);
+        queryClient.setQueryData(key, context.previous);
       }
     },
     onSuccess: () => {
@@ -159,8 +247,8 @@ function ProjectsPage() {
   return (
     <AppShell
       title="Projects"
-      subtitle="Every short you've briefed, rendered, or shipped."
-      actions={<Button onClick={() => navigate({ to: "/projects/new" })}><Plus className="w-4 h-4" /> New project</Button>}
+      subtitle={ws.team ? `${ws.team.name}'s projects: everyone in the team can open them.` : "Every short you've briefed, rendered, or shipped."}
+      actions={<Button onClick={() => navigate({ to: "/projects/new" })} disabled={!ws.canEdit}><Plus className="w-4 h-4" /> New project</Button>}
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex flex-wrap items-center gap-1 bg-white border border-black/5 rounded-lg p-1">
@@ -242,21 +330,7 @@ function ProjectsPage() {
                 <StatusPill status={p.status} />
                 <div className="relative z-10 flex items-center gap-1">
                   <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-medium">{p.style_preset}</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-1 rounded-md hover:bg-black/5" onClick={(e) => e.stopPropagation()}>
-                        <MoreHorizontal className="w-4 h-4 text-neutral-500" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem className="text-red-600" onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete "${p.title}"?`)) del.mutate(p.id);
-                      }}>
-                        <Trash2 className="w-4 h-4 mr-2" /> Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <ProjectMenu p={p} onDelete={() => del.mutate(p.id)} onMove={(to) => move.mutate({ id: p.id, to })} />
                 </div>
               </div>
             </div>
@@ -282,21 +356,7 @@ function ProjectsPage() {
                 <div className="hidden md:block text-xs text-neutral-500">{p.aspect_ratio}</div>
                 <div className="hidden md:block text-xs text-neutral-500">{formatDistanceToNow(new Date(p.created_at), { addSuffix: true })}</div>
                 <div className="relative z-10 justify-self-end">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-1.5 rounded-md hover:bg-black/5" onClick={(e) => e.stopPropagation()}>
-                        <MoreHorizontal className="w-4 h-4 text-neutral-500" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem className="text-red-600" onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete "${p.title}"?`)) del.mutate(p.id);
-                      }}>
-                        <Trash2 className="w-4 h-4 mr-2" /> Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <ProjectMenu p={p} onDelete={() => del.mutate(p.id)} onMove={(to) => move.mutate({ id: p.id, to })} />
                 </div>
               </li>
             ))}

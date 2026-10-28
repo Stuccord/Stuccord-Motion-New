@@ -1,3 +1,4 @@
+import { useWorkspace } from "@/lib/use-workspace";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -47,6 +48,7 @@ function NewProject() {
   const qc = useQueryClient();
   const search = Route.useSearch();
   const createFn = useServerFn(createProject);
+  const ws = useWorkspace();
   const attachFn = useServerFn(attachClip);
   const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
   
@@ -99,6 +101,7 @@ function NewProject() {
           brief: brief || null,
           style_preset: preset,
           aspect_ratio: ratio,
+          team_id: ws.team?.id ?? null,
         },
       });
 
@@ -192,6 +195,13 @@ function NewProject() {
     <AppShell>
       <div className="max-w-3xl">
         <h1 className="text-2xl font-semibold tracking-tight">New project</h1>
+        {ws.team && (
+          <p className="text-sm text-muted-foreground mt-1" data-new-in-team>
+            {ws.canEdit
+              ? `Made in ${ws.team.name}: everyone in the team can open it.`
+              : `You're a Viewer in ${ws.team.name}, so you can't make projects there. Switch to Personal or ask an admin.`}
+          </p>
+        )}
         <p className="text-sm text-neutral-500 mt-1">
           Drop your clips in any order. Add a script if you have one — Stuccord will match
           it against the footage.
@@ -365,7 +375,7 @@ function NewProject() {
             <Button variant="ghost" onClick={() => navigate({ to: "/dashboard" })}>
               Cancel
             </Button>
-            <Button onClick={() => submit.mutate()} disabled={submit.isPending}>
+            <Button onClick={() => submit.mutate()} disabled={submit.isPending || !ws.canEdit}>
               {submit.isPending && <Loader2 className="animate-spin" />}
               Create project
             </Button>

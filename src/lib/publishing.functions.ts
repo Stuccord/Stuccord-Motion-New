@@ -305,11 +305,13 @@ export const createPosts = createServerFn({ method: "POST" })
 
     const { data: project } = await context.supabase
       .from("projects")
-      .select("id, output_path, thumbnail_url")
+      .select("id, output_path, thumbnail_url, team_id")
       .eq("id", data.projectId)
-      .eq("user_id", context.userId)
       .maybeSingle();
     if (!project) throw new Error("Project not found");
+    if (project.team_id) {
+      throw new Error("Posting team projects comes with team accounts, in the next update");
+    }
     if (!project.output_path || !project.output_path.startsWith(`${context.userId}/`)) {
       throw new Error("Export this project first, then post it");
     }

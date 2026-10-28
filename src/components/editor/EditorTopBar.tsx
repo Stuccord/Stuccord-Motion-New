@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Check, Loader2, Sparkles, Undo2, Redo2, Film, Smartphone, Monitor, Square, ImageIcon, Send } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Sparkles, Undo2, Redo2, Film, Smartphone, Monitor, Square, ImageIcon, Send, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,6 +26,12 @@ interface EditorTopBarProps {
   canRedo?: boolean;
   /** Files still uploading: how many and overall percent. */
   uploads?: { left: number; count: number; pct: number } | null;
+  /** View only (a team Viewer): nothing can be changed; Download instead of Render. */
+  readOnly?: boolean;
+  /** Downloads the latest export (view only); missing when there's none. */
+  onDownload?: () => void;
+  /** Others who have this (team) project open now. */
+  people?: { user_id: string; name: string }[];
 }
 
 export function EditorTopBar({
@@ -45,6 +51,9 @@ export function EditorTopBar({
   canUndo = false,
   canRedo = false,
   uploads = null,
+  readOnly = false,
+  onDownload,
+  people = [],
 }: EditorTopBarProps) {
   const [localTitle, setLocalTitle] = useState(title);
 
@@ -95,6 +104,7 @@ export function EditorTopBar({
               onChange={(e) => setLocalTitle(e.target.value)}
               onBlur={handleBlur}
               onKeyDown={handleKeyDown}
+              readOnly={readOnly}
               className="bg-transparent text-sm font-semibold text-neutral-100 placeholder:text-neutral-500 rounded px-1.5 py-0.5 hover:bg-white/[0.04] focus:bg-white/[0.08] focus:outline-none focus:ring-1 focus:ring-violet-500/50 truncate w-full transition"
               placeholder="Untitled Project"
               aria-label="Project Title"
@@ -170,6 +180,7 @@ export function EditorTopBar({
           {/* Aspect Ratio Picker */}
           <Select
             value={aspectRatio}
+            disabled={readOnly}
             onValueChange={(val) => onAspectRatioChange(val as AspectRatio)}
           >
             <SelectTrigger
@@ -208,6 +219,51 @@ export function EditorTopBar({
 
         {/* Right Section: Primary Action (Render Video) */}
         <div className="flex items-center gap-2">
+          {people.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex -space-x-1.5 mr-1" data-people-here>
+                  {people.slice(0, 4).map((p) => (
+                    <span
+                      key={p.user_id}
+                      className="w-7 h-7 rounded-full grid place-items-center text-[11px] font-semibold text-white bg-gradient-to-br from-sky-500 to-violet-600 ring-2 ring-[#0E0F17]"
+                    >
+                      {p.name.slice(0, 1).toUpperCase()}
+                    </span>
+                  ))}
+                  {people.length > 4 && (
+                    <span className="w-7 h-7 rounded-full grid place-items-center text-[10px] text-neutral-300 bg-neutral-700 ring-2 ring-[#0E0F17]">
+                      +{people.length - 4}
+                    </span>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {people.map((p) => p.name).join(", ")} {people.length === 1 ? "has" : "have"} this
+                open too. The latest change to the same thing wins.
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {readOnly ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={onDownload ? -1 : 0}>
+                  <Button
+                    onClick={onDownload}
+                    disabled={!onDownload}
+                    className="h-9 px-4 bg-white/10 hover:bg-white/15 text-white text-xs rounded-lg border border-white/10 disabled:opacity-40"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    Download
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {onDownload ? "Download the latest export" : "No export yet"}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+          <>
           {onOpenThumbnail && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -263,6 +319,8 @@ export function EditorTopBar({
               <TooltipContent side="bottom">Upload at least one clip to render</TooltipContent>
             )}
           </Tooltip>
+          </>
+          )}
         </div>
       </header>
     </TooltipProvider>

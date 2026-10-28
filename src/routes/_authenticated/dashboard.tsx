@@ -5,6 +5,7 @@ import { useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listProjects, getClipSignedUrl, setClipThumbnail } from "@/lib/projects.functions";
 import { useThumbnailMaker } from "@/lib/clip-thumbnails";
+import { useWorkspace } from "@/lib/use-workspace";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -85,7 +86,11 @@ function ProjectThumb({ ratio, title, src }: { ratio: string; title: string; src
 function Home() {
   const navigate = useNavigate();
   const fetchProjects = useServerFn(listProjects);
-  const { data, isLoading } = useQuery({ queryKey: ["projects"], queryFn: () => fetchProjects() });
+  const ws = useWorkspace();
+  const { data, isLoading } = useQuery({
+    queryKey: ["projects", ws.id],
+    queryFn: () => fetchProjects({ data: { workspace: ws.id } }),
+  });
 
   const recent = useMemo(() => (data ?? []).slice(0, 4), [data]);
 

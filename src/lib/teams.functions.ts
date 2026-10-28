@@ -461,6 +461,16 @@ export const deleteTeam = createServerFn({ method: "POST" })
     if (!team || data.confirmName.trim() !== team.name) {
       throw new Error("Type the team's name exactly to delete it");
     }
+    // Nothing is lost by accident: its projects are moved out or deleted first.
+    const { count: projects } = await db
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("team_id", data.teamId);
+    if ((projects ?? 0) > 0) {
+      throw new Error(
+        `The team still has ${projects} project${projects === 1 ? "" : "s"}. Move them out or delete them first.`,
+      );
+    }
     const { error } = await db.from("teams").delete().eq("id", data.teamId);
     if (error) throw new Error(error.message);
     return { ok: true };

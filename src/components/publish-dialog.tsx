@@ -90,8 +90,8 @@ export function PublishDialog({
     retry: false,
   });
   const projects = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => fetchProjects(),
+    queryKey: ["projects", "personal"],
+    queryFn: () => fetchProjects({ data: { workspace: "personal" } }),
     enabled: open && !projectId,
   });
   const exported = useMemo(

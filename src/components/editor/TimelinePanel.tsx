@@ -893,7 +893,15 @@ type Track = "aroll" | "broll";
 /** A caption phrase on the timeline: its text and where it's shown. */
 export type CaptionPhrase = { key: string; text: string; startMs: number; endMs: number };
 
+/** In view-only mode: is this a clip, a sound or a track button? */
+function blockedInViewOnly(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return !!el?.closest?.("[data-clip-id], [data-audio-id], button, input, [role='button']");
+}
+
 type TimelineTracksProps = {
+  /** View only (a team Viewer): play and scrub, but no changes. */
+  readOnly?: boolean;
   aRoll: ClipRow[];
   bRoll: ClipRow[];
   videoClips: ClipRow[];
@@ -977,6 +985,7 @@ function TimelineTracks({
   voiceClips,
   onAddVoiceover,
   onRemoveClip,
+  readOnly = false,
 }: TimelineTracksProps) {
   // Clip being dragged to a new place: how far it's drawn from its place
   // (to where it will land). `settling`: dropped, waiting for the save.
@@ -2060,9 +2069,19 @@ function TimelineTracks({
         onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
         onPointerDownCapture={(e) => {
           lastPointerType.current = e.pointerType;
+          // View only: clips, sounds and track buttons don't respond (the
+          // ruler and playhead still scrub).
+          if (readOnly && blockedInViewOnly(e.target)) e.stopPropagation();
         }}
-        onContextMenu={openMenu}
-        {...mediaDragHandlers}
+        onClickCapture={(e) => {
+          if (readOnly && blockedInViewOnly(e.target)) {
+            e.stopPropagation();
+            e.preventDefault();
+          }
+        }}
+        onContextMenu={readOnly ? (e) => e.preventDefault() : openMenu}
+        {...(readOnly ? {} : mediaDragHandlers)}
+        data-read-only={readOnly || undefined}
       >
         <input
           ref={fileInput}
@@ -2589,6 +2608,8 @@ const SHORTCUTS: [string, string][] = [
   ["Right-click", "Clip and track menu"],
 ];
 export interface TimelinePanelProps {
+  /** View only (a team Viewer): play and scrub, but no changes. */
+  readOnly?: boolean;
   projectTitle: string;
   aRoll: ClipRow[];
   bRoll: ClipRow[];
@@ -2696,6 +2717,7 @@ export function TimelinePanel({
   voiceClips = NO_CLIPS,
   onAddVoiceover,
   onRemoveClip,
+  readOnly = false,
 }: TimelinePanelProps) {
   // Length of the exported video: until the last clip on V1 or V2 ends.
   const programMs = videoEndMs(aRoll, bRoll, clipVisibleMs);
@@ -2728,6 +2750,15 @@ export function TimelinePanel({
       {/* Toolbar */}
       <div className="h-11 px-2 sm:px-3 flex items-center gap-1 border-b border-white/[0.06] shrink-0 bg-[#0a0a12]">
         {/* Left cluster */}
+        {readOnly ? (
+          <span
+            className="text-[10px] font-semibold uppercase tracking-wider text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1"
+            data-view-only
+          >
+            View only
+          </span>
+        ) : (
+        <>
         <ToolBtn icon={MousePointer2} title="Select (V)" active />
         <ToolBtn
           icon={Undo2}
@@ -2768,6 +2799,8 @@ export function TimelinePanel({
             onClick={onAutoCut}
             disabled={aRoll.length === 0 && bRoll.length === 0}
           />
+        )}
+        </>
         )}
 
         {/* Center: timecode */}
@@ -2817,12 +2850,14 @@ export function TimelinePanel({
             </dl>
           </PopoverContent>
         </Popover>
-        <ToolBtn
-          icon={Magnet}
-          title={snapEnabled ? "Magnetic snap: ON" : "Magnetic snap: OFF"}
-          active={snapEnabled}
-          onClick={onSnapToggle}
-        />
+        {!readOnly && (
+          <ToolBtn
+            icon={Magnet}
+            title={snapEnabled ? "Magnetic snap: ON" : "Magnetic snap: OFF"}
+            active={snapEnabled}
+            onClick={onSnapToggle}
+          />
+        )}
         <Divider />
         <div className="flex items-center gap-2 pl-1 pr-0.5">
           <ToolBtn icon={Minus} title="Zoom out (-)" onClick={() => onZoom(-1)} />
@@ -2877,6 +2912,7 @@ export function TimelinePanel({
         voiceClips={voiceClips}
         onAddVoiceover={onAddVoiceover}
         onRemoveClip={onRemoveClip}
+        readOnly={readOnly}
       />
     </div>
   );

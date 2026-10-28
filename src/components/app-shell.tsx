@@ -32,6 +32,7 @@ import {
   Gift,
 } from "lucide-react";
 import logoUrl from "@/assets/logo.png";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { cn } from "@/lib/utils";
@@ -169,6 +170,9 @@ export function AppShell({
         <div>
           <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
             Workspace
+          </div>
+          <div className="px-1 pb-2">
+            <WorkspaceSwitcher />
           </div>
           <ul className="space-y-0.5">
             {workspaceNav.map((item) => (

@@ -123,13 +123,9 @@ export const makeAiVoiceover = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { data: project, error: pErr } = await context.supabase
-      .from("projects")
-      .select("id")
-      .eq("id", data.project_id)
-      .maybeSingle();
-    if (pErr) throw new Error(pErr.message);
-    if (!project) throw new Error("Project not found");
+    // Editors and up only; the file goes in the project's folder.
+    const { projectForEdit } = await import("@/lib/projects.functions");
+    const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
 
     // The monthly allowance (counted in characters, like the voice service).
     const chars = data.text.length;
@@ -179,7 +175,7 @@ export const makeAiVoiceover = createServerFn({ method: "POST" })
           .replace(/^-|-$/g, "")
           .slice(0, 24) || "ai";
       const filename = `Voiceover (${data.voice_name?.trim() || "AI"}).mp3`;
-      const path = `${context.userId}/${data.project_id}/${Date.now()}_vo_${slug}.mp3`;
+      const path = `${folder}/${data.project_id}/${Date.now()}_vo_${slug}.mp3`;
       const { error: upErr } = await context.supabase.storage
         .from("raw-clips")
         .upload(path, audio, { contentType: "audio/mpeg", upsert: false });

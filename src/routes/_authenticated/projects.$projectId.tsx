@@ -144,6 +144,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import logoUrl from "@/assets/logo.png";
 import { ExportDialog, type ExportSettings } from "@/components/export-dialog";
+import { useProjectPresence } from "@/lib/use-presence";
 import { PublishDialog } from "@/components/publish-dialog";
 import {
   EditorShell,
@@ -298,6 +299,24 @@ function EditorPage() {
         : false;
     },
   });
+
+  // A team Viewer sees the editor but can't change anything (the database
+  // refuses their changes too): play, scrub and download only.
+  const readOnly = data?.access === "view";
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+
+  // Who else has this team project open.
+  const { user: me } = Route.useRouteContext();
+  const meName =
+    (me?.user_metadata as { full_name?: string } | undefined)?.full_name ||
+    me?.email?.split("@")[0] ||
+    "Someone";
+  const people = useProjectPresence(
+    projectId,
+    !!data?.project.team_id,
+    me ? { user_id: me.id, name: meName } : null,
+  );
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedClipUrl, setSelectedClipUrl] = useState<string | null>(null);
@@ -652,7 +671,7 @@ function EditorPage() {
   // at a 5s placeholder. Measure each such source file once per visit.
   const probedPaths = useRef(new Set<string>());
   useEffect(() => {
-    if (!data) return;
+    if (!data || data.access === "view") return;
     const byPath = new Map<string, ClipRow[]>();
     for (const c of data.clips as ClipRow[]) {
       if (c.duration_ms != null || probedPaths.current.has(c.storage_path)) continue;
@@ -727,7 +746,7 @@ function EditorPage() {
   // half or copy) get one in the background. Audio has no picture;
   // thumbnail_path is missing (undefined) until its migration has run.
   useThumbnailMaker(
-    (data?.clips ?? []).filter(
+    (data?.access === "view" ? [] : (data?.clips ?? [])).filter(
       (c) => c.thumbnail_path === null && !isAudioRole(c.role),
     ),
     signClip,
@@ -906,6 +925,18 @@ function EditorPage() {
     function onKey(e: KeyboardEvent) {
       if (isTypingTarget(e.target)) return;
       const meta = e.metaKey || e.ctrlKey;
+      // View only: playback, frame steps and zoom work; edits don't.
+      if (
+        readOnlyRef.current &&
+        (e.key === "Delete" ||
+          e.key === "Backspace" ||
+          (e.key === "s" && !meta) ||
+          (meta && ["d", "z", "y"].includes(e.key.toLowerCase())) ||
+          e.code === "BracketLeft" ||
+          e.code === "BracketRight")
+      ) {
+        return;
+      }
       if (e.code === "Space") {
         e.preventDefault();
         actionsRef.current.play();
@@ -1067,7 +1098,9 @@ function EditorPage() {
           claimThumbnail(row.id);
           const local = URL.createObjectURL(f);
           void makeThumbnail(local, f.name, thumbnailTimeMs({ ...row, filename: f.name }))
-            .then((jpeg) => (jpeg ? saveThumbnail(row.id, jpeg, recordThumbFn) : undefined))
+            .then((jpeg) =>
+              jpeg ? saveThumbnail(row.id, row.storage_path, jpeg, recordThumbFn) : undefined,
+            )
             .catch((e) => console.warn("[thumbnails] Couldn't save a thumbnail:", f.name, e))
             .finally(() => URL.revokeObjectURL(local));
         }
@@ -1254,6 +1287,20 @@ function EditorPage() {
   };
   const [renderMsg, setRenderMsg] = useState<string | null>(null);
   const [renderPct, setRenderPct] = useState<number>(0);
+
+  /** The latest export, for a viewer's Download button. */
+  async function downloadLatest() {
+    const path = data?.project.output_path;
+    if (!path) return;
+    try {
+      const { url } = await signRender({ data: { path } });
+      const safeTitle = (data.project.title || "stuccord-export").replace(/[^\w.-]+/g, "_");
+      triggerDownload(url, `${safeTitle}.${path.split(".").pop() || "mp4"}`);
+      toast.success("Downloading");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't download the export");
+    }
+  }
 
   function triggerDownload(url: string, filename: string) {
     const a = document.createElement("a");
@@ -2147,7 +2194,7 @@ function EditorPage() {
               project.status === "ready" ? setExportOpen(true) : render.mutate()
             }
             onOpenThumbnail={() => setThumbOpen(true)}
-            onOpenPublish={() => setPublishOpen(true)}
+            onOpenPublish={project.team_id ? undefined : () => setPublishOpen(true)}
             canPublish={!!project.output_path}
             isRenderDisabled={
               render.isPending || (inProgress && project.status !== "ready")
@@ -2158,9 +2205,15 @@ function EditorPage() {
             canUndo={history.past.length > 0}
             canRedo={history.future.length > 0}
             uploads={uploadSummary(uploadQueue.items)}
+            readOnly={readOnly}
+            onDownload={readOnly && project.output_path ? downloadLatest : undefined}
+            people={people}
           />
         }
         leftPanel={
+          readOnly ? (
+            <ViewOnlyNote team={data.team?.name ?? "this team"} canDownload={!!project.output_path} />
+          ) : (
           <MediaLibrary
             clips={videoClips}
             audioClips={audioClips}
@@ -2177,6 +2230,7 @@ function EditorPage() {
               />
             }
           />
+          )
         }
         centerPanel={
           <PreviewCanvas
@@ -2204,7 +2258,7 @@ function EditorPage() {
               ),
               selectedClipId,
               onSelectClip: (id) => setSelectedClipId(id),
-              onTransform: transformClip,
+              onTransform: readOnly ? undefined : transformClip,
               onStall: resignClipLink,
               duckAt: (t) => voiceoverAt(voiceClips, clipVisibleMs, t),
             }}
@@ -2253,7 +2307,7 @@ function EditorPage() {
               // Only the selected clip's own file tells us its length.
               if (selectedClipId && d > 0 && !showingProgram) {
                 const c = data?.clips.find((x) => x.id === selectedClipId) as ClipRow | undefined;
-                if (c && (c.duration_ms == null || Math.abs(c.duration_ms - Math.round(d * 1000)) > 250)) {
+                if (!readOnly && c && (c.duration_ms == null || Math.abs(c.duration_ms - Math.round(d * 1000)) > 250)) {
                   durationMut.mutate({ id: selectedClipId, duration_ms: Math.round(d * 1000) });
                 }
               }
@@ -2261,7 +2315,11 @@ function EditorPage() {
           />
         }
         rightPanel={
-          <div className="flex flex-col h-full min-h-0">
+          <div
+            className={cn("flex flex-col h-full min-h-0", readOnly && "opacity-60")}
+            inert={readOnly}
+            aria-disabled={readOnly || undefined}
+          >
             {/* Edit (clip inspector / AI) or Captions */}
             <div className="h-9 border-b border-white/[0.06] flex items-center px-1 gap-0.5 shrink-0">
               {(["edit", "captions", "autocut"] as const).map((tab) => (
@@ -2373,6 +2431,7 @@ function EditorPage() {
         }
         bottomPanel={
           <TimelinePanel
+            readOnly={readOnly}
             projectTitle={project.title}
             aRoll={aRoll}
             bRoll={bRoll}
@@ -2458,6 +2517,7 @@ function EditorPage() {
         open={thumbOpen}
         onOpenChange={closeThumbnailMaker}
         projectId={projectId}
+        folder={data.folder}
         projectTitle={project.title}
         aspectRatio={project.aspect_ratio}
         clips={[...aRoll, ...bRoll]}
@@ -2475,6 +2535,22 @@ function EditorPage() {
         defaultTitle={project.title.slice(0, 100)}
         dark
       />
+    </div>
+  );
+}
+
+/** The left panel for a team Viewer: what they can and can't do here. */
+function ViewOnlyNote({ team, canDownload }: { team: string; canDownload: boolean }) {
+  return (
+    <div className="p-4 text-[13px] text-neutral-300 space-y-2" data-view-only-note>
+      <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
+        View only
+      </div>
+      <p>
+        You&apos;re a Viewer in {team}: you can play this project, scrub the timeline
+        {canDownload ? " and download its latest export" : ""}, but not change it.
+      </p>
+      <p className="text-neutral-500">Ask one of the team&apos;s admins to make you an Editor.</p>
     </div>
   );
 }

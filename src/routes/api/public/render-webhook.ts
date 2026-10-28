@@ -98,14 +98,23 @@ export const Route = createFileRoute("/api/public/render-webhook")({
           .single();
         if (jErr) return new Response(jErr.message, { status: 500 });
 
-        // Save newly transcribed source files. Only paths inside the job
-        // owner's storage folder are accepted, and an existing transcript is
-        // never overwritten, so the user's corrections are kept.
+        // Save newly transcribed source files. Only paths inside the
+        // project's storage folder are accepted (the job owner's, or the
+        // team's), and an existing transcript is never overwritten, so the
+        // user's corrections are kept.
         if (Array.isArray(payload.transcripts) && job) {
+          const { data: proj } = await supabaseAdmin
+            .from("projects")
+            .select("user_id, team_id")
+            .eq("id", job.project_id)
+            .maybeSingle();
+          const folder = proj?.team_id ? `teams/${proj.team_id}` : job.user_id;
           const rows = payload.transcripts
             .filter(
               (t) =>
-                typeof t?.storage_path === "string" && t.storage_path.startsWith(`${job.user_id}/`),
+                typeof t?.storage_path === "string" &&
+                t.storage_path.startsWith(`${folder}/`) &&
+                !t.storage_path.includes(".."),
             )
             .map((t) => ({
               user_id: job.user_id,

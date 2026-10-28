@@ -21,6 +21,7 @@ import {
   setClipThumbnail,
 } from "@/lib/projects.functions";
 import { useThumbnailMaker } from "@/lib/clip-thumbnails";
+import { useWorkspace } from "@/lib/use-workspace";
 import { isAudioRole, isImageFilename } from "@/lib/media-kind";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -45,9 +46,10 @@ function AssetsPage() {
   const removeFn = useServerFn(removeClip);
   const signFn = useServerFn(getClipSignedUrl);
 
+  const ws = useWorkspace();
   const { data: clips, isLoading } = useQuery({
-    queryKey: ["all-clips"],
-    queryFn: () => fetchClips(),
+    queryKey: ["all-clips", ws.id],
+    queryFn: () => fetchClips({ data: { workspace: ws.id } }),
   });
 
   // Videos and images without a thumbnail get one in the background (audio

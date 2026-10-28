@@ -79,6 +79,7 @@ export function ThumbnailMaker({
   open,
   onOpenChange,
   projectId,
+  folder,
   projectTitle,
   aspectRatio,
   clips,
@@ -91,6 +92,8 @@ export function ThumbnailMaker({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
+  /** Where the project's files live (the user's folder, or the team's). */
+  folder: string;
   projectTitle: string;
   aspectRatio: string;
   /** Video and image clips (V1 first). */
@@ -428,10 +431,7 @@ export function ThumbnailMaker({
     let path: string | null = null;
     try {
       const blob = await toBlob("image/jpeg");
-      const { data } = await supabase.auth.getSession();
-      const userId = data.session?.user.id;
-      if (!userId) throw new Error("You're not signed in");
-      path = `${userId}/thumbs/cover-${projectId}-${Date.now()}.jpg`;
+      path = `${folder}/thumbs/cover-${projectId}-${Date.now()}.jpg`;
       const { error } = await supabase.storage
         .from("raw-clips")
         .upload(path, blob, { contentType: "image/jpeg", upsert: true });

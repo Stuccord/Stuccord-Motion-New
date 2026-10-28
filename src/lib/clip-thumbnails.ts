@@ -7,6 +7,7 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { isImageFilename } from "@/lib/media-kind";
+import { folderOfPath } from "@/lib/workspace";
 
 // Big enough for a project card, small enough to load fast (~15-30 KB).
 const LONG_SIDE = 480;
@@ -99,18 +100,17 @@ export function makeThumbnail(src: string, filename: string, atMs: number): Prom
 }
 
 /**
- * Saves a clip's thumbnail in the user's folder and records it on the clip
- * (with `record`, the setClipThumbnail server function).
+ * Saves a clip's thumbnail next to its file (the project's folder: the
+ * user's, or a team's) and records it on the clip (with `record`, the
+ * setClipThumbnail server function).
  */
 export async function saveThumbnail(
   clipId: string,
+  storagePath: string,
   jpeg: Blob,
   record: (v: { data: { id: string; path: string } }) => Promise<unknown>,
 ) {
-  const { data } = await supabase.auth.getSession();
-  const userId = data.session?.user.id;
-  if (!userId) throw new Error("Not signed in");
-  const path = `${userId}/thumbs/${clipId}.jpg`;
+  const path = `${folderOfPath(storagePath)}/thumbs/${clipId}.jpg`;
   const { error } = await supabase.storage
     .from("raw-clips")
     .upload(path, jpeg, { upsert: true, contentType: "image/jpeg" });
@@ -150,7 +150,7 @@ async function work() {
         const { url } = await h.sign({ data: { path: c.storage_path } });
         const jpeg = await makeThumbnail(url, c.filename, thumbnailTimeMs(c));
         if (!jpeg) continue;
-        await saveThumbnail(c.id, jpeg, h.record);
+        await saveThumbnail(c.id, c.storage_path, jpeg, h.record);
         handlers?.onSaved?.();
       } catch (e) {
         console.warn("[thumbnails] Couldn't make a thumbnail:", c.filename, e);
