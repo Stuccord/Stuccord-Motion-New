@@ -112,7 +112,7 @@ export const MotionElement = z.object({
   cta: z.enum(CTA_KINDS).nullable(),
   zoom: z.enum(ZOOM_KINDS).nullable(),
   reason: z.string().max(300),
-  /** "ai" as planned; "user" once changed by hand (stage 2). */
+  /** "ai" as planned; "user" once added or changed by hand. */
   source: z.enum(["ai", "user"]),
 });
 export type MotionElement = z.infer<typeof MotionElement>;
@@ -123,6 +123,8 @@ export const MotionPlan = z.object({
   model: z.string().max(64),
   language: z.string().max(16),
   created_at: z.string().max(40),
+  /** Off: no graphics in the preview or export (the track's eye button). Missing means on. */
+  enabled: z.boolean().optional(),
   elements: z.array(MotionElement).max(MAX_ELEMENTS),
 });
 export type MotionPlan = z.infer<typeof MotionPlan>;
@@ -297,6 +299,162 @@ export function elementSpan(
 export function wordsByKey(words: TimelineWord[]): Map<string, TimelineWord> {
   return new Map(words.map((w) => [w.key, w]));
 }
+
+/** What a graphic shows, in one line. */
+export function elementSummary(el: MotionElement): string {
+  switch (el.type) {
+    case "counter": {
+      const n = el.number;
+      const value = n ? `${n.prefix}${n.value.toLocaleString()}${n.suffix}` : "";
+      return [value, el.text].filter(Boolean).join(" · ");
+    }
+    case "list":
+    case "compare":
+      return [el.text, el.items.join(el.type === "compare" ? " vs " : ", ")]
+        .filter(Boolean)
+        .join(": ");
+    case "cta":
+      return el.text || `Ask to ${el.cta}`;
+    case "zoom":
+      return el.zoom === "in" ? "Punch in" : "Ease out";
+    default:
+      return el.text;
+  }
+}
+
+// ---------- editing by hand ----------
+//
+// Graphics stay anchored to words, so moving or resizing one on the timeline
+// snaps its edges to the nearest words.
+
+const anchorOf = (w: TimelineWord): Anchor => ({ clip_id: w.clipId, word_index: w.wordIndex });
+
+/** The index (in `words`, which are in time order) of the word nearest a time. */
+export function nearestWord(words: TimelineWord[], ms: number): number {
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const d = ms < w.startMs ? w.startMs - ms : ms > w.endMs ? ms - w.endMs : 0;
+    if (d < bestD) {
+      best = i;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+function indexOfAnchor(words: TimelineWord[], a: Anchor): number {
+  return words.findIndex((w) => w.clipId === a.clip_id && w.wordIndex === a.word_index);
+}
+
+/** Marks a graphic as changed by hand. */
+const byHand = (el: MotionElement): MotionElement => ({ ...el, source: "user" });
+
+/**
+ * Moves a graphic so it starts at the word nearest `startMs`, keeping the
+ * same number of words. Null when it can't be placed (no words, or its
+ * words are trimmed away).
+ */
+export function moveElement(
+  el: MotionElement,
+  words: TimelineWord[],
+  startMs: number,
+): MotionElement | null {
+  const a = indexOfAnchor(words, el.start);
+  const b = indexOfAnchor(words, el.end);
+  if (a < 0 || b < 0) return null;
+  const count = b - a;
+  let from = nearestWord(words, startMs);
+  if (from < 0) return null;
+  from = Math.min(from, words.length - 1 - count);
+  return byHand({ ...el, start: anchorOf(words[from]), end: anchorOf(words[from + count]) });
+}
+
+/** Moves one edge of a graphic to the word nearest `ms` (never past the other edge). */
+export function resizeElement(
+  el: MotionElement,
+  words: TimelineWord[],
+  edge: "start" | "end",
+  ms: number,
+): MotionElement | null {
+  const a = indexOfAnchor(words, el.start);
+  const b = indexOfAnchor(words, el.end);
+  const at = nearestWord(words, ms);
+  if (a < 0 || b < 0 || at < 0) return null;
+  if (edge === "start") return byHand({ ...el, start: anchorOf(words[Math.min(at, b)]) });
+  return byHand({ ...el, end: anchorOf(words[Math.max(at, a)]) });
+}
+
+/** About how long a graphic added by hand lasts. */
+const NEW_SPAN_MS = 2500;
+
+/**
+ * A new graphic at the word nearest `ms`, lasting about 2.5 s of speech, with
+ * the words said there as its text. Null when there are no words.
+ */
+export function newElementAt(
+  words: TimelineWord[],
+  ms: number,
+  type: ElementType = "keyline",
+  newId: () => string = () => crypto.randomUUID(),
+): MotionElement | null {
+  const from = nearestWord(words, ms);
+  if (from < 0) return null;
+  let to = from;
+  while (to + 1 < words.length && words[to + 1].endMs - words[from].startMs <= NEW_SPAN_MS) to++;
+  const said = words
+    .slice(from, to + 1)
+    .map((w) => w.text)
+    .join(" ")
+    .slice(0, MAX_TEXT);
+  return {
+    id: newId(),
+    type,
+    start: anchorOf(words[from]),
+    end: anchorOf(words[to]),
+    text: type === "zoom" ? "" : said,
+    emphasis: null,
+    items: type === "list" ? ["First", "Second"] : type === "compare" ? ["This", "That"] : [],
+    number: type === "counter" ? { value: 100, prefix: "", suffix: "%" } : null,
+    cta: type === "cta" ? "like" : null,
+    zoom: type === "zoom" ? "in" : null,
+    reason: "Added by hand",
+    source: "user",
+  };
+}
+
+/** What a graphic of a type needs; the editor fills it in when the type changes. */
+export function withType(el: MotionElement, type: ElementType): MotionElement {
+  return byHand({
+    ...el,
+    type,
+    items:
+      type === "list" && el.items.length < 2
+        ? [...el.items, "First", "Second"].slice(0, Math.max(2, el.items.length))
+        : type === "compare"
+          ? [el.items[0] ?? "This", el.items[1] ?? "That"]
+          : el.items,
+    number: type === "counter" ? (el.number ?? { value: 100, prefix: "", suffix: "%" }) : null,
+    cta: type === "cta" ? (el.cta ?? "like") : null,
+    zoom: type === "zoom" ? (el.zoom ?? "in") : null,
+  });
+}
+
+/** An empty plan, for adding graphics by hand before (or without) the AI. */
+export function emptyPlan(): MotionPlan {
+  return {
+    version: 1,
+    style: MOTION_STYLE,
+    model: "by hand",
+    language: "en",
+    created_at: new Date().toISOString(),
+    enabled: true,
+    elements: [],
+  };
+}
+
+export { byHand as markEdited };
 
 // ---------- the word list the AI reads ----------
 

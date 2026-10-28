@@ -25,6 +25,8 @@ interface PreviewCanvasProps {
     lengthMs: (clip: ClipRow) => number;
     onTick?: (timeMs: number, playing: boolean, rate: number) => void;
     renderOverlay?: (timeMs: number) => React.ReactNode;
+    /** How much the picture is zoomed in at a time (Motion Explainer zooms). */
+    pictureScale?: (timeMs: number) => number;
     /** A clip's download stalled: re-sign its link. */
     onStall?: (storagePath: string) => void;
     /** Whether the clips' own sound is lowered at a time (under a voiceover). */
@@ -460,6 +462,7 @@ export function PreviewCanvas({
               onPlayingChange={onPlayingChange}
               onTick={timeline!.onTick}
               renderOverlay={timeline!.renderOverlay}
+              pictureScale={timeline!.pictureScale}
               onStall={timeline!.onStall}
               duckAt={timeline!.duckAt}
               selectedClipId={timeline!.selectedClipId}

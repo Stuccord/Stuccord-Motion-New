@@ -20,6 +20,7 @@ import { cleanTranscriptWords, type TranscriptWord } from "@/lib/captions";
 import { isImageFilename } from "@/lib/media-kind";
 import {
   MOTION_STYLE,
+  MotionPlan as MotionPlanSchema,
   draftsToElements,
   mainSegments,
   numberedTranscript,
@@ -269,6 +270,58 @@ export const undoMotionPlan = createServerFn({ method: "POST" })
       .eq("id", project.id);
     if (error) throw new Error(error.message);
     return { plan: previous };
+  });
+
+// ---------- editing by hand ----------
+
+/**
+ * Saves the plan after changes made in the editor (graphics moved, resized,
+ * edited, added or deleted, or all turned off). A plan is known by when it
+ * was made (created_at): if the stored plan is a different one (the AI
+ * replanned, or Undo ran, since these changes started), the save is refused
+ * so that plan isn't overwritten. Every graphic must point at one of this
+ * project's clips. The Undo copy is left as it is.
+ */
+export const saveMotionPlan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        project_id: z.string().uuid(),
+        plan: z.unknown(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const db = context.supabase;
+    const parsed = MotionPlanSchema.safeParse(data.plan);
+    if (!parsed.success) throw new Error("These graphics couldn't be saved (they aren't valid).");
+    const plan = parsed.data;
+    const { project } = await projectForEdit(db, data.project_id, context.userId);
+
+    const current = parseMotionPlan(project.motion_plan);
+    if (current && current.created_at !== plan.created_at) {
+      throw new Error("The graphics were replanned meanwhile. Your view has been refreshed.");
+    }
+
+    const { data: rows, error: cErr } = await db
+      .from("clips")
+      .select("id")
+      .eq("project_id", project.id);
+    if (cErr) throw new Error(cErr.message);
+    const clipIds = new Set((rows ?? []).map((c) => c.id));
+    if (plan.elements.some((e) => !clipIds.has(e.start.clip_id) || !clipIds.has(e.end.clip_id))) {
+      throw new Error("A graphic points at a clip that isn't in this project.");
+    }
+    const ids = new Set(plan.elements.map((e) => e.id));
+    if (ids.size !== plan.elements.length) throw new Error("Two graphics have the same id.");
+
+    const { error } = await db
+      .from("projects")
+      .update({ motion_plan: plan as unknown as Json })
+      .eq("id", project.id);
+    if (error) throw new Error(error.message);
+    return { plan };
   });
 
 // ---------- transcribing ----------

@@ -29,6 +29,7 @@ import {
   Wand2,
   ScissorsLineDashed,
   AudioLines,
+  Sparkles,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -53,6 +54,7 @@ import { formatTimecode as formatPlaybackTime } from "./PlaybackControls";
 import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { FPS, formatFrameTimecode } from "./timecode";
 import { thumbnailKey } from "@/lib/video-thumbnail";
+import { GraphicsBlocks, type GraphicsTrackData } from "./GraphicsTrack";
 import { frameAt, type Filmstrip, type Waveform } from "@/lib/clip-strips";
 import type { Range } from "@/lib/auto-cut";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
@@ -902,6 +904,8 @@ function blockedInViewOnly(target: EventTarget | null): boolean {
 type TimelineTracksProps = {
   /** View only (a team Viewer): play and scrub, but no changes. */
   readOnly?: boolean;
+  /** The Motion Explainer graphics track (G1); none: no track. */
+  graphics?: GraphicsTrackData;
   aRoll: ClipRow[];
   bRoll: ClipRow[];
   videoClips: ClipRow[];
@@ -986,6 +990,7 @@ function TimelineTracks({
   onAddVoiceover,
   onRemoveClip,
   readOnly = false,
+  graphics,
 }: TimelineTracksProps) {
   // Clip being dragged to a new place: how far it's drawn from its place
   // (to where it will land). `settling`: dropped, waiting for the save.
@@ -2399,6 +2404,38 @@ function TimelineTracks({
             )}
           </TrackRow>
 
+          {/* G1 Graphics: the Motion Explainer graphics, over the picture */}
+          {graphics && (
+            <TrackRow
+              label="G1"
+              name="Graphics"
+              note={graphics.items.length ? "Motion Explainer" : "None yet"}
+              icon={Sparkles}
+              toneClass="text-fuchsia-300"
+              toggle={
+                graphics.onToggle && {
+                  on: graphics.enabled,
+                  onToggle: graphics.onToggle,
+                  what: "graphics",
+                  kind: "eye",
+                }
+              }
+              onAdd={graphics.canEdit ? graphics.onAdd : undefined}
+              addLabel="a graphic at the playhead"
+              size="slim"
+              innerWidth={trackWidthPx}
+              contentHandlers={scrubHandlers}
+            >
+              {graphics.items.length === 0 ? (
+                <div className="absolute inset-0 flex items-center px-3 text-[12px] italic text-neutral-500 pointer-events-none">
+                  Plan graphics in the AI Director tab, or add one with +
+                </div>
+              ) : (
+                <GraphicsBlocks data={graphics} pxPerSec={pxPerSec} />
+              )}
+            </TrackRow>
+          )}
+
           {/* V3 Captions: the phrases the export burns in */}
           <TrackRow
             label="V3"
@@ -2610,6 +2647,8 @@ const SHORTCUTS: [string, string][] = [
 export interface TimelinePanelProps {
   /** View only (a team Viewer): play and scrub, but no changes. */
   readOnly?: boolean;
+  /** The Motion Explainer graphics track (G1); none: no track. */
+  graphics?: GraphicsTrackData;
   projectTitle: string;
   aRoll: ClipRow[];
   bRoll: ClipRow[];
@@ -2718,6 +2757,7 @@ export function TimelinePanel({
   onAddVoiceover,
   onRemoveClip,
   readOnly = false,
+  graphics,
 }: TimelinePanelProps) {
   // Length of the exported video: until the last clip on V1 or V2 ends.
   const programMs = videoEndMs(aRoll, bRoll, clipVisibleMs);
@@ -2913,6 +2953,7 @@ export function TimelinePanel({
         onAddVoiceover={onAddVoiceover}
         onRemoveClip={onRemoveClip}
         readOnly={readOnly}
+        graphics={graphics}
       />
     </div>
   );

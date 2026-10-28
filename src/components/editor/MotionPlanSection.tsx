@@ -22,6 +22,7 @@ import type { TimelineWord } from "@/lib/captions";
 import {
   ELEMENT_LABEL,
   elementSpan,
+  elementSummary,
   wordsByKey,
   type MotionElement,
   type MotionPlan,
@@ -37,28 +38,6 @@ const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
-
-/** What a graphic shows, in one line. */
-function summary(el: MotionElement): string {
-  switch (el.type) {
-    case "counter": {
-      const n = el.number;
-      const value = n ? `${n.prefix}${n.value.toLocaleString()}${n.suffix}` : "";
-      return [value, el.text].filter(Boolean).join(" · ");
-    }
-    case "list":
-    case "compare":
-      return [el.text, el.items.join(el.type === "compare" ? " vs " : ", ")]
-        .filter(Boolean)
-        .join(": ");
-    case "cta":
-      return el.text || `Ask to ${el.cta}`;
-    case "zoom":
-      return el.zoom === "in" ? "Punch in" : "Ease out";
-    default:
-      return el.text;
-  }
-}
 
 const TYPE_TINT: Record<MotionElement["type"], string> = {
   keyline: "text-violet-300 border-violet-400/30",
@@ -311,7 +290,7 @@ function PlanList({
                   {ELEMENT_LABEL[el.type]}
                 </span>
                 <span className="text-[11px] text-neutral-300 leading-snug line-clamp-2">
-                  {summary(el)}
+                  {elementSummary(el)}
                 </span>
               </button>
             </li>

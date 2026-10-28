@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient, useIsMutating } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getProject,
   submitRender,
@@ -36,6 +36,27 @@ import {
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
 import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
+import { GraphicInspector } from "@/components/editor/GraphicInspector";
+import { useMotionPlan } from "@/components/editor/useMotionPlan";
+import type { GraphicsTrackData } from "@/components/editor/GraphicsTrack";
+import {
+  elementSpan,
+  elementSummary,
+  moveElement,
+  nearestWord,
+  newElementAt,
+  resizeElement,
+  wordsByKey,
+  type MotionElement,
+} from "@/lib/motion-plan";
+import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
+import { themeFromAccent } from "@/motion/theme";
+
+// The graphics renderer (Remotion) loads only when the editor shows graphics,
+// so it doesn't slow down opening the page.
+const MotionOverlay = lazy(() =>
+  import("@/components/editor/MotionOverlay").then((m) => ({ default: m.MotionOverlay })),
+);
 import { loadBrandKit } from "@/lib/brand-kit";
 import { usePreviewAudio } from "@/components/editor/usePreviewAudio";
 import { probeFileDurationMs, probeMediaDurationMs } from "@/lib/media-duration";
@@ -324,6 +345,13 @@ function EditorPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedClipUrl, setSelectedClipUrl] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  // The Motion Explainer graphic selected on the G1 track (its inspector shows).
+  const [selectedGraphicId, setSelectedGraphicId] = useState<string | null>(null);
+  // Picking a clip puts the graphic away.
+  useEffect(() => {
+    if (selectedClipId) setSelectedGraphicId(null);
+  }, [selectedClipId]);
+  const motion = useMotionPlan(projectId);
   const [muted, setMuted] = useState(false);
   const [playing, setPlaying] = useState(false);
   // Play speed set with L (1×, 2×, 4×); K or a new file resets it.
@@ -1615,6 +1643,69 @@ function EditorPage() {
   // Every word on the timeline, in order (captions and the graphics plan).
   const captionWords = placeTranscripts(captionSegments, transcriptMap);
   const captionWordPhrases = groupIntoPhrases(captionWords);
+
+  // Motion Explainer graphics: placed on the timeline from their words.
+  const wordsInOrder = [...captionWords].sort((a, b) => a.startMs - b.startMs);
+  const graphicWordMap = wordsByKey(wordsInOrder);
+  const motionPlan = motion.plan;
+  const graphicsOn = !!motionPlan && motionPlan.enabled !== false;
+  const placedMotion = motionPlan
+    ? placeGraphics(motionPlan.elements, graphicWordMap)
+    : { graphics: [], zooms: [] };
+  const motionTheme = themeFromAccent(brand.data?.kit?.highlightColor);
+  const frameAtMs = (ms: number) => Math.round((ms / 1000) * MOTION_FPS);
+  // Captions step aside while a key line or chapter fills the same space.
+  const captionsHiddenAt = (ms: number) => {
+    if (!graphicsOn) return false;
+    const f = frameAtMs(ms);
+    return placedMotion.graphics.some(
+      (g) => (g.type === "keyline" || g.type === "chapter") && f >= g.from && f < g.to,
+    );
+  };
+  const selectedGraphic = motionPlan?.elements.find((e) => e.id === selectedGraphicId) ?? null;
+  const canEditGraphics = motion.canEdit && !readOnly && wordsInOrder.length > 0;
+  const changeGraphic = (id: string, change: (e: MotionElement) => MotionElement | null) =>
+    motion.update((p) => ({
+      ...p,
+      elements: p.elements.map((e) => (e.id === id ? (change(e) ?? e) : e)),
+    }));
+  const seekToMs = (ms: number) => {
+    const i = nearestWord(wordsInOrder, ms);
+    if (i >= 0) seekToCaption(wordsInOrder[i]);
+  };
+  const graphicsTrack: GraphicsTrackData | undefined = motion.state
+    ? {
+        items: (motionPlan?.elements ?? []).flatMap((el) => {
+          const span = elementSpan(el, graphicWordMap);
+          return span
+            ? [{ id: el.id, type: el.type, label: elementSummary(el) || el.type, ...span }]
+            : [];
+        }),
+        enabled: graphicsOn || !motionPlan,
+        selectedId: selectedGraphicId,
+        canEdit: canEditGraphics,
+        onSelect: (id) => {
+          setSelectedGraphicId(id);
+          setSelectedClipId(null);
+          setRightTab("edit");
+        },
+        onToggle:
+          canEditGraphics && motionPlan
+            ? () => motion.update((p) => ({ ...p, enabled: p.enabled === false }))
+            : undefined,
+        onAdd: () => {
+          const el = newElementAt(wordsInOrder, timelinePlayheadMs);
+          if (!el) return;
+          motion.update((p) => ({ ...p, elements: [...p.elements, el] }));
+          setSelectedGraphicId(el.id);
+          setSelectedClipId(null);
+          setRightTab("edit");
+        },
+        onMove: (id, ms) => changeGraphic(id, (e) => moveElement(e, wordsInOrder, ms)),
+        onResize: (id, edge, ms) =>
+          changeGraphic(id, (e) => resizeElement(e, wordsInOrder, edge, ms)),
+      }
+    : undefined;
   // The same phrases the Captions tab lists, for the timeline's caption track.
   const captionPhrases: CaptionPhrase[] = captionWordPhrases.map((phrase) => ({
     key: phrase[0].key,
@@ -2258,14 +2349,31 @@ function EditorPage() {
               onTick: previewAudioTick,
               // Captions (when on) and the last render's AI hook, like the export.
               renderOverlay: (timeMs) => (
-                <PreviewOverlay
-                  kit={brand.data?.kit}
-                  logoUrl={brand.data?.logoUrl}
-                  timeMs={timeMs}
-                  phrases={captionsEnabled ? captionWordPhrases : []}
-                  hook={renderHook}
-                />
+                <>
+                  {graphicsOn && (
+                    <Suspense fallback={null}>
+                      <MotionOverlay
+                        timeMs={timeMs}
+                        graphics={placedMotion.graphics}
+                        theme={motionTheme}
+                        aspect={project.aspect_ratio}
+                      />
+                    </Suspense>
+                  )}
+                  <PreviewOverlay
+                    kit={brand.data?.kit}
+                    logoUrl={brand.data?.logoUrl}
+                    timeMs={timeMs}
+                    phrases={
+                      captionsEnabled && !captionsHiddenAt(timeMs) ? captionWordPhrases : []
+                    }
+                    hook={renderHook}
+                  />
+                </>
               ),
+              pictureScale: graphicsOn
+                ? (timeMs) => zoomAt(placedMotion.zooms, frameAtMs(timeMs))
+                : undefined,
               selectedClipId,
               onSelectClip: (id) => setSelectedClipId(id),
               onTransform: readOnly ? undefined : transformClip,
@@ -2346,9 +2454,11 @@ function EditorPage() {
                   )}
                 >
                   {tab === "edit"
-                    ? selectedClip
-                      ? "Clip"
-                      : "AI"
+                    ? selectedGraphic
+                      ? "Graphic"
+                      : selectedClip
+                        ? "Clip"
+                        : "AI"
                     : tab === "captions"
                       ? "Captions"
                       : "Auto-cut"}
@@ -2388,6 +2498,23 @@ function EditorPage() {
                     await saveWordsMut.mutateAsync({ storage_path: storagePath, words });
                   }}
                   isSaving={saveWordsMut.isPending}
+                />
+              ) : selectedGraphic ? (
+                <GraphicInspector
+                  element={selectedGraphic}
+                  span={elementSpan(selectedGraphic, graphicWordMap)}
+                  readOnly={!canEditGraphics}
+                  onChange={(next) => changeGraphic(next.id, () => next)}
+                  onDelete={() => {
+                    const id = selectedGraphic.id;
+                    motion.update((p) => ({
+                      ...p,
+                      elements: p.elements.filter((e) => e.id !== id),
+                    }));
+                    setSelectedGraphicId(null);
+                  }}
+                  onSeek={seekToMs}
+                  onClose={() => setSelectedGraphicId(null)}
                 />
               ) : selectedClip ? (
                 <ClipInspector
@@ -2449,6 +2576,7 @@ function EditorPage() {
         bottomPanel={
           <TimelinePanel
             readOnly={readOnly}
+            graphics={graphicsTrack}
             projectTitle={project.title}
             aRoll={aRoll}
             bRoll={bRoll}

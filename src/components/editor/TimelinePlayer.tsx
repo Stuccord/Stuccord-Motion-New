@@ -56,6 +56,8 @@ type Props = {
   onTick?: (timeMs: number, playing: boolean, rate: number) => void;
   /** Drawn over the picture at the current time (captions, hook). */
   renderOverlay?: (timeMs: number) => React.ReactNode;
+  /** How much the picture (not the overlay) is zoomed in at a time; 1 or none: not zoomed. */
+  pictureScale?: (timeMs: number) => number;
   /** A clip's file stopped downloading: get a fresh link for it (by storage path). */
   onStall?: (storagePath: string) => void;
   /** The selected clip: gets a box with handles when it's on screen. */
@@ -84,6 +86,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     onPlayingChange,
     onTick,
     renderOverlay,
+    pictureScale,
     onStall,
     selectedClipId = null,
     onSelectClip,
@@ -381,35 +384,46 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     // handles aren't.
     <div className="absolute inset-0 rounded-[inherit]">
       <div className="absolute inset-0 bg-black overflow-hidden rounded-[inherit]">
-        {layers.map((p) => {
-          const active = t >= p.start && t < p.end;
-          const url = urls[p.clip.storage_path];
-          if (!url) return null;
-          return (
-            <Layer
-              key={`${p.track}:${p.clip.id}`}
-              placed={p}
-              url={url}
-              active={active}
-              timeMs={t}
-              frameRatio={frameRatio}
-              transform={transformOf(p.clip)}
-              videoRef={(el) => {
-                if (el) videos.current.set(p.clip.id, el);
-                else videos.current.delete(p.clip.id);
-              }}
-              onSize={(w, h) =>
-                setSizes((old) =>
-                  old[p.clip.storage_path]?.w === w && old[p.clip.storage_path]?.h === h
-                    ? old
-                    : { ...old, [p.clip.storage_path]: { w, h } },
-                )
-              }
-              onReady={() => sync(timeRef.current)}
-              onStall={() => onStall?.(p.clip.storage_path)}
-            />
-          );
-        })}
+        {/* The picture, zoomed when a Motion Explainer zoom is on (around the
+            upper middle, where a face usually is). */}
+        <div
+          className="absolute inset-0"
+          style={
+            (pictureScale?.(t) ?? 1) !== 1
+              ? { transform: `scale(${pictureScale!(t)})`, transformOrigin: "50% 40%" }
+              : undefined
+          }
+        >
+          {layers.map((p) => {
+            const active = t >= p.start && t < p.end;
+            const url = urls[p.clip.storage_path];
+            if (!url) return null;
+            return (
+              <Layer
+                key={`${p.track}:${p.clip.id}`}
+                placed={p}
+                url={url}
+                active={active}
+                timeMs={t}
+                frameRatio={frameRatio}
+                transform={transformOf(p.clip)}
+                videoRef={(el) => {
+                  if (el) videos.current.set(p.clip.id, el);
+                  else videos.current.delete(p.clip.id);
+                }}
+                onSize={(w, h) =>
+                  setSizes((old) =>
+                    old[p.clip.storage_path]?.w === w && old[p.clip.storage_path]?.h === h
+                      ? old
+                      : { ...old, [p.clip.storage_path]: { w, h } },
+                  )
+                }
+                onReady={() => sync(timeRef.current)}
+                onStall={() => onStall?.(p.clip.storage_path)}
+              />
+            );
+          })}
+        </div>
         {mainActive && !urls[mainActive.clip.storage_path] && (
           <div className="absolute inset-0 grid place-items-center text-[11px] text-neutral-500">
             <span className="flex items-center gap-1.5">
