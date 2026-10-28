@@ -48,6 +48,8 @@ import {
   PLATFORM_LABEL,
   TIKTOK_PRIVACY_LABEL,
   SCHEDULE_MAX_AHEAD_DAYS,
+  type InstagramOptions,
+  type TikTokOptions,
   type Platform,
   type SocialAccount,
   type SocialPost,
@@ -75,15 +77,31 @@ function localInput(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** "Sent to drafts" for TikTok posts that went to the TikTok inbox. */
-const isDraft = (p: SocialPost) => p.platform === "tiktok" && p.options?.mode === "draft";
+const tiktokOpts = (p: SocialPost) =>
+  p.platform === "tiktok" ? (p.options as TikTokOptions) : null;
 
-/** Who can see a post, when it isn't everyone. */
+/** "Sent to drafts" for TikTok posts that went to the TikTok inbox. */
+const isDraft = (p: SocialPost) => tiktokOpts(p)?.mode === "draft";
+
+/** An Instagram Story (gone after a day). */
+const isStory = (p: SocialPost) =>
+  p.platform === "instagram" && (p.options as InstagramOptions).kind === "story";
+
+/** Who can see a post, or what kind it is, when that's worth saying. */
 function audience(p: SocialPost): string | null {
-  if (p.platform === "tiktok") {
-    if (p.options?.mode !== "direct") return null;
-    const level = p.options.privacy_level;
-    return level === "PUBLIC_TO_EVERYONE" ? null : TIKTOK_PRIVACY_LABEL[level];
+  const tt = tiktokOpts(p);
+  if (tt) {
+    if (tt.mode !== "direct") return null;
+    return tt.privacy_level === "PUBLIC_TO_EVERYONE"
+      ? null
+      : TIKTOK_PRIVACY_LABEL[tt.privacy_level];
+  }
+  if (p.platform === "instagram") {
+    if (isStory(p)) return "Story";
+    return (p.options as InstagramOptions).kind === "reel" &&
+      !(p.options as { share_to_feed?: boolean }).share_to_feed
+      ? "Reels tab only"
+      : null;
   }
   return p.privacy === "public" ? null : p.privacy;
 }
@@ -145,7 +163,7 @@ function PublishingPage() {
   return (
     <AppShell
       title="Publishing"
-      subtitle="Post your exports to YouTube and TikTok, now or on a schedule."
+      subtitle="Post your exports to YouTube, TikTok and Instagram, now or on a schedule."
     >
       <div className="space-y-6">
         {/* Accounts */}
@@ -181,8 +199,8 @@ function PublishingPage() {
             <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-[13px] text-amber-900 mb-3">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                Posting isn&apos;t switched on yet: the site owner still has to add the YouTube or
-                TikTok app keys. You can come back to connect your accounts once it is.
+                Posting isn&apos;t switched on yet: the site owner still has to add the YouTube,
+                TikTok or Instagram app keys. You can come back to connect your accounts once it is.
               </span>
             </div>
           )}
@@ -375,7 +393,9 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
         <div className="flex items-center gap-2 min-w-0">
           <PlatformIcon platform={post.platform} className="w-4 h-4 shrink-0" />
           <span className="text-sm font-medium truncate">
-            {post.title || post.caption.split("\n")[0] || "TikTok post"}
+            {post.title ||
+              post.caption.split("\n")[0] ||
+              (isStory(post) ? "Instagram Story" : `${PLATFORM_LABEL[post.platform]} post`)}
           </span>
           <StatusBadge post={post} />
         </div>

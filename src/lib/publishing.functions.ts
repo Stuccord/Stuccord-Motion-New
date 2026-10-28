@@ -15,6 +15,9 @@ import {
   SCHEDULE_MIN_AHEAD_MS,
   TITLE_MAX,
   TIKTOK_CAPTION_MAX,
+  INSTAGRAM_CAPTION_MAX,
+  INSTAGRAM_HASHTAG_MAX,
+  countHashtags,
   type Platform,
   type SocialAccount,
   type SocialPost,
@@ -219,6 +222,16 @@ const PostInput = z.object({
   madeForKids: z.boolean(),
   /** The TikTok choices for each TikTok account, by account id. */
   tiktok: z.record(z.string().uuid(), TikTokOptionsInput).default({}),
+  /** Reel or Story for each Instagram account, by account id. */
+  instagram: z
+    .record(
+      z.string().uuid(),
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("reel"), share_to_feed: z.boolean() }),
+        z.object({ kind: z.literal("story") }),
+      ]),
+    )
+    .default({}),
   /** null = post now. */
   scheduledAt: z.string().datetime().nullable(),
 });
@@ -264,11 +277,13 @@ export const getExportPreview = createServerFn({ method: "POST" })
       .eq("id", data.projectId)
       .eq("user_id", context.userId)
       .maybeSingle();
-    if (!project?.output_path?.startsWith(`${context.userId}/`)) return { url: null };
+    if (!project?.output_path?.startsWith(`${context.userId}/`)) return { url: null, ext: null };
     const { data: signed } = await context.supabase.storage
       .from("renders")
       .createSignedUrl(project.output_path, 60 * 60);
-    return { url: signed?.signedUrl ?? null };
+    // Browser exports can be WebM, which Instagram doesn't take.
+    const ext = project.output_path.split(".").pop()?.toLowerCase() ?? null;
+    return { url: signed?.signedUrl ?? null, ext };
   });
 
 /** Makes one post per chosen account for a project's latest export. */
@@ -345,6 +360,30 @@ export const createPosts = createServerFn({ method: "POST" })
       }
     }
 
+    // Instagram: Reels carry the caption (Stories have none).
+    for (const a of accounts!.filter((x) => x.platform === "instagram")) {
+      const o = data.instagram[a.id];
+      if (!o) throw new Error(`Choose a Reel or a Story for ${a.name}`);
+      if (/\.webm$/i.test(project.output_path)) {
+        throw new Error("Instagram needs an MP4. Export with Render Video, then post.");
+      }
+      const scopes = (a.scopes ?? "").split(/[\s,]+/);
+      if (a.scopes && !scopes.includes("instagram_business_content_publish")) {
+        throw new Error(
+          `Reconnect ${a.name} and allow posting: an Instagram permission is missing`,
+        );
+      }
+      if (o.kind === "reel") {
+        const text = data.caption.trim() || title;
+        if (text.length > INSTAGRAM_CAPTION_MAX) {
+          throw new Error(`Instagram captions can be up to ${INSTAGRAM_CAPTION_MAX} characters`);
+        }
+        if (countHashtags(text) > INSTAGRAM_HASHTAG_MAX) {
+          throw new Error(`Instagram allows up to ${INSTAGRAM_HASHTAG_MAX} hashtags`);
+        }
+      }
+    }
+
     const { count } = await context.supabase
       .from("social_posts")
       .select("id", { count: "exact", head: true })
@@ -367,7 +406,12 @@ export const createPosts = createServerFn({ method: "POST" })
           caption: data.caption,
           privacy: data.privacy,
           made_for_kids: data.madeForKids,
-          options: a.platform === "tiktok" ? data.tiktok[a.id] : {},
+          options:
+            a.platform === "tiktok"
+              ? data.tiktok[a.id]
+              : a.platform === "instagram"
+                ? data.instagram[a.id]
+                : {},
           video_path: project.output_path!,
           cover_path: isCoverPath(project.thumbnail_url) ? project.thumbnail_url : null,
           scheduled_at: when.toISOString(),

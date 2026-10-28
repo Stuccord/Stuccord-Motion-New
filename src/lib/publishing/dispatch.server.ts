@@ -110,7 +110,8 @@ export async function accessTokenFor(
   const left = account.token_expires_at
     ? Date.parse(account.token_expires_at) - Date.now()
     : Infinity;
-  if (left > minLeftMs || !account.refresh_token_enc) {
+  const early = provider(account.platform as Platform).refreshEarlyMs ?? 0;
+  if (left > Math.max(minLeftMs, early) || !account.refresh_token_enc) {
     return openToken(account.access_token_enc, account.user_id);
   }
   try {
@@ -137,9 +138,44 @@ export async function accessTokenFor(
         .update({ status: "needs_reconnect" })
         .eq("id", account.id)
         .eq("user_id", account.user_id);
+      throw e;
     }
+    // Renewing early didn't work, but the current sign-in still does.
+    if (left > minLeftMs) return openToken(account.access_token_enc, account.user_id);
     throw e;
   }
+}
+
+/**
+ * Renews sign-ins that run out unless they're renewed (Instagram's), for
+ * accounts that haven't posted lately, so they don't need reconnecting.
+ */
+export async function refreshExpiringTokens(db: Db) {
+  let renewed = 0;
+  for (const platform of ["instagram"] as const) {
+    const early = provider(platform).refreshEarlyMs;
+    if (!early || !provider(platform).configured()) continue;
+    const { data: accounts } = await db
+      .from("social_accounts")
+      .select("*")
+      .eq("platform", platform)
+      .eq("status", "active")
+      .lt("token_expires_at", new Date(Date.now() + early).toISOString())
+      .order("token_expires_at", { ascending: true })
+      .limit(20);
+    for (const a of accounts ?? []) {
+      try {
+        await accessTokenFor(db, a, early);
+        renewed++;
+      } catch (e) {
+        console.error(
+          "[publishing] Renewing a sign-in failed:",
+          e instanceof Error ? e.message : e,
+        );
+      }
+    }
+  }
+  return renewed;
 }
 
 async function markFailed(db: Db, post: PostRow, error: string) {
@@ -189,6 +225,7 @@ async function sendPost(db: Db, post: PostRow) {
     await sendToWorker({
       post_id: post.id,
       platform: post.platform,
+      account_external_id: account.external_id,
       access_token: accessToken,
       video_url: video.signedUrl,
       cover_url: coverUrl,

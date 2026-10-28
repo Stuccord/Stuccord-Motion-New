@@ -63,6 +63,20 @@ export type TikTokCreatorInfo = {
   max_video_post_duration_sec: number | null;
 };
 
+// ---------- Instagram ----------
+
+export const INSTAGRAM_CAPTION_MAX = 2200;
+export const INSTAGRAM_HASHTAG_MAX = 30;
+/** Reels can be 3 seconds to 15 minutes; Stories up to 60 seconds. */
+export const REEL_MIN_SECONDS = 3;
+export const REEL_MAX_SECONDS = 15 * 60;
+export const STORY_MAX_SECONDS = 60;
+
+/** A Reel (optionally also in the feed and profile grid), or a Story. */
+export type InstagramOptions = { kind: "reel"; share_to_feed: boolean } | { kind: "story" };
+
+export const countHashtags = (s: string) => (s.match(/(^|\s)#[^\s#]+/g) ?? []).length;
+
 export type PostStatus = "scheduled" | "uploading" | "published" | "failed" | "canceled";
 export type Privacy = "public" | "unlisted" | "private";
 
@@ -76,8 +90,8 @@ export type SocialAccount = {
 };
 
 export type SocialPost = {
-  /** Platform choices: TikTokOptions for TikTok posts, {} for YouTube. */
-  options: TikTokOptions | Record<string, never>;
+  /** Platform choices: TikTokOptions, InstagramOptions, or {} for YouTube. */
+  options: TikTokOptions | InstagramOptions | Record<string, never>;
   id: string;
   project_id: string | null;
   project_title: string | null;

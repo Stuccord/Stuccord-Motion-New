@@ -300,7 +300,6 @@ function Home() {
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-background/50 mb-2">Coming next</div>
                 <ul className="space-y-1 text-[12.5px] text-background/80">
                   {[
-                    "Posting to Instagram",
                     "Teams",
                   ].map((f) => (
                     <li key={f}>{f}</li>

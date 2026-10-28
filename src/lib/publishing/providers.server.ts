@@ -5,10 +5,11 @@
 // YouTube needs YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET (a Google Cloud
 // OAuth client with the YouTube Data API v3 turned on) and the redirect
 // address <PUBLIC_APP_URL>/publishing/connect/youtube added to that client.
-// TikTok is in tiktok.server.ts.
+// TikTok is in tiktok.server.ts, Instagram in instagram.server.ts.
 
 import type { Platform } from "@/lib/publishing-shared";
 import { ReconnectNeeded } from "./reconnect";
+import { instagram } from "./instagram.server";
 import { tiktok } from "./tiktok.server";
 
 export { ReconnectNeeded };
@@ -35,6 +36,8 @@ export type Provider = {
   authUrl(o: { state: string; redirectUri: string }): string;
   exchange(o: { code: string; redirectUri: string }): Promise<Tokens>;
   refresh(refreshToken: string): Promise<Tokens>;
+  /** Renew the sign-in this long before it runs out (Instagram's lasts 60 days). */
+  refreshEarlyMs?: number;
   profile(accessToken: string): Promise<Profile>;
   /** Stats by the platform's video id; videos that are gone are left out. */
   stats(accessToken: string, ids: string[]): Promise<Map<string, PostStats>>;
@@ -170,7 +173,7 @@ const youtube: Provider = {
   revokeWith: "refresh",
 };
 
-const PROVIDERS: Partial<Record<Platform, Provider>> = { youtube, tiktok };
+const PROVIDERS: Partial<Record<Platform, Provider>> = { youtube, tiktok, instagram };
 
 export function provider(platform: Platform): Provider {
   const p = PROVIDERS[platform];

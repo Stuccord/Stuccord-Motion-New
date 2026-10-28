@@ -4,15 +4,21 @@ import { createFileRoute } from "@tanstack/react-router";
  * Called by the render worker once a minute, signed with
  * HMAC-SHA256(body, RENDER_WORKER_SECRET) in `x-stuccord-signature`.
  * Body: { at: ISO time }. Sends scheduled posts that are due to the worker,
- * finds finished TikTok posts, and updates view counts that are due.
+ * finds finished TikTok posts, updates view counts that are due, and renews
+ * Instagram sign-ins before they run out.
  */
 export const Route = createFileRoute("/api/public/publishing-tick")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         const body = await request.text();
-        const { verifyWorkerSignature, dispatchDuePosts, resolvePendingPosts, syncPostStats } =
-          await import("@/lib/publishing/dispatch.server");
+        const {
+          verifyWorkerSignature,
+          dispatchDuePosts,
+          resolvePendingPosts,
+          syncPostStats,
+          refreshExpiringTokens,
+        } = await import("@/lib/publishing/dispatch.server");
         if (
           !(await verifyWorkerSignature(body, request.headers.get("x-stuccord-signature") ?? ""))
         ) {
@@ -54,6 +60,14 @@ export const Route = createFileRoute("/api/public/publishing-tick")({
           stats = await syncPostStats(supabaseAdmin);
         } catch (e) {
           console.error("[publishing-tick] Stats failed:", e instanceof Error ? e.message : e);
+        }
+        try {
+          await refreshExpiringTokens(supabaseAdmin);
+        } catch (e) {
+          console.error(
+            "[publishing-tick] Renewing sign-ins failed:",
+            e instanceof Error ? e.message : e,
+          );
         }
         return Response.json({ ok: true, sent, stats });
       },

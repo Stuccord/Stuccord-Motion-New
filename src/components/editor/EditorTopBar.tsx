@@ -243,7 +243,7 @@ export function EditorTopBar({
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {canPublish
-                  ? "Post your export to YouTube or TikTok"
+                  ? "Post your export to YouTube, TikTok or Instagram"
                   : "Export the video first, then post it"}
               </TooltipContent>
             </Tooltip>

@@ -28,7 +28,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PlatformIcon } from "@/components/platform-icon";
+import { InstagramSection } from "@/components/publish-instagram";
 import { TikTokSection } from "@/components/publish-tiktok";
+import { NEW_INSTAGRAM_FORM, instagramFormProblem } from "@/lib/instagram-form";
 import {
   NEW_TIKTOK_FORM,
   tiktokFormProblem,
@@ -48,6 +50,8 @@ import {
   PLATFORM_LABEL,
   SCHEDULE_MAX_AHEAD_DAYS,
   TIKTOK_CAPTION_MAX,
+  INSTAGRAM_CAPTION_MAX,
+  type InstagramOptions,
   TITLE_MAX,
   type Privacy,
 } from "@/lib/publishing-shared";
@@ -104,6 +108,7 @@ export function PublishDialog({
   const [later, setLater] = useState(false);
   const [when, setWhen] = useState("");
   const [tiktok, setTiktok] = useState<Record<string, TikTokForm>>({});
+  const [instagram, setInstagram] = useState<Record<string, InstagramOptions>>({});
   const [videoSeconds, setVideoSeconds] = useState<number | null>(null);
 
   // Fresh form each time it opens.
@@ -117,6 +122,7 @@ export function PublishDialog({
     setLater(false);
     setWhen(localInput(new Date(Date.now() + 60 * 60 * 1000)));
     setTiktok({});
+    setInstagram({});
     setVideoSeconds(null);
   }, [open, defaultTitle]);
 
@@ -162,7 +168,22 @@ export function PublishDialog({
     const f = formFor(a.id);
     return f.mode === "direct" && f.disclose && f.brand_content;
   });
-  const captionMax = hasTiktok ? TIKTOK_CAPTION_MAX : CAPTION_MAX;
+  const igAccounts = chosen.filter((a) => a.platform === "instagram");
+  const hasInstagram = igAccounts.length > 0;
+  const igFormFor = (id: string) => instagram[id] ?? NEW_INSTAGRAM_FORM;
+  const igProblems = igAccounts.map((a) =>
+    preview.data?.ext === "webm"
+      ? "Instagram needs an MP4. Export with Render Video (the cloud export), then post."
+      : instagramFormProblem(igFormFor(a.id), caption.trim() || title, videoSeconds),
+  );
+  const igBlocked = igProblems.some((x) => !!x);
+  // Platforms that use the text box as their caption.
+  const captioned = hasTiktok || igAccounts.some((a) => igFormFor(a.id).kind === "reel");
+  const captionMax = hasTiktok
+    ? TIKTOK_CAPTION_MAX
+    : hasInstagram
+      ? INSTAGRAM_CAPTION_MAX
+      : CAPTION_MAX;
 
   const send = useMutation({
     mutationFn: () =>
@@ -177,6 +198,7 @@ export function PublishDialog({
           tiktok: Object.fromEntries(
             tiktokAccounts.map((a) => [a.id, tiktokOptions(formFor(a.id))]),
           ),
+          instagram: Object.fromEntries(igAccounts.map((a) => [a.id, igFormFor(a.id)])),
           scheduledAt: later ? new Date(when).toISOString() : null,
         },
       }),
@@ -184,8 +206,8 @@ export function PublishDialog({
       toast.success(
         r.scheduled
           ? `Scheduled for ${new Date(when).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
-          : hasTiktok
-            ? "Posting now. TikTok can take a few minutes to process it before it shows on the profile."
+          : hasTiktok || hasInstagram
+            ? `Posting now. ${hasTiktok && hasInstagram ? "TikTok and Instagram" : hasTiktok ? "TikTok" : "Instagram"} can take a few minutes to process it before it shows on the profile.`
             : r.created === 1
               ? "Posting now: it shows on the Publishing page when it's up"
               : `Posting to ${r.created} accounts now`,
@@ -199,7 +221,13 @@ export function PublishDialog({
   const whenOk = !later || (when && !Number.isNaN(new Date(when).getTime()));
   const textOk = (!hasYoutube || !!title.trim()) && caption.length <= captionMax;
   const ready =
-    !!project && picked.length > 0 && textOk && whenOk && !tiktokBlocked && !send.isPending;
+    !!project &&
+    picked.length > 0 &&
+    textOk &&
+    whenOk &&
+    !tiktokBlocked &&
+    !igBlocked &&
+    !send.isPending;
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const t = (light: string, darkCls: string) => (dark ? darkCls : light);
   const fieldCls = t(
@@ -240,7 +268,7 @@ export function PublishDialog({
         ) : all.length === 0 ? (
           <div className="py-6 text-center space-y-3">
             <p className={cn("text-sm", muted)}>
-              Connect a YouTube channel or TikTok account first.
+              Connect a YouTube, TikTok or Instagram account first.
             </p>
             <Button asChild size="sm">
               <Link to="/publishing">Go to Publishing</Link>
@@ -345,7 +373,9 @@ export function PublishDialog({
             {hasYoutube && (
               <div className="space-y-1.5">
                 <div className="flex items-baseline justify-between">
-                  <Label htmlFor="pub-title">{hasTiktok ? "Title (YouTube)" : "Title"}</Label>
+                  <Label htmlFor="pub-title">
+                    {hasTiktok || hasInstagram ? "Title (YouTube)" : "Title"}
+                  </Label>
                   <span className={cn("text-[11px] tabular-nums", muted)}>
                     {title.length}/{TITLE_MAX}
                   </span>
@@ -364,9 +394,9 @@ export function PublishDialog({
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between">
                 <Label htmlFor="pub-caption">
-                  {hasYoutube && hasTiktok
-                    ? "Description and TikTok caption"
-                    : hasTiktok
+                  {hasYoutube && captioned
+                    ? "Description and caption"
+                    : captioned
                       ? "Caption"
                       : "Description"}
                 </Label>
@@ -386,21 +416,25 @@ export function PublishDialog({
                 maxLength={CAPTION_MAX}
                 onChange={(e) => setCaption(e.target.value)}
                 placeholder={
-                  hasTiktok
+                  captioned
                     ? "Say what it's about and add #hashtags"
                     : "Say more, add links and #hashtags (#Shorts helps vertical videos)"
                 }
                 className={fieldCls}
               />
-              {hasTiktok && !caption.trim() && hasYoutube && (
-                <p className={cn("text-[11px]", muted)}>Empty: TikTok gets the title instead.</p>
+              {captioned && !caption.trim() && hasYoutube && (
+                <p className={cn("text-[11px]", muted)}>
+                  Empty: the title is used as the caption instead.
+                </p>
               )}
             </div>
 
             {hasYoutube && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>{hasTiktok ? "Who can watch (YouTube)" : "Who can watch"}</Label>
+                  <Label>
+                    {hasTiktok || hasInstagram ? "Who can watch (YouTube)" : "Who can watch"}
+                  </Label>
                   <Select value={privacy} onValueChange={(v) => setPrivacy(v as Privacy)}>
                     <SelectTrigger aria-label="Who can watch" className={fieldCls}>
                       <SelectValue />
@@ -444,6 +478,17 @@ export function PublishDialog({
                     : null
                 }
                 problem={problems[i]}
+                dark={dark}
+              />
+            ))}
+
+            {igAccounts.map((a, i) => (
+              <InstagramSection
+                key={a.id}
+                account={a}
+                form={igFormFor(a.id)}
+                onChange={(f) => setInstagram((cur) => ({ ...cur, [a.id]: f }))}
+                problem={igProblems[i]}
                 dark={dark}
               />
             ))}

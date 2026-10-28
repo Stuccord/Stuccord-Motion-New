@@ -1,4 +1,4 @@
-// Posting finished exports to social platforms (YouTube and TikTok), and the once-a-minute tick
+// Posting finished exports to social platforms (YouTube, TikTok, Instagram), and the once-a-minute tick
 // that tells the app to send scheduled posts.
 //
 // The app signs each /publish request (like /jobs) and sends a short-lived
@@ -29,7 +29,7 @@ const isHttpUrl = (s) => {
 export function validatePublishPayload(p) {
   if (!p || typeof p !== "object") return "Payload must be an object";
   if (typeof p.post_id !== "string" || !UUID.test(p.post_id)) return "Invalid post_id";
-  if (p.platform !== "youtube" && p.platform !== "tiktok") return "Posting there isn't supported yet";
+  if (!["youtube", "tiktok", "instagram"].includes(p.platform)) return "Posting there isn't supported yet";
   if (typeof p.access_token !== "string" || !p.access_token) return "Missing access_token";
   if (!isHttpUrl(p.video_url)) return "Invalid video_url";
   if (p.cover_url != null && !isHttpUrl(p.cover_url)) return "Invalid cover_url";
@@ -37,6 +37,10 @@ export function validatePublishPayload(p) {
   if (p.platform === "youtube") {
     if (typeof p.title !== "string" || !p.title.trim()) return "Missing title";
     if (!["public", "unlisted", "private"].includes(p.privacy)) return "Invalid privacy";
+  } else if (p.platform === "instagram") {
+    if (typeof p.account_external_id !== "string" || !/^\d+$/.test(p.account_external_id)) return "Invalid Instagram account";
+    const o = p.options;
+    if (!o || (o.kind !== "reel" && o.kind !== "story")) return "Invalid Instagram options";
   } else {
     const o = p.options;
     if (!o || (o.mode !== "direct" && o.mode !== "draft")) return "Invalid TikTok options";
@@ -291,6 +295,82 @@ async function tiktokUpload(p, file, size, type, log) {
   return { publishId };
 }
 
+// ---------- Instagram ----------
+//
+// Instagram fetches the video itself from the signed link, so nothing is
+// downloaded here: make a media container (a Reel or a Story), wait until
+// Instagram has processed it, then publish it.
+
+const IG_API = "https://graph.instagram.com/v21.0";
+const IG_WAIT_MS = 15 * 60 * 1000;
+// How often to ask Instagram; INSTAGRAM_POLL_MS only exists for tests.
+const IG_POLL_MS = Number(process.env.INSTAGRAM_POLL_MS) || 10_000;
+
+async function igCall(method, pathAndQuery, token, params) {
+  const u = new URL(`${IG_API}/${pathAndQuery}`);
+  u.searchParams.set("access_token", token);
+  const res = await fetch(u, {
+    method,
+    headers: params ? { "content-type": "application/x-www-form-urlencoded" } : undefined,
+    body: params ? new URLSearchParams(params) : undefined,
+    signal: AbortSignal.timeout(60 * 1000),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) {
+    const e = j.error || {};
+    if (e.code === 190 || res.status === 401) throw new Error("Instagram stopped accepting this sign-in. Reconnect the account.");
+    // 9 / 2207042: the account's 24-hour posting limit.
+    if (e.error_subcode === 2207042) throw new Error("This Instagram account has hit its daily posting limit. Try again tomorrow.");
+    throw new Error(`Instagram: ${e.error_user_msg || e.message || `error ${res.status}`}`.slice(0, 300));
+  }
+  return j;
+}
+
+async function instagramPublish(p, log) {
+  const o = p.options;
+  const ig = p.account_external_id;
+  const params =
+    o.kind === "story"
+      ? { media_type: "STORIES", video_url: p.video_url }
+      : {
+          media_type: "REELS",
+          video_url: p.video_url,
+          caption: String(p.caption || p.title || "").slice(0, 2200),
+          share_to_feed: o.share_to_feed ? "true" : "false",
+          ...(p.cover_url ? { cover_url: p.cover_url } : {}),
+        };
+  const container = await igCall("POST", `${ig}/media`, p.access_token, params);
+  if (!container.id) throw new Error("Instagram didn't start the post");
+  log(`container ${container.id}, waiting for Instagram`);
+
+  const until = Date.now() + IG_WAIT_MS;
+  let ready = false;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, IG_POLL_MS));
+    let st;
+    try {
+      st = await igCall("GET", `${container.id}?fields=status_code,status`, p.access_token);
+    } catch (e) {
+      if (/Reconnect/.test(e.message)) throw e;
+      log(`status check failed: ${e.message}`);
+      continue;
+    }
+    if (st.status_code === "FINISHED") { ready = true; break; }
+    if (st.status_code === "ERROR" || st.status_code === "EXPIRED") {
+      throw new Error(`Instagram couldn't process the video${st.status ? ` (${String(st.status).slice(0, 150)})` : ""}. Check it's an MP4 within Instagram's limits.`);
+    }
+  }
+  if (!ready) throw new Error("Instagram took too long to process the video. Try again.");
+
+  const published = await igCall("POST", `${ig}/media_publish`, p.access_token, { creation_id: container.id });
+  if (!published.id) throw new Error("Instagram didn't publish the post");
+  let permalink = null;
+  try {
+    permalink = (await igCall("GET", `${published.id}?fields=permalink`, p.access_token)).permalink || null;
+  } catch {}
+  return { id: String(published.id), permalink };
+}
+
 // ---------- the endpoint and the tick ----------
 
 export function registerPublishing(app, { verifySignature, callback, signBody }) {
@@ -313,6 +393,18 @@ export function registerPublishing(app, { verifySignature, callback, signBody })
       const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "stuccord-post-"));
       try {
         await callback(p.callback_url, { post_id: p.post_id, status: "uploading" });
+        if (p.platform === "instagram") {
+          log(`posting a ${p.options.kind} to Instagram`);
+          const r = await instagramPublish(p, log);
+          log(`posted ${r.id}`);
+          await callback(p.callback_url, {
+            post_id: p.post_id,
+            status: "published",
+            external_id: r.id,
+            external_url: r.permalink,
+          });
+          return;
+        }
         const file = path.join(dir, "video");
         const type = (await downloadTo(p.video_url, file)).split(";")[0].trim();
         const { size } = await fsp.stat(file);
