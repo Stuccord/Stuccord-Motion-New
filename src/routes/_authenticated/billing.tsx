@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getUsageStats } from "@/lib/projects.functions";
 import { AI_VOICE_MONTHLY_CHARS, getAiVoiceUsage } from "@/lib/voiceover.functions";
+import { listAllowances } from "@/lib/teams.functions";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({ meta: [{ title: "Billing — Stuccord Motion" }] }),
@@ -39,8 +40,16 @@ function nextResetLabel() {
 }
 
 function BillingPage() {
-  const fetchStats = useServerFn(getUsageStats);
-  const { data, isLoading } = useQuery({ queryKey: ["usage-stats"], queryFn: () => fetchStats() });
+  // Your own allowance (personal projects) and each team's (its projects).
+  const fetchAllowances = useServerFn(listAllowances);
+  const { data: allowances, isLoading } = useQuery({
+    queryKey: ["usage-stats", "allowances"],
+    queryFn: () => fetchAllowances(),
+  });
+  const data = allowances && {
+    rendersThisMonth: allowances.personal.used,
+    renderCap: allowances.personal.cap,
+  };
   const fetchVoiceUsage = useServerFn(getAiVoiceUsage);
   const voice = useQuery({
     queryKey: ["ai-voice-usage"],
@@ -64,14 +73,14 @@ function BillingPage() {
           >
             Current plan
           </Badge>
-          <div className="text-2xl font-semibold">Free</div>
+          <div className="text-2xl font-semibold">{allowances?.personal.plan ?? "Free"}</div>
           <div className="text-sm text-white/70 mt-1">
             {isLoading ? (
               "Loading your usage…"
             ) : (
               <>
-                <span className="tabular-nums font-medium text-white">{used}</span> of {cap} exports
-                used this month · {left} left · resets {nextResetLabel()}
+                <span className="tabular-nums font-medium text-white">{used}</span> of {cap}{" "}
+                personal exports used this month · {left} left · resets {nextResetLabel()}
               </>
             )}
           </div>
@@ -95,6 +104,32 @@ function BillingPage() {
           )}
         </div>
       </Card>
+
+      {(allowances?.teams.length ?? 0) > 0 && (
+        <Card className="p-6 mb-6" data-team-allowances>
+          <div className="text-sm font-semibold">Teams</div>
+          <p className="text-xs text-neutral-500 mt-0.5">
+            Exports of a team&apos;s projects use the team&apos;s allowance, shared by everyone in
+            it, not your own.
+          </p>
+          <div className="mt-4 space-y-3">
+            {allowances!.teams.map((t) => (
+              <div key={t.team!.id}>
+                <div className="flex items-baseline justify-between text-[13px]">
+                  <span className="font-medium">{t.team!.name}</span>
+                  <span className="text-neutral-500 tabular-nums">
+                    {t.used} of {t.cap} exports · {t.plan} plan
+                  </span>
+                </div>
+                <Progress
+                  value={Math.min(100, Math.round((t.used / t.cap) * 100))}
+                  className="h-1.5 mt-1.5"
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <Card className="p-6">

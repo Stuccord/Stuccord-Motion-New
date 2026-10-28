@@ -109,7 +109,9 @@ function SettingsPage() {
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">Brand kit</CardTitle>
                 <CardDescription>
-                  Your captions&apos; font, colours, size and place, and a logo on every export.
+                  Your captions&apos; font, colours, size and place, and a logo on every export of
+                  your personal projects. Team projects use their team&apos;s kit (on the team&apos;s
+                  page).
                 </CardDescription>
               </CardHeader>
               <CardContent>

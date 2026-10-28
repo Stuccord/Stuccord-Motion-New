@@ -116,7 +116,27 @@ function ColorField({
   );
 }
 
-export function BrandKitSettings() {
+/**
+ * Where a brand kit is kept: the signed-in person's (the default), or a
+ * team's (the team page passes one). `readOnly`: shown but can't be changed.
+ */
+export type BrandKitSource = {
+  load: () => Promise<BrandKit>;
+  save: (kit: BrandKit) => Promise<void>;
+  /** Where a new logo is uploaded (the user's folder when left out). */
+  folder?: string;
+  readOnly?: boolean;
+  /** Said under "Brand kit saved". */
+  savedNote?: string;
+};
+
+const PERSONAL_KIT: BrandKitSource = {
+  load: loadBrandKit,
+  save: saveBrandKit,
+  savedNote: "Your previews and next exports use it.",
+};
+
+export function BrandKitSettings({ source = PERSONAL_KIT }: { source?: BrandKitSource } = {}) {
   useBrandFonts();
   const qc = useQueryClient();
   const sign = useServerFn(getClipSignedUrl);
@@ -125,13 +145,14 @@ export function BrandKitSettings() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "logo" | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const readOnly = !!source.readOnly;
 
   useEffect(() => {
-    void loadBrandKit().then((k) => {
+    void source.load().then((k) => {
       setSaved(k);
       setKit(k);
     });
-  }, []);
+  }, [source]);
   // A link to the current logo, for the preview.
   useEffect(() => {
     if (!kit.logo) {
@@ -155,12 +176,12 @@ export function BrandKitSettings() {
   async function save() {
     setBusy("save");
     try {
-      await saveBrandKit(kit);
+      await source.save(kit);
       // An old logo replaced or removed: its file goes.
       if (saved?.logo && saved.logo.path !== kit.logo?.path) await removeLogoFile(saved.logo.path);
       setSaved(parseBrandKit(kit));
       void qc.invalidateQueries({ queryKey: ["brand-kit"] });
-      toast.success("Brand kit saved", { description: "Your previews and next exports use it." });
+      toast.success("Brand kit saved", { description: source.savedNote });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't save the brand kit");
     } finally {
@@ -171,7 +192,7 @@ export function BrandKitSettings() {
   async function pickLogo(file: File) {
     setBusy("logo");
     try {
-      const path = await uploadLogo(file);
+      const path = await uploadLogo(file, source.folder);
       // A logo uploaded but not saved yet replaces any other unsaved one.
       if (kit.logo && kit.logo.path !== saved?.logo?.path) await removeLogoFile(kit.logo.path);
       set({
@@ -192,7 +213,8 @@ export function BrandKitSettings() {
   if (!saved) return <div className="text-sm text-neutral-500 py-3">Loading…</div>;
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_220px]">
-      <div className="space-y-5">
+      {/* A fieldset turns every control off at once for read-only kits. */}
+      <fieldset disabled={readOnly} className="space-y-5 min-w-0 disabled:opacity-70">
         <div className="space-y-1.5">
           <Label className="text-xs">Caption font</Label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
@@ -366,20 +388,22 @@ export function BrandKitSettings() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 pt-2 border-t border-black/5">
-          <Button type="button" onClick={() => void save()} disabled={!changed || busy !== null}>
-            {busy === "save" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save brand kit"}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setKit({ ...DEFAULT_KIT, logo: kit.logo })}
-          >
-            <RotateCcw className="w-4 h-4" /> Standard look
-          </Button>
-          {changed && <span className="text-xs text-neutral-500">Unsaved changes</span>}
-        </div>
-      </div>
+        {!readOnly && (
+          <div className="flex items-center gap-2 pt-2 border-t border-black/5">
+            <Button type="button" onClick={() => void save()} disabled={!changed || busy !== null}>
+              {busy === "save" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save brand kit"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setKit({ ...DEFAULT_KIT, logo: kit.logo })}
+            >
+              <RotateCcw className="w-4 h-4" /> Standard look
+            </Button>
+            {changed && <span className="text-xs text-neutral-500">Unsaved changes</span>}
+          </div>
+        )}
+      </fieldset>
 
       {/* Live preview: drawn like the editor's preview. */}
       <div className="space-y-1.5">

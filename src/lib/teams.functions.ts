@@ -475,3 +475,58 @@ export const deleteTeam = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ---------- brand kit and allowances ----------
+
+/** A team's brand kit (any member can read it; team projects always use it). */
+export const getTeamBrandKit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => TeamId.parse(d))
+  .handler(async ({ data, context }) => {
+    const role = await myRole(data.teamId, context.userId);
+    const db = await admin();
+    const { data: team } = await db
+      .from("teams")
+      .select("brand_kit")
+      .eq("id", data.teamId)
+      .maybeSingle();
+    const { parseBrandKit } = await import("@/lib/brand-kit");
+    return { kit: parseBrandKit(team?.brand_kit), canEdit: canManage(role) };
+  });
+
+/** Saves a team's brand kit (owner and admins). Its logo must be in the team's folder. */
+export const saveTeamBrandKit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => TeamId.extend({ kit: z.unknown() }).parse(d))
+  .handler(async ({ data, context }) => {
+    if (!canManage(await myRole(data.teamId, context.userId))) {
+      throw new Error("Only the team's owner and admins can change its brand kit");
+    }
+    const { parseBrandKit } = await import("@/lib/brand-kit");
+    const kit = parseBrandKit(data.kit);
+    const folder = `teams/${data.teamId}/brand/`;
+    if (kit.logo && (!kit.logo.path.startsWith(folder) || kit.logo.path.includes(".."))) {
+      throw new Error("The team's logo has to be uploaded to the team");
+    }
+    const db = await admin();
+    const { error } = await db.from("teams").update({ brand_kit: kit }).eq("id", data.teamId);
+    if (error) throw new Error(error.message);
+    return { kit };
+  });
+
+/** This month's exports: your own allowance and each of your teams'. */
+export const listAllowances = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { exportAllowance } = await import("@/lib/projects.functions");
+    const { data: mine } = await context.supabase
+      .from("team_members")
+      .select("team_id")
+      .eq("user_id", context.userId);
+    const personal = await exportAllowance(context.userId, null);
+    const teams = await Promise.all(
+      (mine ?? []).map((m) => exportAllowance(context.userId, m.team_id)),
+    );
+    teams.sort((a, b) => (a.team?.name ?? "").localeCompare(b.team?.name ?? ""));
+    return { personal, teams };
+  });

@@ -436,6 +436,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          brand_kit: Json
           id: string
           name: string
           plan: string
@@ -444,6 +445,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          brand_kit?: Json
           id?: string
           name: string
           plan?: string
@@ -452,6 +454,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          brand_kit?: Json
           id?: string
           name?: string
           plan?: string
@@ -497,6 +500,7 @@ export type Database = {
           project_id: string
           stage_message: string | null
           status: Database["public"]["Enums"]["job_status"]
+          team_id: string | null
           updated_at: string
           user_id: string
         }
@@ -510,6 +514,7 @@ export type Database = {
           project_id: string
           stage_message?: string | null
           status?: Database["public"]["Enums"]["job_status"]
+          team_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -523,6 +528,7 @@ export type Database = {
           project_id?: string
           stage_message?: string | null
           status?: Database["public"]["Enums"]["job_status"]
+          team_id?: string | null
           updated_at?: string
           user_id?: string
         }

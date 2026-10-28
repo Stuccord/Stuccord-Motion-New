@@ -126,13 +126,17 @@ export async function saveBrandKit(kit: BrandKit) {
 
 /**
  * Saves a logo picture as a PNG (at most 1024 px wide, transparency kept) in
- * the user's folder and returns its storage path. Any image the browser can
- * open works, SVG included (it's drawn to PNG here).
+ * the user's folder (or `folder`, e.g. a team's) and returns its storage
+ * path. Any image the browser can open works, SVG included (it's drawn to
+ * PNG here).
  */
-export async function uploadLogo(file: File): Promise<string> {
-  const { data } = await supabase.auth.getSession();
-  const userId = data.session?.user.id;
-  if (!userId) throw new Error("You're not signed in");
+export async function uploadLogo(file: File, folder?: string): Promise<string> {
+  let base = folder;
+  if (!base) {
+    const { data } = await supabase.auth.getSession();
+    base = data.session?.user.id;
+  }
+  if (!base) throw new Error("You're not signed in");
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
@@ -150,7 +154,7 @@ export async function uploadLogo(file: File): Promise<string> {
     const png = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
     if (!png) throw new Error("Couldn't read that picture");
     // A new name each time, so an old cached copy is never shown.
-    const path = `${userId}/brand/logo-${Date.now()}.png`;
+    const path = `${base}/brand/logo-${Date.now()}.png`;
     const { error } = await supabase.storage
       .from("raw-clips")
       .upload(path, png, { contentType: "image/png", upsert: true });

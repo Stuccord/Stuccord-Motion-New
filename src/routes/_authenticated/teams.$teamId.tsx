@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { BrandKitSettings, type BrandKitSource } from "@/components/settings-brand-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +54,8 @@ import {
   renameTeam,
   revokeInvite,
   transferOwnership,
+  getTeamBrandKit,
+  saveTeamBrandKit,
   type TeamMember,
 } from "@/lib/teams.functions";
 import { INVITE_DAYS, ROLE_HINT, ROLE_LABEL, type TeamRole } from "@/lib/plans";
@@ -95,6 +98,23 @@ function TeamPage() {
   const transfer = useServerFn(transferOwnership);
   const leave = useServerFn(leaveTeam);
   const destroy = useServerFn(deleteTeam);
+  const loadKit = useServerFn(getTeamBrandKit);
+  const storeKit = useServerFn(saveTeamBrandKit);
+  const canEditKit = q.data?.role === "owner" || q.data?.role === "admin";
+  // The team's brand kit, edited with the same screen as a personal one.
+  const kitSource = useMemo<BrandKitSource>(
+    () => ({
+      load: async () => (await loadKit({ data: { teamId } })).kit,
+      save: async (kit) => {
+        await storeKit({ data: { teamId, kit } });
+        void qc.invalidateQueries({ queryKey: ["brand-kit"] });
+      },
+      folder: `teams/${teamId}`,
+      readOnly: !canEditKit,
+      savedNote: "The team's previews and next exports use it.",
+    }),
+    [teamId, canEditKit, loadKit, storeKit, qc],
+  );
 
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
@@ -471,6 +491,22 @@ function TeamPage() {
             )}
           </section>
         )}
+
+        {/* Brand kit */}
+        <section
+          className="rounded-2xl bg-white border border-black/5 p-5 space-y-3"
+          data-team-brand-kit
+        >
+          <div>
+            <div className="text-sm font-semibold">Brand kit</div>
+            <div className="text-xs text-neutral-500 mt-0.5">
+              Caption font and colours, the hook&apos;s style and the logo for all of this
+              team&apos;s projects, whoever edits or exports them.
+              {!canEditKit && " Only the owner and admins can change it."}
+            </div>
+          </div>
+          <BrandKitSettings source={kitSource} />
+        </section>
 
         {/* Leave / delete */}
         <section className="rounded-2xl bg-white border border-rose-200 p-5 flex flex-wrap items-center justify-between gap-3">

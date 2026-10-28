@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import logoUrl from "@/assets/logo.png";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
+import { useWorkspace } from "@/lib/use-workspace";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { cn } from "@/lib/utils";
@@ -93,9 +94,11 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const fetchStats = useServerFn(getUsageStats);
+  // The allowance of the workspace you're in (a team's is shared by its members).
+  const ws = useWorkspace();
   const { data: usage } = useQuery({
-    queryKey: ["usage-stats"],
-    queryFn: () => fetchStats(),
+    queryKey: ["usage-stats", ws.id],
+    queryFn: () => fetchStats({ data: { workspace: ws.id } }),
     staleTime: 30_000,
   });
   const used = usage?.rendersThisMonth ?? 0;
@@ -195,10 +198,11 @@ export function AppShell({
         <div className="mx-1 relative overflow-hidden rounded-xl border border-primary/20 bg-card p-3.5 shadow-sm">
           <div className="relative">
             <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
-              <Gift className="w-3 h-3" /> Free plan
+              <Gift className="w-3 h-3" /> {usage?.allowance.plan ?? "Free"} plan
             </div>
             <div className="mt-2 text-xs text-foreground leading-relaxed">
-              <span className="font-semibold tabular-nums">{used} of {cap}</span> exports used this month
+              <span className="font-semibold tabular-nums">{used} of {cap}</span>{" "}
+              {ws.team ? `${ws.team.name} exports` : "exports"} used this month
             </div>
             <div className="mt-2 h-1.5 rounded-full bg-surface overflow-hidden border border-border">
               <div className="h-full bg-primary transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]" style={{ width: `${usePct}%` }} />

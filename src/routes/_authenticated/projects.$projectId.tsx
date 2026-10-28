@@ -145,6 +145,7 @@ import { cn } from "@/lib/utils";
 import logoUrl from "@/assets/logo.png";
 import { ExportDialog, type ExportSettings } from "@/components/export-dialog";
 import { useProjectPresence } from "@/lib/use-presence";
+import { getTeamBrandKit } from "@/lib/teams.functions";
 import { PublishDialog } from "@/components/publish-dialog";
 import {
   EditorShell,
@@ -271,6 +272,7 @@ function EditorPage() {
   const transformFn = useServerFn(updateClipTransform);
   const recordThumbFn = useServerFn(setClipThumbnail);
   const durationFn = useServerFn(updateClipDuration);
+  const loadTeamKit = useServerFn(getTeamBrandKit);
   const splitFn = useServerFn(splitClip);
   const duplicateFn = useServerFn(duplicateClip);
   const startBrowserRenderFn = useServerFn(startBrowserRender);
@@ -725,12 +727,17 @@ function EditorPage() {
     })();
   }, [data, signClip]);
 
-  // The account's brand kit (captions, hook and logo in the preview and the
-  // browser export), with a link to its logo; the link is renewed hourly.
+  // The brand kit (captions, hook and logo in the preview and the browser
+  // export): the team's for a team project, else the account's; with a link
+  // to its logo, renewed hourly.
+  const kitTeam = data?.project.team_id ?? null;
   const brand = useQuery({
-    queryKey: ["brand-kit"],
+    queryKey: ["brand-kit", kitTeam ?? "personal"],
+    enabled: !!data,
     queryFn: async () => {
-      const kit = await loadBrandKit();
+      const kit = kitTeam
+        ? (await loadTeamKit({ data: { teamId: kitTeam } })).kit
+        : await loadBrandKit();
       const logoUrl = kit.logo
         ? await signClip({ data: { path: kit.logo.path } })
             .then((r) => r.url)

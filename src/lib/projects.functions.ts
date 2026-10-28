@@ -7,7 +7,7 @@ import { parseTransform } from "@/lib/clip-transform";
 import { parseBrandKit } from "@/lib/brand-kit";
 import { isAudioRole } from "@/lib/media-kind";
 import { PERSONAL, inFolder, projectFolder, type ProjectAccess } from "@/lib/workspace";
-import type { TeamRole } from "@/lib/plans";
+import { planFor, type TeamRole } from "@/lib/plans";
 
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
@@ -367,7 +367,6 @@ export const getUsageStats = createServerFn({ method: "GET" })
   .handler(async ({ data: input, context }) => {
     const team = input.workspace === PERSONAL ? null : input.workspace;
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const start30 = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
     const start30Iso = new Date(start30.getFullYear(), start30.getMonth(), start30.getDate()).toISOString();
 
@@ -377,26 +376,17 @@ export const getUsageStats = createServerFn({ method: "GET" })
     pq = team ? pq.eq("team_id", team) : pq.is("team_id", null).eq("user_id", context.userId);
     const { data: projects } = await pq;
     const ids = (projects ?? []).map((p) => p.id);
-    const [{ data: jobs30 }, { data: jobsMonth }] = await Promise.all([
-      // The chart: exports of this workspace's projects.
-      ids.length
-        ? context.supabase
-            .from("render_jobs")
-            .select("id, status, created_at, updated_at")
-            .in("project_id", ids)
-            .gte("created_at", start30Iso)
-        : Promise.resolve({ data: [] as { created_at: string }[] }),
-      // The monthly allowance is the caller's own exports.
-      context.supabase
-        .from("render_jobs")
-        .select("id, status, created_at")
-        .eq("user_id", context.userId)
-        .gte("created_at", startOfMonth),
-    ]);
+    // The chart: exports of this workspace's projects.
+    const { data: jobs30 } = ids.length
+      ? await context.supabase
+          .from("render_jobs")
+          .select("id, status, created_at, updated_at")
+          .in("project_id", ids)
+          .gte("created_at", start30Iso)
+      : { data: [] as { created_at: string }[] };
 
     const projectsList = projects ?? [];
     const jobs30List = jobs30 ?? [];
-    const jobsMonthList = jobsMonth ?? [];
 
     // 30-day daily series of completed renders
     const days: { date: string; renders: number }[] = [];
@@ -431,16 +421,16 @@ export const getUsageStats = createServerFn({ method: "GET" })
     const totalSeconds = readyProjects.reduce((sum, p) => sum + (p.duration_seconds ?? 30), 0);
     const totalMinutes = Math.round(totalSeconds / 60);
 
-    const rendersThisMonth = jobsMonthList.filter(
-      (j) => j.status === "completed" || j.status === "rendering" || j.status === "planning" || j.status === "transcribing" || j.status === "queued",
-    ).length;
+    // This workspace's allowance (the team's, or the caller's own).
+    const allowance = await exportAllowance(context.userId, team);
 
     return {
       totalProjects: projectsList.length,
       readyProjects: readyProjects.length,
       totalMinutes,
-      rendersThisMonth,
-      renderCap: 5,
+      rendersThisMonth: allowance.used,
+      renderCap: allowance.cap,
+      allowance,
       days,
       formatMix,
       topPreset: topPreset ? { preset: topPreset[0], count: topPreset[1] } : null,
@@ -1461,6 +1451,67 @@ export type CloudRenderInput = {
   music: { enabled: boolean; volume: number };
 };
 
+/** The first moment of this month (UTC): allowances reset then. */
+function monthStartIso(): string {
+  const d = new Date();
+  d.setUTCDate(1);
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+export type ExportAllowance = {
+  used: number;
+  cap: number;
+  /** The team whose allowance it is; null for the person's own. */
+  team: { id: string; name: string } | null;
+  plan: string;
+};
+
+/**
+ * This month's exports against an allowance: a team's (exports of its
+ * projects, from its plan) or a person's own (their exports outside teams).
+ * Failed exports don't count. Counted with the admin client so exports of
+ * projects that have since moved or gone still count.
+ */
+export async function exportAllowance(userId: string, teamId: string | null): Promise<ExportAllowance> {
+  const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+  let q = admin
+    .from("render_jobs")
+    .select("id", { count: "exact", head: true })
+    .neq("status", "failed")
+    .gte("created_at", monthStartIso());
+  if (teamId) {
+    const { data: team } = await admin
+      .from("teams")
+      .select("id, name, plan")
+      .eq("id", teamId)
+      .maybeSingle();
+    const plan = planFor(team?.plan);
+    const { count, error } = await q.eq("team_id", teamId);
+    if (error) throw new Error(error.message);
+    return {
+      used: count ?? 0,
+      cap: plan.teamExports,
+      team: { id: teamId, name: team?.name ?? "This team" },
+      plan: plan.label,
+    };
+  }
+  const plan = planFor("free");
+  q = q.eq("user_id", userId).is("team_id", null);
+  const { count, error } = await q;
+  if (error) throw new Error(error.message);
+  return { used: count ?? 0, cap: plan.personalExports, team: null, plan: plan.label };
+}
+
+function assertAllowanceLeft(a: ExportAllowance) {
+  if (a.used < a.cap) return;
+  throw new Error(
+    a.team
+      ? `${a.team.name} has used all ${a.cap} team exports for this month on the ${a.plan} plan. Exporting opens again on the 1st; you can keep editing meanwhile.`
+      : `You've used all ${a.cap} exports for this month on the ${a.plan.toLowerCase()} plan. Exporting opens again on the 1st; you can keep editing meanwhile.`,
+  );
+}
+
 /**
  * Starts a cloud export of a project the user can edit (theirs, or a team's
  * as an Editor or up): checks the monthly cap, makes the job and hands it to
@@ -1473,30 +1524,14 @@ export async function startCloudRender(
   userId: string,
   data: CloudRenderInput,
 ) {
-  // Enforce the free plan's monthly render cap.
-  // Counts every job created this billing month except failed ones so
-  // retries after a hard failure don't burn quota. Stale jobs are failed
-  // first so a dead render doesn't count against the cap.
-  await reapStaleRenderJobs(userId);
-  const RENDER_CAP = 5;
-  const monthStart = new Date();
-  monthStart.setUTCDate(1);
-  monthStart.setUTCHours(0, 0, 0, 0);
-  const { count: usedThisMonth, error: countErr } = await db
-    .from("render_jobs")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .neq("status", "failed")
-    .gte("created_at", monthStart.toISOString());
-  if (countErr) throw new Error(countErr.message);
-  if ((usedThisMonth ?? 0) >= RENDER_CAP) {
-    throw new Error(
-      `You've used all ${RENDER_CAP} exports for this month on the free plan. Exporting opens again on the 1st; you can keep editing meanwhile.`,
-    );
-  }
-
   // Check access + fetch payload for worker
   const { project, folder } = await projectForEdit(db, data.project_id, userId);
+
+  // The monthly allowance: the team's for a team project, else the
+  // person's. Stale jobs are failed first so a dead render doesn't count;
+  // failed exports never count, so retrying after a failure is free.
+  await reapStaleRenderJobs(userId);
+  assertAllowanceLeft(await exportAllowance(userId, project.team_id));
 
   const { data: clips, error: cErr } = await db
     .from("clips")
@@ -1515,6 +1550,7 @@ export async function startCloudRender(
     .insert({
       project_id: project.id,
       user_id: userId,
+      team_id: project.team_id,
       status: "queued",
       progress: 0,
       stage_message: "Queued for editing",
@@ -1585,11 +1621,22 @@ export async function startCloudRender(
       .createSignedUploadUrl(outputPath);
     if (uploadErr) throw new Error(uploadErr.message);
 
-    // The account's brand kit, read fresh (the sign-in token may be older
-    // than the last save), with a link to its logo for the worker.
+    // The brand kit: the team's for a team project, else the account's
+    // (read fresh: the sign-in token may be older than the last save), with a
+    // link to its logo for the worker.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: owner } = await supabaseAdmin.auth.admin.getUserById(userId);
-    const kit = parseBrandKit(owner?.user?.user_metadata?.brand_kit);
+    let kit;
+    if (project.team_id) {
+      const { data: team } = await supabaseAdmin
+        .from("teams")
+        .select("brand_kit")
+        .eq("id", project.team_id)
+        .maybeSingle();
+      kit = parseBrandKit(team?.brand_kit);
+    } else {
+      const { data: owner } = await supabaseAdmin.auth.admin.getUserById(userId);
+      kit = parseBrandKit(owner?.user?.user_metadata?.brand_kit);
+    }
     let logoUrl: string | null = null;
     if (kit.logo) {
       const { data: signedLogo } = await db.storage
@@ -1755,28 +1802,13 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await reapStaleRenderJobs(context.userId);
-    const RENDER_CAP = 5;
-    const monthStart = new Date();
-    monthStart.setUTCDate(1);
-    monthStart.setUTCHours(0, 0, 0, 0);
-    const { count: usedThisMonth } = await context.supabase
-      .from("render_jobs")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", context.userId)
-      .neq("status", "failed")
-      .gte("created_at", monthStart.toISOString());
-    if ((usedThisMonth ?? 0) >= RENDER_CAP) {
-      throw new Error(
-        `You've used all ${RENDER_CAP} exports for this month on the free plan. Exporting opens again on the 1st; you can keep editing meanwhile.`,
-      );
-    }
-
     const { project, folder } = await projectForEdit(
       context.supabase,
       data.project_id,
       context.userId,
     );
+    await reapStaleRenderJobs(context.userId);
+    assertAllowanceLeft(await exportAllowance(context.userId, project.team_id));
 
     const { data: clips, error: cErr } = await context.supabase
       .from("clips")
@@ -1802,6 +1834,7 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       .insert({
         project_id: data.project_id,
         user_id: context.userId,
+        team_id: project.team_id,
         status: "rendering",
         progress: 5,
         stage_message: "Rendering in browser",
