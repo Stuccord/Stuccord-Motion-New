@@ -28,8 +28,10 @@ import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authen
 import { Route as ApiPublicRenderWebhookRouteImport } from './routes/api/public/render-webhook'
 import { Route as ApiPublicPublishingTickRouteImport } from './routes/api/public/publishing-tick'
 import { Route as ApiPublicPublishWebhookRouteImport } from './routes/api/public/publish-webhook'
+import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams.$teamId'
 import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects.new'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects.$projectId'
+import { Route as AuthenticatedJoinTokenRouteImport } from './routes/_authenticated/join.$token'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 import { Route as ApiV1ProjectsIndexRouteImport } from './routes/api/v1/projects.index'
@@ -139,6 +141,12 @@ const ApiPublicPublishWebhookRoute = ApiPublicPublishWebhookRouteImport.update({
   path: '/api/public/publish-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedTeamsTeamIdRoute =
+  AuthenticatedTeamsTeamIdRouteImport.update({
+    id: '/teams/$teamId',
+    path: '/teams/$teamId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsNewRoute =
   AuthenticatedProjectsNewRouteImport.update({
     id: '/projects/new',
@@ -151,6 +159,11 @@ const AuthenticatedProjectsProjectIdRoute =
     path: '/projects/$projectId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedJoinTokenRoute = AuthenticatedJoinTokenRouteImport.update({
+  id: '/join/$token',
+  path: '/join/$token',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const Char91DotmcpChar93InvokeToolToolRoute =
   Char91DotmcpChar93InvokeToolToolRouteImport.update({
     id: '/.mcp/invoke-tool/$tool',
@@ -225,8 +238,10 @@ export interface FileRoutesByFullPath {
   '/templates': typeof AuthenticatedTemplatesRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
+  '/join/$token': typeof AuthenticatedJoinTokenRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
@@ -257,8 +272,10 @@ export interface FileRoutesByTo {
   '/templates': typeof AuthenticatedTemplatesRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
+  '/join/$token': typeof AuthenticatedJoinTokenRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
@@ -291,8 +308,10 @@ export interface FileRoutesById {
   '/_authenticated/templates': typeof AuthenticatedTemplatesRoute
   '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
+  '/_authenticated/join/$token': typeof AuthenticatedJoinTokenRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
@@ -325,8 +344,10 @@ export interface FileRouteTypes {
     | '/templates'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
+    | '/join/$token'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/teams/$teamId'
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
@@ -357,8 +378,10 @@ export interface FileRouteTypes {
     | '/templates'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
+    | '/join/$token'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/teams/$teamId'
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
@@ -390,8 +413,10 @@ export interface FileRouteTypes {
     | '/_authenticated/templates'
     | '/.lovable/oauth/consent'
     | '/.mcp/invoke-tool/$tool'
+    | '/_authenticated/join/$token'
     | '/_authenticated/projects/$projectId'
     | '/_authenticated/projects/new'
+    | '/_authenticated/teams/$teamId'
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
@@ -564,6 +589,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPublishWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/teams/$teamId': {
+      id: '/_authenticated/teams/$teamId'
+      path: '/teams/$teamId'
+      fullPath: '/teams/$teamId'
+      preLoaderRoute: typeof AuthenticatedTeamsTeamIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/projects/new': {
       id: '/_authenticated/projects/new'
       path: '/projects/new'
@@ -576,6 +608,13 @@ declare module '@tanstack/react-router' {
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId'
       preLoaderRoute: typeof AuthenticatedProjectsProjectIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/join/$token': {
+      id: '/_authenticated/join/$token'
+      path: '/join/$token'
+      fullPath: '/join/$token'
+      preLoaderRoute: typeof AuthenticatedJoinTokenRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/.mcp/invoke-tool/$tool': {
@@ -659,8 +698,10 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedHelpRoute: typeof AuthenticatedHelpRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTemplatesRoute: typeof AuthenticatedTemplatesRoute
+  AuthenticatedJoinTokenRoute: typeof AuthenticatedJoinTokenRoute
   AuthenticatedProjectsProjectIdRoute: typeof AuthenticatedProjectsProjectIdRoute
   AuthenticatedProjectsNewRoute: typeof AuthenticatedProjectsNewRoute
+  AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedPublishingIndexRoute: typeof AuthenticatedPublishingIndexRoute
   AuthenticatedPublishingConnectPlatformRoute: typeof AuthenticatedPublishingConnectPlatformRoute
@@ -674,8 +715,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedHelpRoute: AuthenticatedHelpRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTemplatesRoute: AuthenticatedTemplatesRoute,
+  AuthenticatedJoinTokenRoute: AuthenticatedJoinTokenRoute,
   AuthenticatedProjectsProjectIdRoute: AuthenticatedProjectsProjectIdRoute,
   AuthenticatedProjectsNewRoute: AuthenticatedProjectsNewRoute,
+  AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedPublishingIndexRoute: AuthenticatedPublishingIndexRoute,
   AuthenticatedPublishingConnectPlatformRoute:

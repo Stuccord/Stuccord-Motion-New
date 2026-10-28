@@ -356,6 +356,106 @@ export type Database = {
           },
         ]
       }
+      team_invites: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          revoked_at: string | null
+          role: string
+          team_id: string
+          token_hash: string
+          uses: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          revoked_at?: string | null
+          role: string
+          team_id: string
+          token_hash: string
+          uses?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          revoked_at?: string | null
+          role?: string
+          team_id?: string
+          token_hash?: string
+          uses?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_invites_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_members: {
+        Row: {
+          created_at: string
+          role: string
+          team_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          role: string
+          team_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          role?: string
+          team_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          plan: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          plan?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          plan?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tts_usage: {
         Row: {
           characters: number
@@ -477,7 +577,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      team_role: {
+        Args: { team: string }
+        Returns: string
+      }
     }
     Enums: {
       aspect_ratio: "9:16" | "16:9" | "1:1"

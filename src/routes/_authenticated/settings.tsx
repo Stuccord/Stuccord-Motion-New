@@ -11,11 +11,12 @@ import { readPrefs, savePrefs, type NotificationPrefs } from "@/lib/notification
 import { SecuritySettings } from "@/components/settings-security";
 import { BrandKitSettings } from "@/components/settings-brand-kit";
 import { ApiKeySettings } from "@/components/settings-api-keys";
+import { TeamSettings } from "@/components/settings-teams";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { User, Palette, Bell, Shield, KeyRound } from "lucide-react";
+import { User, Palette, Bell, Shield, KeyRound, Users } from "lucide-react";
 
-const TABS = ["profile", "brand", "notifications", "security", "api"] as const;
+const TABS = ["profile", "brand", "teams", "notifications", "security", "api"] as const;
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Stuccord Motion" }] }),
@@ -53,6 +54,7 @@ function SettingsPage() {
           {[
             { value: "profile", label: "Profile", icon: User },
             { value: "brand", label: "Brand kit", icon: Palette },
+            { value: "teams", label: "Teams", icon: Users },
             { value: "notifications", label: "Notifications", icon: Bell },
             { value: "security", label: "Security", icon: Shield },
             { value: "api", label: "API keys", icon: KeyRound },
@@ -153,6 +155,18 @@ function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <ApiKeySettings />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="teams" className="mt-0">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold">Teams</CardTitle>
+                <CardDescription>Make a team and invite people to it.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TeamSettings />
               </CardContent>
             </Card>
           </TabsContent>
