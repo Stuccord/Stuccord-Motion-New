@@ -5,8 +5,13 @@
 // YouTube needs YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET (a Google Cloud
 // OAuth client with the YouTube Data API v3 turned on) and the redirect
 // address <PUBLIC_APP_URL>/publishing/connect/youtube added to that client.
+// TikTok is in tiktok.server.ts.
 
 import type { Platform } from "@/lib/publishing-shared";
+import { ReconnectNeeded } from "./reconnect";
+import { tiktok } from "./tiktok.server";
+
+export { ReconnectNeeded };
 
 export type Tokens = {
   access_token: string;
@@ -17,10 +22,13 @@ export type Tokens = {
 };
 
 export type Profile = { external_id: string; name: string; avatar_url: string | null };
-export type PostStats = { views: number | null; likes: number | null; comments: number | null };
-
-/** The platform no longer accepts this sign-in; the user has to connect again. */
-export class ReconnectNeeded extends Error {}
+export type PostStats = {
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  /** The post's link, when the platform gives one with the counts. */
+  url?: string | null;
+};
 
 export type Provider = {
   configured(): boolean;
@@ -30,7 +38,9 @@ export type Provider = {
   profile(accessToken: string): Promise<Profile>;
   /** Stats by the platform's video id; videos that are gone are left out. */
   stats(accessToken: string, ids: string[]): Promise<Map<string, PostStats>>;
+  /** Signs out; YouTube takes the refresh token, TikTok the access token. */
   revoke(token: string): Promise<void>;
+  revokeWith: "refresh" | "access";
 };
 
 /** Where a platform sends the user back after they sign in. */
@@ -157,9 +167,10 @@ const youtube: Provider = {
       signal: AbortSignal.timeout(10_000),
     }).catch(() => undefined);
   },
+  revokeWith: "refresh",
 };
 
-const PROVIDERS: Partial<Record<Platform, Provider>> = { youtube };
+const PROVIDERS: Partial<Record<Platform, Provider>> = { youtube, tiktok };
 
 export function provider(platform: Platform): Provider {
   const p = PROVIDERS[platform];

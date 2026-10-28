@@ -33,6 +33,11 @@ services:
         sync: false
       - key: YOUTUBE_CLIENT_SECRET
         sync: false
+      # Publishing to TikTok: a TikTok for Developers app (Login Kit + Content Posting)
+      - key: TIKTOK_CLIENT_KEY
+        sync: false
+      - key: TIKTOK_CLIENT_SECRET
+        sync: false
 
   - type: web
     name: stuccord-render-worker

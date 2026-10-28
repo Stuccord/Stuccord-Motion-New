@@ -1,4 +1,4 @@
-// Posting finished exports to social platforms, and the once-a-minute tick
+// Posting finished exports to social platforms (YouTube and TikTok), and the once-a-minute tick
 // that tells the app to send scheduled posts.
 //
 // The app signs each /publish request (like /jobs) and sends a short-lived
@@ -29,13 +29,19 @@ const isHttpUrl = (s) => {
 export function validatePublishPayload(p) {
   if (!p || typeof p !== "object") return "Payload must be an object";
   if (typeof p.post_id !== "string" || !UUID.test(p.post_id)) return "Invalid post_id";
-  if (p.platform !== "youtube") return "Posting there isn't supported yet";
+  if (p.platform !== "youtube" && p.platform !== "tiktok") return "Posting there isn't supported yet";
   if (typeof p.access_token !== "string" || !p.access_token) return "Missing access_token";
   if (!isHttpUrl(p.video_url)) return "Invalid video_url";
   if (p.cover_url != null && !isHttpUrl(p.cover_url)) return "Invalid cover_url";
   if (!isHttpUrl(p.callback_url)) return "Invalid callback_url";
-  if (typeof p.title !== "string" || !p.title.trim()) return "Missing title";
-  if (!["public", "unlisted", "private"].includes(p.privacy)) return "Invalid privacy";
+  if (p.platform === "youtube") {
+    if (typeof p.title !== "string" || !p.title.trim()) return "Missing title";
+    if (!["public", "unlisted", "private"].includes(p.privacy)) return "Invalid privacy";
+  } else {
+    const o = p.options;
+    if (!o || (o.mode !== "direct" && o.mode !== "draft")) return "Invalid TikTok options";
+    if (o.mode === "direct" && !TIKTOK_PRIVACY.includes(o.privacy_level)) return "Invalid TikTok privacy";
+  }
   return null;
 }
 
@@ -159,6 +165,132 @@ async function youtubeCover(p, videoId, log) {
   }
 }
 
+// ---------- TikTok ----------
+//
+// The file is sent in pieces of 10 MB (TikTok takes 5-64 MB; the last piece
+// takes whatever is left, and a video under 10 MB goes in one piece). Then
+// TikTok processes it; this waits up to 10 minutes for the result. If it's
+// still processing, the post is reported as sent and the app checks on it
+// later (src/lib/publishing/dispatch.server.ts, resolvePendingPosts).
+
+const TT_API = "https://open.tiktokapis.com/v2";
+const TIKTOK_PRIVACY = ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR", "SELF_ONLY"];
+const TT_CHUNK = 10 * 1024 * 1024;
+const TT_WAIT_MS = 10 * 60 * 1000;
+// How often to ask TikTok; TIKTOK_POLL_MS only exists for tests.
+const TT_POLL_MS = Number(process.env.TIKTOK_POLL_MS) || 5000;
+
+const TIKTOK_ERRORS = {
+  access_token_invalid: "TikTok stopped accepting this sign-in. Reconnect the account.",
+  scope_not_authorized: "Reconnect TikTok and allow posting: a permission is missing.",
+  spam_risk_too_many_posts: "TikTok's daily post limit for this account is reached. Try again tomorrow.",
+  spam_risk_user_banned_from_posting: "TikTok isn't letting this account post right now.",
+  reached_active_user_cap: "Stuccord's daily TikTok posting allowance is used up. Try again tomorrow.",
+  unaudited_client_can_only_post_to_private_accounts: "TikTok only allows private posts from this app until it's approved.",
+  privacy_level_option_mismatch: "That 'who can see' choice isn't available for this account any more.",
+  rate_limit_exceeded: "TikTok is busy. Try again in a minute.",
+  file_format_check_failed: "TikTok couldn't read this video. Try exporting it again.",
+  duration_check_failed: "The video is too long or too short for this TikTok account.",
+  frame_rate_check_failed: "TikTok doesn't accept this video's frame rate.",
+  picture_size_check_failed: "TikTok doesn't accept this video's size.",
+};
+const tiktokText = (code, fallback) =>
+  TIKTOK_ERRORS[code] || `TikTok: ${fallback || code}`.slice(0, 300);
+
+async function tiktokCall(path, token, body) {
+  const res = await fetch(`${TT_API}${path}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json; charset=UTF-8" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60 * 1000),
+  });
+  const raw = await res.text();
+  let j = {};
+  try {
+    j = JSON.parse(raw);
+  } catch {}
+  const code = j?.error?.code || (res.ok ? "ok" : `http_${res.status}`);
+  if (code !== "ok") throw new Error(tiktokText(res.status === 401 ? "access_token_invalid" : code, j?.error?.message));
+  return { data: j.data || {}, raw };
+}
+
+async function tiktokUpload(p, file, size, type, log) {
+  const o = p.options;
+  const count = Math.max(1, Math.floor(size / TT_CHUNK));
+  const chunk = count === 1 ? size : TT_CHUNK;
+  const source_info = { source: "FILE_UPLOAD", video_size: size, chunk_size: chunk, total_chunk_count: count };
+  const caption = String(p.caption || "").trim() || String(p.title || "").trim();
+  const { data } =
+    o.mode === "direct"
+      ? await tiktokCall("/post/publish/video/init/", p.access_token, {
+          post_info: {
+            title: caption.slice(0, 2200),
+            privacy_level: o.privacy_level,
+            disable_comment: !o.allow_comment,
+            disable_duet: !o.allow_duet,
+            disable_stitch: !o.allow_stitch,
+            brand_organic_toggle: !!o.brand_organic,
+            brand_content_toggle: !!o.brand_content,
+          },
+          source_info,
+        })
+      : await tiktokCall("/post/publish/inbox/video/init/", p.access_token, { source_info });
+  if (!data.upload_url || !data.publish_id) throw new Error("TikTok didn't start the upload");
+  const publishId = String(data.publish_id);
+
+  for (let i = 0; i < count; i++) {
+    const start = i * chunk;
+    const end = i === count - 1 ? size - 1 : start + chunk - 1;
+    let ok = false;
+    for (let attempt = 0; attempt < 4 && !ok; attempt++) {
+      try {
+        const res = await fetch(data.upload_url, {
+          method: "PUT",
+          headers: {
+            "content-type": type,
+            "content-length": String(end - start + 1),
+            "content-range": `bytes ${start}-${end}/${size}`,
+          },
+          body: Readable.toWeb(fs.createReadStream(file, { start, end })),
+          duplex: "half",
+          signal: AbortSignal.timeout(30 * 60 * 1000),
+        });
+        if (res.ok) ok = true;
+        else if (res.status < 500) throw Object.assign(new Error(`TikTok refused the upload (${res.status})`), { final: true });
+        else log(`piece ${i + 1} failed (${res.status}), retrying`);
+      } catch (e) {
+        if (e.final) throw e;
+        log(`piece ${i + 1} interrupted (${e?.message || e}), retrying`);
+      }
+      if (!ok) await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+    }
+    if (!ok) throw new Error("The upload to TikTok kept failing. Try again later.");
+  }
+  log(`uploaded in ${count} piece(s), waiting for TikTok`);
+
+  // Wait for TikTok to process it.
+  const until = Date.now() + TT_WAIT_MS;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, TT_POLL_MS));
+    let st;
+    try {
+      st = await tiktokCall("/post/publish/status/fetch/", p.access_token, { publish_id: publishId });
+    } catch (e) {
+      log(`status check failed: ${e?.message || e}`);
+      continue;
+    }
+    const status = st.data.status;
+    if (status === "FAILED") throw new Error(tiktokText(st.data.fail_reason, "the post failed"));
+    if (status === "SEND_TO_USER_INBOX") return { publishId, draft: true };
+    if (status === "PUBLISH_COMPLETE") {
+      // A 64-bit id: read as text so it isn't rounded.
+      const m = st.raw.match(/"publicaly_available_post_id"\s*:\s*\[\s*"?(\d+)/);
+      return { publishId, postId: m ? m[1] : null };
+    }
+  }
+  return { publishId };
+}
+
 // ---------- the endpoint and the tick ----------
 
 export function registerPublishing(app, { verifySignature, callback, signBody }) {
@@ -185,16 +317,29 @@ export function registerPublishing(app, { verifySignature, callback, signBody })
         const type = (await downloadTo(p.video_url, file)).split(";")[0].trim();
         const { size } = await fsp.stat(file);
         if (!size) throw new Error("The video file is empty");
-        log(`uploading ${(size / 1e6).toFixed(1)} MB to YouTube`);
-        const id = await youtubeUpload(p, file, size, type.startsWith("video/") ? type : "video/mp4", log);
-        if (p.cover_url) await youtubeCover(p, id, log);
-        log(`posted ${id}`);
-        await callback(p.callback_url, {
-          post_id: p.post_id,
-          status: "published",
-          external_id: id,
-          external_url: `https://www.youtube.com/watch?v=${id}`,
-        });
+        const videoType = type.startsWith("video/") ? type : "video/mp4";
+        if (p.platform === "tiktok") {
+          log(`uploading ${(size / 1e6).toFixed(1)} MB to TikTok (${p.options.mode})`);
+          const r = await tiktokUpload(p, file, size, videoType, log);
+          log(r.draft ? "sent to TikTok drafts" : `posted ${r.postId || "(TikTok still processing)"}`);
+          await callback(p.callback_url, {
+            post_id: p.post_id,
+            status: "published",
+            external_id: r.postId || null,
+            external_ref: r.draft || r.postId ? null : r.publishId,
+          });
+        } else {
+          log(`uploading ${(size / 1e6).toFixed(1)} MB to YouTube`);
+          const id = await youtubeUpload(p, file, size, videoType, log);
+          if (p.cover_url) await youtubeCover(p, id, log);
+          log(`posted ${id}`);
+          await callback(p.callback_url, {
+            post_id: p.post_id,
+            status: "published",
+            external_id: id,
+            external_url: `https://www.youtube.com/watch?v=${id}`,
+          });
+        }
       } catch (e) {
         log(`failed: ${e?.message || e}`);
         await callback(p.callback_url, {

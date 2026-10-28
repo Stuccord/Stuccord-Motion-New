@@ -14,9 +14,11 @@ import {
   SCHEDULE_MAX_AHEAD_DAYS,
   SCHEDULE_MIN_AHEAD_MS,
   TITLE_MAX,
+  TIKTOK_CAPTION_MAX,
   type Platform,
   type SocialAccount,
   type SocialPost,
+  type TikTokCreatorInfo,
 } from "@/lib/publishing-shared";
 
 /** Accounts a user can connect on one platform. */
@@ -147,11 +149,12 @@ export const disconnectAccount = createServerFn({ method: "POST" })
     if (!account) throw new Error("Account not found");
     const { provider, openToken } = await server();
     try {
-      const token = await openToken(
-        account.refresh_token_enc ?? account.access_token_enc,
-        context.userId,
-      );
-      await provider(account.platform as Platform).revoke(token);
+      const p = provider(account.platform as Platform);
+      const sealed =
+        p.revokeWith === "refresh" && account.refresh_token_enc
+          ? account.refresh_token_enc
+          : account.access_token_enc;
+      await p.revoke(await openToken(sealed, context.userId));
     } catch (e) {
       // Still disconnect here: the user can remove access on the platform too.
       console.error("[publishing] Revoking a token failed:", e instanceof Error ? e.message : e);
@@ -177,7 +180,7 @@ export const listPosts = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("social_posts")
       .select(
-        "id, project_id, account_id, platform, account_name, title, caption, privacy, scheduled_at, status, error, external_url, published_at, views, likes, comments, stats_updated_at, projects(title)",
+        "id, project_id, account_id, platform, account_name, title, caption, privacy, options, scheduled_at, status, error, external_url, published_at, views, likes, comments, stats_updated_at, projects(title)",
       )
       .eq("user_id", context.userId)
       .order("scheduled_at", { ascending: false })
@@ -189,6 +192,24 @@ export const listPosts = createServerFn({ method: "GET" })
     })) as SocialPost[];
   });
 
+const TikTokOptionsInput = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("direct"),
+    privacy_level: z.enum([
+      "PUBLIC_TO_EVERYONE",
+      "MUTUAL_FOLLOW_FRIENDS",
+      "FOLLOWER_OF_CREATOR",
+      "SELF_ONLY",
+    ]),
+    allow_comment: z.boolean(),
+    allow_duet: z.boolean(),
+    allow_stitch: z.boolean(),
+    brand_organic: z.boolean(),
+    brand_content: z.boolean(),
+  }),
+  z.object({ mode: z.literal("draft") }),
+]);
+
 const PostInput = z.object({
   projectId: z.string().uuid(),
   accountIds: z.array(z.string().uuid()).min(1).max(10),
@@ -196,9 +217,59 @@ const PostInput = z.object({
   caption: z.string().max(CAPTION_MAX),
   privacy: z.enum(["public", "unlisted", "private"]),
   madeForKids: z.boolean(),
+  /** The TikTok choices for each TikTok account, by account id. */
+  tiktok: z.record(z.string().uuid(), TikTokOptionsInput).default({}),
   /** null = post now. */
   scheduledAt: z.string().datetime().nullable(),
 });
+
+/** A TikTok account's sign-in, ready to call the API (refreshed if needed). */
+async function tiktokToken(userId: string, accountId: string) {
+  const db = await admin();
+  const { data: account } = await db
+    .from("social_accounts")
+    .select("*")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .eq("platform", "tiktok")
+    .maybeSingle();
+  if (!account) throw new Error("Account not found");
+  if (account.status !== "active") throw new Error(`Reconnect ${account.name} first`);
+  const { accessTokenFor } = await server();
+  return { account, token: await accessTokenFor(db, account, 5 * 60 * 1000) };
+}
+
+/**
+ * What a TikTok account can post right now: its name, the "who can see"
+ * choices, and whether comments, Duet and Stitch are off for it. TikTok asks
+ * apps to check this each time they show the posting form.
+ */
+export const getTikTokCreatorInfo = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ accountId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }): Promise<TikTokCreatorInfo> => {
+    const { token } = await tiktokToken(context.userId, data.accountId);
+    const { tiktokCreatorInfo } = await import("@/lib/publishing/tiktok.server");
+    return tiktokCreatorInfo(token);
+  });
+
+/** A short-lived link to a project's latest export, to preview it before posting. */
+export const getExportPreview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ projectId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: project } = await context.supabase
+      .from("projects")
+      .select("output_path")
+      .eq("id", data.projectId)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!project?.output_path?.startsWith(`${context.userId}/`)) return { url: null };
+    const { data: signed } = await context.supabase.storage
+      .from("renders")
+      .createSignedUrl(project.output_path, 60 * 60);
+    return { url: signed?.signedUrl ?? null };
+  });
 
 /** Makes one post per chosen account for a project's latest export. */
 export const createPosts = createServerFn({ method: "POST" })
@@ -207,7 +278,6 @@ export const createPosts = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // YouTube rejects these in titles.
     const title = data.title.replace(/[<>]/g, "").trim();
-    if (!title) throw new Error("Add a title");
     let when = new Date();
     if (data.scheduledAt) {
       when = new Date(data.scheduledAt);
@@ -231,7 +301,7 @@ export const createPosts = createServerFn({ method: "POST" })
 
     const { data: accounts, error: aErr } = await context.supabase
       .from("social_accounts")
-      .select("id, platform, name, status")
+      .select("id, platform, name, status, scopes")
       .eq("user_id", context.userId)
       .in("id", data.accountIds);
     if (aErr) throw new Error(aErr.message);
@@ -239,6 +309,41 @@ export const createPosts = createServerFn({ method: "POST" })
       throw new Error("Account not found");
     const stale = (accounts ?? []).find((a) => a.status !== "active");
     if (stale) throw new Error(`Reconnect ${stale.name} on the Publishing page first`);
+    if (!title && accounts!.some((a) => a.platform === "youtube")) {
+      throw new Error("Add a title for YouTube");
+    }
+
+    // TikTok: check each account's choices against what TikTok allows it now.
+    for (const a of accounts!.filter((x) => x.platform === "tiktok")) {
+      const o = data.tiktok[a.id];
+      if (!o) throw new Error(`Choose how to post to ${a.name}`);
+      if ((data.caption.trim() || title).length > TIKTOK_CAPTION_MAX) {
+        throw new Error(`TikTok captions can be up to ${TIKTOK_CAPTION_MAX} characters`);
+      }
+      const scopes = (a.scopes ?? "").split(/[\s,]+/);
+      const need = o.mode === "direct" ? "video.publish" : "video.upload";
+      if (a.scopes && !scopes.includes(need)) {
+        throw new Error(`Reconnect ${a.name} and allow posting: a TikTok permission is missing`);
+      }
+      if (o.mode === "direct") {
+        if (o.brand_content && o.privacy_level === "SELF_ONLY") {
+          throw new Error("Branded content can't be private on TikTok");
+        }
+        const { token } = await tiktokToken(context.userId, a.id);
+        const { tiktokCreatorInfo } = await import("@/lib/publishing/tiktok.server");
+        const info = await tiktokCreatorInfo(token);
+        if (!info.privacy_level_options.includes(o.privacy_level)) {
+          throw new Error(`That "who can see" choice isn't available for ${a.name}`);
+        }
+        if (
+          (o.allow_comment && info.comment_disabled) ||
+          (o.allow_duet && info.duet_disabled) ||
+          (o.allow_stitch && info.stitch_disabled)
+        ) {
+          throw new Error(`${a.name} has comments, Duet or Stitch turned off in TikTok`);
+        }
+      }
+    }
 
     const { count } = await context.supabase
       .from("social_posts")
@@ -262,6 +367,7 @@ export const createPosts = createServerFn({ method: "POST" })
           caption: data.caption,
           privacy: data.privacy,
           made_for_kids: data.madeForKids,
+          options: a.platform === "tiktok" ? data.tiktok[a.id] : {},
           video_path: project.output_path!,
           cover_path: isCoverPath(project.thumbnail_url) ? project.thumbnail_url : null,
           scheduled_at: when.toISOString(),
@@ -317,7 +423,13 @@ export const reschedulePost = createServerFn({ method: "POST" })
     }
     const { data: row, error } = await context.supabase
       .from("social_posts")
-      .update({ status: "scheduled", scheduled_at: when.toISOString(), error: null, attempts: 0 })
+      .update({
+        status: "scheduled",
+        scheduled_at: when.toISOString(),
+        error: null,
+        attempts: 0,
+        external_ref: null,
+      })
       .eq("id", data.id)
       .eq("user_id", context.userId)
       .in("status", ["scheduled", "failed"])

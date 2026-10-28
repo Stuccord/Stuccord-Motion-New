@@ -18,6 +18,51 @@ export const SCHEDULE_MAX_AHEAD_DAYS = 60;
 /** Posts a user can have waiting at once. */
 export const SCHEDULED_LIMIT = 50;
 
+// ---------- TikTok ----------
+
+export const TIKTOK_CAPTION_MAX = 2200;
+
+export type TikTokPrivacy =
+  "PUBLIC_TO_EVERYONE" | "MUTUAL_FOLLOW_FRIENDS" | "FOLLOWER_OF_CREATOR" | "SELF_ONLY";
+
+export const TIKTOK_PRIVACY_LABEL: Record<TikTokPrivacy, string> = {
+  PUBLIC_TO_EVERYONE: "Everyone",
+  MUTUAL_FOLLOW_FRIENDS: "Friends",
+  FOLLOWER_OF_CREATOR: "Followers",
+  SELF_ONLY: "Only me",
+};
+
+/**
+ * How a TikTok post goes out: straight to the profile ("direct"), with the
+ * choices TikTok asks the poster to make, or to their TikTok drafts ("draft"),
+ * where they finish it in the app.
+ */
+export type TikTokOptions =
+  | {
+      mode: "direct";
+      privacy_level: TikTokPrivacy;
+      allow_comment: boolean;
+      allow_duet: boolean;
+      allow_stitch: boolean;
+      /** Promotes the poster's own business ("Promotional content"). */
+      brand_organic: boolean;
+      /** Paid partnership with another brand ("Paid partnership"). */
+      brand_content: boolean;
+    }
+  | { mode: "draft" };
+
+/** What TikTok says this account can post right now. */
+export type TikTokCreatorInfo = {
+  nickname: string;
+  username: string;
+  avatar_url: string | null;
+  privacy_level_options: TikTokPrivacy[];
+  comment_disabled: boolean;
+  duet_disabled: boolean;
+  stitch_disabled: boolean;
+  max_video_post_duration_sec: number | null;
+};
+
 export type PostStatus = "scheduled" | "uploading" | "published" | "failed" | "canceled";
 export type Privacy = "public" | "unlisted" | "private";
 
@@ -31,6 +76,8 @@ export type SocialAccount = {
 };
 
 export type SocialPost = {
+  /** Platform choices: TikTokOptions for TikTok posts, {} for YouTube. */
+  options: TikTokOptions | Record<string, never>;
   id: string;
   project_id: string | null;
   project_title: string | null;

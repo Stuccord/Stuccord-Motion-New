@@ -11,6 +11,7 @@ import type { Database } from "@/integrations/supabase/types";
 import type { Platform } from "@/lib/publishing-shared";
 import { openToken, sealToken } from "./crypto.server";
 import { provider, ReconnectNeeded } from "./providers.server";
+import { tiktokPublishStatus } from "./tiktok.server";
 
 type Db = SupabaseClient<Database>;
 type AccountRow = Database["public"]["Tables"]["social_accounts"]["Row"];
@@ -195,6 +196,7 @@ async function sendPost(db: Db, post: PostRow) {
       caption: post.caption,
       privacy: post.privacy,
       made_for_kids: post.made_for_kids,
+      options: post.options,
       callback_url: appUrl("/api/public/publish-webhook"),
     });
   } catch (e) {
@@ -268,6 +270,8 @@ export type PublishResult = {
   status?: unknown;
   external_id?: unknown;
   external_url?: unknown;
+  /** The platform's id for the upload (TikTok's publish_id). */
+  external_ref?: unknown;
   error?: unknown;
 };
 
@@ -282,6 +286,7 @@ export async function recordPublishResult(db: Db, r: PublishResult) {
           status: "published",
           external_id: str(r.external_id, 200),
           external_url: url && /^https:\/\//.test(url) ? url : null,
+          external_ref: str(r.external_ref, 200),
           published_at: new Date().toISOString(),
           error: null,
         }
@@ -305,7 +310,7 @@ export async function syncPostStats(db: Db, opts: { userId?: string; force?: boo
   const now = Date.now();
   let q = db
     .from("social_posts")
-    .select("id, user_id, account_id, external_id, published_at, stats_updated_at")
+    .select("id, user_id, account_id, external_id, external_url, published_at, stats_updated_at")
     .eq("status", "published")
     .not("external_id", "is", null)
     .lte("published_at", new Date(now - (opts.force ? 0 : FIRST_STATS_AFTER_MS)).toISOString())
@@ -344,7 +349,11 @@ export async function syncPostStats(db: Db, opts: { userId?: string; force?: boo
         const s = stats.get(p.external_id!);
         await db
           .from("social_posts")
-          .update({ ...(s ?? {}), stats_updated_at: new Date().toISOString() })
+          .update({
+            ...(s ? { views: s.views, likes: s.likes, comments: s.comments } : {}),
+            ...(s?.url && !p.external_url ? { external_url: s.url } : {}),
+            stats_updated_at: new Date().toISOString(),
+          })
           .eq("id", p.id)
           .eq("user_id", account.user_id);
         updated++;
@@ -357,4 +366,90 @@ export async function syncPostStats(db: Db, opts: { userId?: string; force?: boo
     }
   }
   return updated;
+}
+
+/** How long to keep looking for a TikTok post after the upload finished. */
+const RESOLVE_FOR_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * TikTok finishes a post after the upload (processing and moderation), and
+ * only then says its id. This looks up uploads that don't have one yet: the
+ * id lets view counts be fetched, and a post TikTok turned down is marked
+ * failed.
+ */
+export async function resolvePendingPosts(db: Db, opts: { userId?: string } = {}) {
+  let q = db
+    .from("social_posts")
+    .select("id, user_id, account_id, platform, external_ref, published_at, options")
+    .eq("status", "published")
+    .eq("platform", "tiktok")
+    .is("external_id", null)
+    .not("external_ref", "is", null)
+    .order("published_at", { ascending: true })
+    .limit(50);
+  if (opts.userId) q = q.eq("user_id", opts.userId);
+  const { data: posts, error } = await q;
+  if (error) throw new Error(error.message);
+
+  let resolved = 0;
+  const tokens = new Map<string, string | null>();
+  for (const p of posts ?? []) {
+    const stop = () =>
+      db
+        .from("social_posts")
+        .update({ external_ref: null })
+        .eq("id", p.id)
+        .eq("status", "published");
+    if (!p.account_id || (p.options as { mode?: string } | null)?.mode !== "direct") {
+      await stop();
+      continue;
+    }
+    if (p.published_at && Date.now() - Date.parse(p.published_at) > RESOLVE_FOR_MS) {
+      await stop();
+      continue;
+    }
+    if (!tokens.has(p.account_id)) {
+      const { data: account } = await db
+        .from("social_accounts")
+        .select("*")
+        .eq("id", p.account_id)
+        .eq("user_id", p.user_id)
+        .maybeSingle();
+      tokens.set(
+        p.account_id,
+        account && account.status === "active"
+          ? await accessTokenFor(db, account, 5 * 60 * 1000).catch(() => null)
+          : null,
+      );
+    }
+    const token = tokens.get(p.account_id);
+    if (!token) continue;
+    try {
+      const r = await tiktokPublishStatus(token, p.external_ref!);
+      if (r.state === "done" && r.postId) {
+        await db
+          .from("social_posts")
+          .update({ external_id: r.postId })
+          .eq("id", p.id)
+          .eq("status", "published");
+        resolved++;
+      } else if (
+        r.state === "draft" ||
+        (r.state === "done" &&
+          (p.options as { privacy_level?: string } | null)?.privacy_level === "SELF_ONLY")
+      ) {
+        // TikTok won't share the id of a draft or an "Only me" post: no counts.
+        await stop();
+      } else if (r.state === "failed") {
+        await db
+          .from("social_posts")
+          .update({ status: "failed", error: r.reason, external_ref: null, published_at: null })
+          .eq("id", p.id)
+          .eq("status", "published");
+      }
+    } catch (e) {
+      console.error("[publishing] TikTok status check failed:", e instanceof Error ? e.message : e);
+    }
+  }
+  return resolved;
 }

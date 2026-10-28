@@ -3,15 +3,15 @@ import { createFileRoute } from "@tanstack/react-router";
 /**
  * Called by the render worker once a minute, signed with
  * HMAC-SHA256(body, RENDER_WORKER_SECRET) in `x-stuccord-signature`.
- * Body: { at: ISO time }. Sends scheduled posts that are due to the worker
- * and updates view counts that are due.
+ * Body: { at: ISO time }. Sends scheduled posts that are due to the worker,
+ * finds finished TikTok posts, and updates view counts that are due.
  */
 export const Route = createFileRoute("/api/public/publishing-tick")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         const body = await request.text();
-        const { verifyWorkerSignature, dispatchDuePosts, syncPostStats } =
+        const { verifyWorkerSignature, dispatchDuePosts, resolvePendingPosts, syncPostStats } =
           await import("@/lib/publishing/dispatch.server");
         if (
           !(await verifyWorkerSignature(body, request.headers.get("x-stuccord-signature") ?? ""))
@@ -39,6 +39,14 @@ export const Route = createFileRoute("/api/public/publishing-tick")({
         } catch (e) {
           console.error(
             "[publishing-tick] Sending posts failed:",
+            e instanceof Error ? e.message : e,
+          );
+        }
+        try {
+          await resolvePendingPosts(supabaseAdmin);
+        } catch (e) {
+          console.error(
+            "[publishing-tick] TikTok checks failed:",
             e instanceof Error ? e.message : e,
           );
         }

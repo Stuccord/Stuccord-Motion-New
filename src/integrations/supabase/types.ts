@@ -262,10 +262,12 @@ export type Database = {
           created_at: string
           error: string | null
           external_id: string | null
+          external_ref: string | null
           external_url: string | null
           id: string
           likes: number | null
           made_for_kids: boolean
+          options: Json
           platform: string
           privacy: string
           project_id: string | null
@@ -289,10 +291,12 @@ export type Database = {
           created_at?: string
           error?: string | null
           external_id?: string | null
+          external_ref?: string | null
           external_url?: string | null
           id?: string
           likes?: number | null
           made_for_kids?: boolean
+          options?: Json
           platform: string
           privacy?: string
           project_id?: string | null
@@ -316,10 +320,12 @@ export type Database = {
           created_at?: string
           error?: string | null
           external_id?: string | null
+          external_ref?: string | null
           external_url?: string | null
           id?: string
           likes?: number | null
           made_for_kids?: boolean
+          options?: Json
           platform?: string
           privacy?: string
           project_id?: string | null

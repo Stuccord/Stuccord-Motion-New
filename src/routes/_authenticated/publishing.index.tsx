@@ -11,12 +11,10 @@ import {
   MessageCircle,
   Plus,
   RotateCcw,
-  Send,
   ThumbsUp,
   Trash2,
   Unplug,
   X,
-  Youtube,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
@@ -45,8 +43,10 @@ import {
   reschedulePost,
   startConnect,
 } from "@/lib/publishing.functions";
+import { PlatformIcon } from "@/components/platform-icon";
 import {
   PLATFORM_LABEL,
+  TIKTOK_PRIVACY_LABEL,
   SCHEDULE_MAX_AHEAD_DAYS,
   type Platform,
   type SocialAccount,
@@ -75,9 +75,17 @@ function localInput(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function PlatformIcon({ platform, className }: { platform: Platform; className?: string }) {
-  if (platform === "youtube") return <Youtube className={cn("text-red-500", className)} />;
-  return <Send className={className} />;
+/** "Sent to drafts" for TikTok posts that went to the TikTok inbox. */
+const isDraft = (p: SocialPost) => p.platform === "tiktok" && p.options?.mode === "draft";
+
+/** Who can see a post, when it isn't everyone. */
+function audience(p: SocialPost): string | null {
+  if (p.platform === "tiktok") {
+    if (p.options?.mode !== "direct") return null;
+    const level = p.options.privacy_level;
+    return level === "PUBLIC_TO_EVERYONE" ? null : TIKTOK_PRIVACY_LABEL[level];
+  }
+  return p.privacy === "public" ? null : p.privacy;
 }
 
 function PublishingPage() {
@@ -135,7 +143,10 @@ function PublishingPage() {
   const list = accounts.data ?? [];
 
   return (
-    <AppShell title="Publishing" subtitle="Post your exports to YouTube, now or on a schedule.">
+    <AppShell
+      title="Publishing"
+      subtitle="Post your exports to YouTube and TikTok, now or on a schedule."
+    >
       <div className="space-y-6">
         {/* Accounts */}
         <section className="rounded-2xl bg-white border border-black/5 p-5">
@@ -146,29 +157,32 @@ function PublishingPage() {
                 Stuccord posts as these accounts. You can disconnect any time.
               </div>
             </div>
-            {platforms.includes("youtube") && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => go.mutate("youtube")}
-                disabled={go.isPending}
-              >
-                {go.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                ) : (
-                  <Youtube className="w-4 h-4 mr-1.5 text-red-500" />
-                )}
-                Connect YouTube
-              </Button>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {platforms.map((pl) => (
+                <Button
+                  key={pl}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => go.mutate(pl)}
+                  disabled={go.isPending}
+                >
+                  {go.isPending && go.variables === pl ? (
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <PlatformIcon platform={pl} className="w-4 h-4 mr-1.5" />
+                  )}
+                  Connect {PLATFORM_LABEL[pl]}
+                </Button>
+              ))}
+            </div>
           </div>
 
           {setup.isSuccess && platforms.length === 0 && (
             <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-[13px] text-amber-900 mb-3">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                Posting isn&apos;t switched on yet: the site owner still has to add the YouTube app
-                keys. You can come back to connect your channel once it is.
+                Posting isn&apos;t switched on yet: the site owner still has to add the YouTube or
+                TikTok app keys. You can come back to connect your accounts once it is.
               </span>
             </div>
           )}
@@ -289,6 +303,13 @@ function PublishingPage() {
 }
 
 function StatusBadge({ post }: { post: SocialPost }) {
+  if (post.status === "published" && isDraft(post)) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-pink-50 text-pink-700">
+        Sent to TikTok drafts
+      </span>
+    );
+  }
   const map: Record<SocialPost["status"], [string, string]> = {
     scheduled: ["Scheduled", "bg-violet-50 text-violet-700"],
     uploading: ["Uploading…", "bg-sky-50 text-sky-700"],
@@ -343,7 +364,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
 
   const timeLabel =
     post.status === "published" && post.published_at
-      ? `Posted ${fmtWhen(post.published_at)}`
+      ? `${isDraft(post) ? "Sent" : "Posted"} ${fmtWhen(post.published_at)}`
       : post.status === "scheduled"
         ? `Goes out ${fmtWhen(post.scheduled_at)}`
         : fmtWhen(post.scheduled_at);
@@ -353,13 +374,15 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 min-w-0">
           <PlatformIcon platform={post.platform} className="w-4 h-4 shrink-0" />
-          <span className="text-sm font-medium truncate">{post.title}</span>
+          <span className="text-sm font-medium truncate">
+            {post.title || post.caption.split("\n")[0] || "TikTok post"}
+          </span>
           <StatusBadge post={post} />
         </div>
         <div className="text-[11px] text-neutral-500 mt-0.5 truncate">
           {post.account_name}
           {post.project_title ? ` · ${post.project_title}` : ""} · {timeLabel}
-          {post.privacy !== "public" ? ` · ${post.privacy}` : ""}
+          {audience(post) ? ` · ${audience(post)}` : ""}
         </div>
         {post.error && post.status !== "published" && (
           <div
@@ -373,7 +396,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
         )}
       </div>
 
-      {post.status === "published" && (
+      {post.status === "published" && !isDraft(post) && (
         <div className="flex items-center gap-4 text-[12px] text-neutral-600 tabular-nums">
           <span className="flex items-center gap-1" title="Views">
             <Eye className="w-3.5 h-3.5" /> {fmtNum(post.views)}

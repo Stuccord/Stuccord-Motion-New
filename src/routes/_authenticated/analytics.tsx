@@ -195,7 +195,9 @@ function AnalyticsPage() {
             {reach.top.map((p) => (
               <div key={p.id} className="flex items-center gap-3 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{p.title}</div>
+                  <div className="text-sm font-medium truncate">
+                    {p.title || p.caption.split("\n")[0] || "TikTok post"}
+                  </div>
                   <div className="text-[11px] text-neutral-500 truncate">
                     {p.account_name}
                     {p.published_at ? ` · ${new Date(p.published_at).toLocaleDateString()}` : ""}

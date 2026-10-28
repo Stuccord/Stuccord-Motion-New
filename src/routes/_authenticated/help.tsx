@@ -124,11 +124,12 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
   },
   {
     icon: Send,
-    title: "Publishing to YouTube",
+    title: "Publishing to YouTube and TikTok",
     steps: [
-      "On the Publishing page, press Connect YouTube and sign in with the Google account that owns your channel.",
+      "On the Publishing page, press Connect YouTube or Connect TikTok and sign in to the account you want to post to.",
       "Export your video, then press Publish in the editor (or New post on the Publishing page).",
-      "Add a title and description, choose who can watch, and post now or pick a date and time. Your project cover becomes the video's thumbnail when YouTube allows it.",
+      "Add a title and description, choose who can watch, and post now or pick a date and time. Your project cover becomes the YouTube thumbnail when YouTube allows it.",
+      "For TikTok, choose Post to profile or Send to TikTok drafts (you finish it in the TikTok app). Posting to the profile asks who can see it, whether viewers can comment, Duet or Stitch, and whether the video promotes a brand. The description is the TikTok caption.",
       "Scheduled posts go out within a minute or two of the time. You can move or cancel them until then.",
       "Views, likes and comments are updated once a day, on the Publishing page and in Analytics.",
     ],
@@ -207,7 +208,7 @@ const FAQS = [
   },
   {
     q: "Can I post straight to TikTok, Reels or Shorts?",
-    a: "YouTube, yes: connect your channel on the Publishing page and post now or on a schedule. TikTok and Instagram are next; until then, download your export and upload it in each app.",
+    a: "YouTube and TikTok, yes: connect your accounts on the Publishing page and post now or on a schedule. Instagram is next; until then, download your export and upload it in the app.",
   },
   {
     q: "Is there a paid plan?",

@@ -3,9 +3,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { CalendarClock, Loader2, Send, Youtube } from "lucide-react";
+import { CalendarClock, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -27,13 +27,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PlatformIcon } from "@/components/platform-icon";
+import { TikTokSection } from "@/components/publish-tiktok";
+import {
+  NEW_TIKTOK_FORM,
+  tiktokFormProblem,
+  tiktokOptions,
+  type TikTokForm,
+} from "@/lib/tiktok-form";
 import { cn } from "@/lib/utils";
 import { listProjects } from "@/lib/projects.functions";
-import { createPosts, listSocialAccounts } from "@/lib/publishing.functions";
+import {
+  createPosts,
+  getExportPreview,
+  getTikTokCreatorInfo,
+  listSocialAccounts,
+} from "@/lib/publishing.functions";
 import {
   CAPTION_MAX,
   PLATFORM_LABEL,
   SCHEDULE_MAX_AHEAD_DAYS,
+  TIKTOK_CAPTION_MAX,
   TITLE_MAX,
   type Privacy,
 } from "@/lib/publishing-shared";
@@ -62,6 +76,8 @@ export function PublishDialog({
   const qc = useQueryClient();
   const fetchAccounts = useServerFn(listSocialAccounts);
   const fetchProjects = useServerFn(listProjects);
+  const fetchPreview = useServerFn(getExportPreview);
+  const fetchCreator = useServerFn(getTikTokCreatorInfo);
   const post = useServerFn(createPosts);
   const accounts = useQuery({
     queryKey: ["social-accounts"],
@@ -87,6 +103,8 @@ export function PublishDialog({
   const [forKids, setForKids] = useState(false);
   const [later, setLater] = useState(false);
   const [when, setWhen] = useState("");
+  const [tiktok, setTiktok] = useState<Record<string, TikTokForm>>({});
+  const [videoSeconds, setVideoSeconds] = useState<number | null>(null);
 
   // Fresh form each time it opens.
   useEffect(() => {
@@ -98,16 +116,54 @@ export function PublishDialog({
     setForKids(false);
     setLater(false);
     setWhen(localInput(new Date(Date.now() + 60 * 60 * 1000)));
+    setTiktok({});
+    setVideoSeconds(null);
   }, [open, defaultTitle]);
 
-  const active = (accounts.data ?? []).filter((a) => a.status === "active");
+  const all = accounts.data ?? [];
   // Every working account is ticked to start with.
   useEffect(() => {
-    if (open) setPicked(active.map((a) => a.id));
+    if (open) setPicked(all.filter((a) => a.status === "active").map((a) => a.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, accounts.data]);
 
   const project = projectId ?? pickedProject;
+  const preview = useQuery({
+    queryKey: ["export-preview", project],
+    queryFn: () => fetchPreview({ data: { projectId: project } }),
+    enabled: open && !!project,
+    staleTime: 30 * 60 * 1000,
+  });
+
+  const chosen = all.filter((a) => picked.includes(a.id));
+  const hasYoutube = chosen.some((a) => a.platform === "youtube");
+  const tiktokAccounts = chosen.filter((a) => a.platform === "tiktok");
+  const hasTiktok = tiktokAccounts.length > 0;
+  // TikTok asks apps to check the account each time the form is shown.
+  const creators = useQueries({
+    queries: tiktokAccounts.map((a) => ({
+      queryKey: ["tiktok-creator", a.id],
+      queryFn: () => fetchCreator({ data: { accountId: a.id } }),
+      enabled: open,
+      staleTime: 0,
+      gcTime: 0,
+      retry: false,
+    })),
+  });
+  const formFor = (id: string) => tiktok[id] ?? NEW_TIKTOK_FORM;
+  const problems = tiktokAccounts.map((a, i) =>
+    tiktokFormProblem(formFor(a.id), creators[i]?.data, videoSeconds),
+  );
+  const tiktokBlocked = tiktokAccounts.some(
+    (a, i) => formFor(a.id).mode === "direct" && (!!creators[i]?.error || !!problems[i]),
+  );
+  const anyDirect = tiktokAccounts.some((a) => formFor(a.id).mode === "direct");
+  const anyBranded = tiktokAccounts.some((a) => {
+    const f = formFor(a.id);
+    return f.mode === "direct" && f.disclose && f.brand_content;
+  });
+  const captionMax = hasTiktok ? TIKTOK_CAPTION_MAX : CAPTION_MAX;
+
   const send = useMutation({
     mutationFn: () =>
       post({
@@ -118,6 +174,9 @@ export function PublishDialog({
           caption,
           privacy,
           madeForKids: forKids,
+          tiktok: Object.fromEntries(
+            tiktokAccounts.map((a) => [a.id, tiktokOptions(formFor(a.id))]),
+          ),
           scheduledAt: later ? new Date(when).toISOString() : null,
         },
       }),
@@ -125,9 +184,11 @@ export function PublishDialog({
       toast.success(
         r.scheduled
           ? `Scheduled for ${new Date(when).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
-          : r.created === 1
-            ? "Posting now: it shows on the Publishing page when it's up"
-            : `Posting to ${r.created} accounts now`,
+          : hasTiktok
+            ? "Posting now. TikTok can take a few minutes to process it before it shows on the profile."
+            : r.created === 1
+              ? "Posting now: it shows on the Publishing page when it's up"
+              : `Posting to ${r.created} accounts now`,
       );
       void qc.invalidateQueries({ queryKey: ["social-posts"] });
       onOpenChange(false);
@@ -136,7 +197,9 @@ export function PublishDialog({
   });
 
   const whenOk = !later || (when && !Number.isNaN(new Date(when).getTime()));
-  const ready = !!project && picked.length > 0 && !!title.trim() && whenOk && !send.isPending;
+  const textOk = (!hasYoutube || !!title.trim()) && caption.length <= captionMax;
+  const ready =
+    !!project && picked.length > 0 && textOk && whenOk && !tiktokBlocked && !send.isPending;
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const t = (light: string, darkCls: string) => (dark ? darkCls : light);
   const fieldCls = t(
@@ -145,6 +208,7 @@ export function PublishDialog({
   );
   const muted = t("text-neutral-500", "text-neutral-400");
   const switchCls = t("", "data-[state=unchecked]:bg-white/20");
+  const linkCls = t("text-violet-700 underline", "text-violet-300 underline");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -173,9 +237,11 @@ export function PublishDialog({
               ? accounts.error.message
               : "Couldn't load your accounts"}
           </p>
-        ) : (accounts.data ?? []).length === 0 ? (
+        ) : all.length === 0 ? (
           <div className="py-6 text-center space-y-3">
-            <p className={cn("text-sm", muted)}>Connect a YouTube channel first.</p>
+            <p className={cn("text-sm", muted)}>
+              Connect a YouTube channel or TikTok account first.
+            </p>
             <Button asChild size="sm">
               <Link to="/publishing">Go to Publishing</Link>
             </Button>
@@ -196,6 +262,7 @@ export function PublishDialog({
                     value={pickedProject}
                     onValueChange={(v) => {
                       setPickedProject(v);
+                      setVideoSeconds(null);
                       if (!title.trim())
                         setTitle(exported.find((p) => p.id === v)?.title.slice(0, TITLE_MAX) ?? "");
                     }}
@@ -215,10 +282,27 @@ export function PublishDialog({
               </div>
             )}
 
+            {preview.data?.url && (
+              <video
+                key={preview.data.url}
+                src={preview.data.url}
+                controls
+                playsInline
+                preload="metadata"
+                aria-label="Preview of the video you're posting"
+                onLoadedMetadata={(e) =>
+                  setVideoSeconds(
+                    Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : null,
+                  )
+                }
+                className="w-full max-h-56 rounded-lg bg-black object-contain"
+              />
+            )}
+
             <div className="space-y-1.5">
               <Label>Post to</Label>
               <div className="space-y-1.5">
-                {(accounts.data ?? []).map((a) => {
+                {all.map((a) => {
                   const on = picked.includes(a.id);
                   const broken = a.status !== "active";
                   return (
@@ -246,7 +330,7 @@ export function PublishDialog({
                       {a.avatar_url ? (
                         <img src={a.avatar_url} alt="" className="w-6 h-6 rounded-full" />
                       ) : (
-                        <Youtube className="w-5 h-5 text-red-500" />
+                        <PlatformIcon platform={a.platform} className="w-5 h-5" />
                       )}
                       <span className="text-sm font-medium truncate flex-1">{a.name}</span>
                       <span className={cn("text-[11px]", broken ? "text-amber-600" : muted)}>
@@ -258,28 +342,41 @@ export function PublishDialog({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-baseline justify-between">
-                <Label htmlFor="pub-title">Title</Label>
-                <span className={cn("text-[11px] tabular-nums", muted)}>
-                  {title.length}/{TITLE_MAX}
-                </span>
+            {hasYoutube && (
+              <div className="space-y-1.5">
+                <div className="flex items-baseline justify-between">
+                  <Label htmlFor="pub-title">{hasTiktok ? "Title (YouTube)" : "Title"}</Label>
+                  <span className={cn("text-[11px] tabular-nums", muted)}>
+                    {title.length}/{TITLE_MAX}
+                  </span>
+                </div>
+                <Input
+                  id="pub-title"
+                  value={title}
+                  maxLength={TITLE_MAX}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="What's this video about?"
+                  className={fieldCls}
+                />
               </div>
-              <Input
-                id="pub-title"
-                value={title}
-                maxLength={TITLE_MAX}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="What's this video about?"
-                className={fieldCls}
-              />
-            </div>
+            )}
 
             <div className="space-y-1.5">
               <div className="flex items-baseline justify-between">
-                <Label htmlFor="pub-caption">Description</Label>
-                <span className={cn("text-[11px] tabular-nums", muted)}>
-                  {caption.length}/{CAPTION_MAX}
+                <Label htmlFor="pub-caption">
+                  {hasYoutube && hasTiktok
+                    ? "Description and TikTok caption"
+                    : hasTiktok
+                      ? "Caption"
+                      : "Description"}
+                </Label>
+                <span
+                  className={cn(
+                    "text-[11px] tabular-nums",
+                    caption.length > captionMax ? "text-rose-500" : muted,
+                  )}
+                >
+                  {caption.length}/{captionMax}
                 </span>
               </div>
               <Textarea
@@ -288,40 +385,68 @@ export function PublishDialog({
                 value={caption}
                 maxLength={CAPTION_MAX}
                 onChange={(e) => setCaption(e.target.value)}
-                placeholder="Say more, add links and #hashtags (#Shorts helps vertical videos)"
+                placeholder={
+                  hasTiktok
+                    ? "Say what it's about and add #hashtags"
+                    : "Say more, add links and #hashtags (#Shorts helps vertical videos)"
+                }
                 className={fieldCls}
               />
+              {hasTiktok && !caption.trim() && hasYoutube && (
+                <p className={cn("text-[11px]", muted)}>Empty: TikTok gets the title instead.</p>
+              )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>Who can watch</Label>
-                <Select value={privacy} onValueChange={(v) => setPrivacy(v as Privacy)}>
-                  <SelectTrigger aria-label="Who can watch" className={fieldCls}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="public">Public</SelectItem>
-                    <SelectItem value="unlisted">Unlisted (anyone with the link)</SelectItem>
-                    <SelectItem value="private">Private (only you)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pub-kids">Made for kids</Label>
-                <div className="flex items-center gap-2 h-10">
-                  <Switch
-                    id="pub-kids"
-                    checked={forKids}
-                    onCheckedChange={setForKids}
-                    className={switchCls}
-                  />
-                  <span className={cn("text-xs", muted)}>
-                    {forKids ? "Yes, it's made for kids" : "No"}
-                  </span>
+            {hasYoutube && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>{hasTiktok ? "Who can watch (YouTube)" : "Who can watch"}</Label>
+                  <Select value={privacy} onValueChange={(v) => setPrivacy(v as Privacy)}>
+                    <SelectTrigger aria-label="Who can watch" className={fieldCls}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">Public</SelectItem>
+                      <SelectItem value="unlisted">Unlisted (anyone with the link)</SelectItem>
+                      <SelectItem value="private">Private (only you)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pub-kids">Made for kids</Label>
+                  <div className="flex items-center gap-2 h-10">
+                    <Switch
+                      id="pub-kids"
+                      checked={forKids}
+                      onCheckedChange={setForKids}
+                      className={switchCls}
+                    />
+                    <span className={cn("text-xs", muted)}>
+                      {forKids ? "Yes, it's made for kids" : "No"}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {tiktokAccounts.map((a, i) => (
+              <TikTokSection
+                key={a.id}
+                account={a}
+                form={formFor(a.id)}
+                onChange={(f) => setTiktok((cur) => ({ ...cur, [a.id]: f }))}
+                info={creators[i]?.data}
+                infoError={
+                  creators[i]?.error
+                    ? creators[i].error instanceof Error
+                      ? creators[i].error.message
+                      : "Couldn't check this TikTok account"
+                    : null
+                }
+                problem={problems[i]}
+                dark={dark}
+              />
+            ))}
 
             <div
               className={cn(
@@ -357,10 +482,38 @@ export function PublishDialog({
                 </div>
               )}
             </div>
+
+            {anyDirect && (
+              <p className={cn("text-[12px]", muted)} data-tiktok-consent>
+                By posting, you agree to TikTok&apos;s{" "}
+                {anyBranded && (
+                  <>
+                    <a
+                      href="https://www.tiktok.com/legal/page/global/bc-policy/en"
+                      target="_blank"
+                      rel="noreferrer"
+                      className={linkCls}
+                    >
+                      Branded Content Policy
+                    </a>{" "}
+                    and{" "}
+                  </>
+                )}
+                <a
+                  href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={linkCls}
+                >
+                  Music Usage Confirmation
+                </a>
+                .
+              </p>
+            )}
           </div>
         )}
 
-        {(accounts.data ?? []).length > 0 && (
+        {all.length > 0 && (
           <DialogFooter>
             <Button
               variant="ghost"
