@@ -9,7 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import type { Platform } from "@/lib/publishing-shared";
-import { openToken, sealToken } from "./crypto.server";
+import { openToken, sealToken, tokenOwner } from "./crypto.server";
 import { provider, ReconnectNeeded } from "./providers.server";
 import { tiktokPublishStatus } from "./tiktok.server";
 
@@ -112,15 +112,15 @@ export async function accessTokenFor(
     : Infinity;
   const early = provider(account.platform as Platform).refreshEarlyMs ?? 0;
   if (left > Math.max(minLeftMs, early) || !account.refresh_token_enc) {
-    return openToken(account.access_token_enc, account.user_id);
+    return openToken(account.access_token_enc, tokenOwner(account));
   }
   try {
-    const refresh = await openToken(account.refresh_token_enc, account.user_id);
+    const refresh = await openToken(account.refresh_token_enc, tokenOwner(account));
     const t = await provider(account.platform as Platform).refresh(refresh);
     const patch = {
-      access_token_enc: await sealToken(t.access_token, account.user_id),
+      access_token_enc: await sealToken(t.access_token, tokenOwner(account)),
       ...(t.refresh_token
-        ? { refresh_token_enc: await sealToken(t.refresh_token, account.user_id) }
+        ? { refresh_token_enc: await sealToken(t.refresh_token, tokenOwner(account)) }
         : {}),
       token_expires_at: new Date(Date.now() + (t.expires_in ?? 3600) * 1000).toISOString(),
       status: "active",
@@ -141,7 +141,7 @@ export async function accessTokenFor(
       throw e;
     }
     // Renewing early didn't work, but the current sign-in still does.
-    if (left > minLeftMs) return openToken(account.access_token_enc, account.user_id);
+    if (left > minLeftMs) return openToken(account.access_token_enc, tokenOwner(account));
     throw e;
   }
 }
@@ -186,19 +186,33 @@ async function markFailed(db: Db, post: PostRow, error: string) {
     .eq("status", "uploading");
 }
 
+/**
+ * The account a post goes to, only if it belongs with the post: the
+ * person's own account for a personal post, the team's for a team post.
+ */
+async function accountForPost(
+  db: Db,
+  post: { account_id: string | null; user_id: string; team_id: string | null },
+) {
+  if (!post.account_id) return null;
+  let q = db.from("social_accounts").select("*").eq("id", post.account_id);
+  q = post.team_id
+    ? q.eq("team_id", post.team_id)
+    : q.eq("user_id", post.user_id).is("team_id", null);
+  const { data } = await q.maybeSingle();
+  return data;
+}
+
 /** Sends one claimed post (status "uploading") to the worker. */
 async function sendPost(db: Db, post: PostRow) {
-  const owned = (p: string | null) => !p || (p.startsWith(`${post.user_id}/`) && !p.includes(".."));
+  // A personal post's files are the person's; a team post's, the team's.
+  const folder = post.team_id ? `teams/${post.team_id}` : post.user_id;
+  const owned = (p: string | null) => !p || (p.startsWith(`${folder}/`) && !p.includes(".."));
   if (!owned(post.video_path) || !owned(post.cover_path)) {
     return markFailed(db, post, "That video isn't in your files");
   }
   if (!post.account_id) return markFailed(db, post, "The account was disconnected");
-  const { data: account } = await db
-    .from("social_accounts")
-    .select("*")
-    .eq("id", post.account_id)
-    .eq("user_id", post.user_id)
-    .maybeSingle();
+  const account = await accountForPost(db, post);
   if (!account) return markFailed(db, post, "The account was disconnected");
   if (account.status !== "active") {
     return markFailed(
@@ -347,7 +361,9 @@ export async function syncPostStats(db: Db, opts: { userId?: string; force?: boo
   const now = Date.now();
   let q = db
     .from("social_posts")
-    .select("id, user_id, account_id, external_id, external_url, published_at, stats_updated_at")
+    .select(
+      "id, user_id, team_id, account_id, external_id, external_url, published_at, stats_updated_at",
+    )
     .eq("status", "published")
     .not("external_id", "is", null)
     .lte("published_at", new Date(now - (opts.force ? 0 : FIRST_STATS_AFTER_MS)).toISOString())
@@ -382,7 +398,11 @@ export async function syncPostStats(db: Db, opts: { userId?: string; force?: boo
         list.map((p) => p.external_id!),
       );
       for (const p of list) {
-        if (p.user_id !== account.user_id) continue;
+        // Only posts that belong with this account (the person's, or the team's).
+        const belongs = account.team_id
+          ? p.team_id === account.team_id
+          : !p.team_id && p.user_id === account.user_id;
+        if (!belongs) continue;
         const s = stats.get(p.external_id!);
         await db
           .from("social_posts")
@@ -391,8 +411,7 @@ export async function syncPostStats(db: Db, opts: { userId?: string; force?: boo
             ...(s?.url && !p.external_url ? { external_url: s.url } : {}),
             stats_updated_at: new Date().toISOString(),
           })
-          .eq("id", p.id)
-          .eq("user_id", account.user_id);
+          .eq("id", p.id);
         updated++;
       }
     } catch (e) {
@@ -417,7 +436,7 @@ const RESOLVE_FOR_MS = 7 * 24 * 60 * 60 * 1000;
 export async function resolvePendingPosts(db: Db, opts: { userId?: string } = {}) {
   let q = db
     .from("social_posts")
-    .select("id, user_id, account_id, platform, external_ref, published_at, options")
+    .select("id, user_id, team_id, account_id, platform, external_ref, published_at, options")
     .eq("status", "published")
     .eq("platform", "tiktok")
     .is("external_id", null)
@@ -446,12 +465,7 @@ export async function resolvePendingPosts(db: Db, opts: { userId?: string } = {}
       continue;
     }
     if (!tokens.has(p.account_id)) {
-      const { data: account } = await db
-        .from("social_accounts")
-        .select("*")
-        .eq("id", p.account_id)
-        .eq("user_id", p.user_id)
-        .maybeSingle();
+      const account = await accountForPost(db, p);
       tokens.set(
         p.account_id,
         account && account.status === "active"

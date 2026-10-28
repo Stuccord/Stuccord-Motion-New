@@ -59,7 +59,15 @@ async function hmacKey() {
   ]);
 }
 
-/** Encrypts a token for the user who owns it. */
+/**
+ * Whose tokens these are, for encryption: a person's id for their own
+ * account, "team:<id>" for a team's (so it keeps working when whoever
+ * connected it leaves the team).
+ */
+export const tokenOwner = (a: { user_id: string; team_id?: string | null }) =>
+  a.team_id ? `team:${a.team_id}` : a.user_id;
+
+/** Encrypts a token for the user (or team, see tokenOwner) who owns it. */
 export async function sealToken(token: string, userId: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(
@@ -83,7 +91,8 @@ export async function openToken(sealed: string, userId: string): Promise<string>
 
 const STATE_TTL_MS = 15 * 60 * 1000;
 
-export type OAuthState = { uid: string; platform: string; verifier?: string };
+/** `team`: connecting an account for a team (its owner or an admin). */
+export type OAuthState = { uid: string; platform: string; verifier?: string; team?: string };
 
 /** A signed state for the platform's sign-in page (and the PKCE verifier, if any). */
 export async function signState(s: OAuthState): Promise<string> {
@@ -113,5 +122,10 @@ export async function verifyState(state: string): Promise<OAuthState> {
   if (!ok) throw fail();
   const parsed = JSON.parse(dec.decode(fromB64url(body))) as OAuthState & { exp: number };
   if (!(parsed.exp > Date.now())) throw fail();
-  return { uid: parsed.uid, platform: parsed.platform, verifier: parsed.verifier };
+  return {
+    uid: parsed.uid,
+    platform: parsed.platform,
+    verifier: parsed.verifier,
+    team: parsed.team,
+  };
 }

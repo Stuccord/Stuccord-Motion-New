@@ -7,6 +7,10 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireSecondStep } from "@/lib/api-keys.functions";
 import { isCoverPath } from "@/lib/projects.functions";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+import type { TeamRole } from "@/lib/plans";
+import { PERSONAL, inFolder, projectFolder } from "@/lib/workspace";
 import {
   CAPTION_MAX,
   PLATFORMS,
@@ -35,6 +39,41 @@ const server = () =>
     import("@/lib/publishing/dispatch.server"),
   ]).then(([providers, crypto, dispatch]) => ({ ...providers, ...crypto, ...dispatch }));
 
+/** "personal" (the default) or a team's id. */
+const WorkspaceInput = z
+  .object({ workspace: z.union([z.literal(PERSONAL), z.string().uuid()]).default(PERSONAL) })
+  .default({ workspace: PERSONAL });
+
+/** The caller's role in a team, or null. */
+async function roleIn(teamId: string, userId: string): Promise<TeamRole | null> {
+  const db = await admin();
+  const { data } = await db
+    .from("team_members")
+    .select("role")
+    .eq("team_id", teamId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data?.role as TeamRole | undefined) ?? null;
+}
+const manages = (r: TeamRole | null) => r === "owner" || r === "admin";
+const posts = (r: TeamRole | null) => r === "owner" || r === "admin" || r === "editor";
+
+/**
+ * An account the caller may post to (theirs, or their team's as an Editor or
+ * up), with the admin client, for the server's own checks.
+ */
+async function postableAccount(userId: string, accountId: string) {
+  const db = await admin();
+  const { data: account } = await db
+    .from("social_accounts")
+    .select("*")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (!account) return null;
+  if (account.team_id) return posts(await roleIn(account.team_id, userId)) ? account : null;
+  return account.user_id === userId ? account : null;
+}
+
 /** Which platforms are set up on this server (have their app keys). */
 export const getPublishingSetup = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -47,12 +86,17 @@ export const getPublishingSetup = createServerFn({ method: "GET" })
 
 export const listSocialAccounts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<SocialAccount[]> => {
-    const { data, error } = await context.supabase
+  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .handler(async ({ data: input, context }): Promise<SocialAccount[]> => {
+    let q = context.supabase
       .from("social_accounts")
       .select("id, platform, name, avatar_url, status, created_at")
-      .eq("user_id", context.userId)
       .order("created_at", { ascending: true });
+    q =
+      input.workspace === PERSONAL
+        ? q.eq("user_id", context.userId).is("team_id", null)
+        : q.eq("team_id", input.workspace);
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     return (data ?? []) as SocialAccount[];
   });
@@ -60,13 +104,24 @@ export const listSocialAccounts = createServerFn({ method: "GET" })
 /** The platform's sign-in page to send the user to. */
 export const startConnect = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ platform: z.enum(PLATFORMS) }).parse(d))
+  .inputValidator((d: unknown) =>
+    z
+      .object({ platform: z.enum(PLATFORMS), teamId: z.string().uuid().nullable().optional() })
+      .parse(d),
+  )
   .handler(async ({ data, context }) => {
     await requireSecondStep(context.userId, context.claims);
+    if (data.teamId && !manages(await roleIn(data.teamId, context.userId))) {
+      throw new Error("Only the team's owner and admins can connect its accounts");
+    }
     const { provider, redirectUri, signState } = await server();
     const p = provider(data.platform);
     if (!p.configured()) throw new Error("Posting there isn't set up yet");
-    const state = await signState({ uid: context.userId, platform: data.platform });
+    const state = await signState({
+      uid: context.userId,
+      platform: data.platform,
+      ...(data.teamId ? { team: data.teamId } : {}),
+    });
     return { url: p.authUrl({ state, redirectUri: redirectUri(data.platform) }) };
   });
 
@@ -83,57 +138,61 @@ export const finishConnect = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { provider, redirectUri, verifyState, sealToken } = await server();
+    const { provider, redirectUri, verifyState, sealToken, tokenOwner } = await server();
     const state = await verifyState(data.state);
     if (state.uid !== context.userId || state.platform !== data.platform) {
       throw new Error("This sign-in was started from a different account. Try connecting again.");
     }
+    // For a team: still its owner or an admin.
+    const team = state.team ?? null;
+    if (team && !manages(await roleIn(team, context.userId))) {
+      throw new Error("Only the team's owner and admins can connect its accounts");
+    }
+    const owner = tokenOwner({ user_id: context.userId, team_id: team });
     const p = provider(data.platform);
     const tokens = await p.exchange({ code: data.code, redirectUri: redirectUri(data.platform) });
     const profile = await p.profile(tokens.access_token);
 
     const db = await admin();
-    const { data: existing } = await db
-      .from("social_accounts")
-      .select("id, refresh_token_enc")
-      .eq("user_id", context.userId)
+    // The same account already connected here (the person's own, or the team's).
+    const mine = <T extends { eq: (k: string, v: string) => T; is: (k: string, v: null) => T }>(
+      q: T,
+    ) => (team ? q.eq("team_id", team) : q.eq("user_id", context.userId).is("team_id", null));
+    const { data: existing } = await mine(
+      db.from("social_accounts").select("id, refresh_token_enc"),
+    )
       .eq("platform", data.platform)
       .eq("external_id", profile.external_id)
       .maybeSingle();
     if (!existing) {
-      const { count } = await db
-        .from("social_accounts")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", context.userId)
-        .eq("platform", data.platform);
+      const { count } = await mine(
+        db.from("social_accounts").select("id", { count: "exact", head: true }),
+      ).eq("platform", data.platform);
       if ((count ?? 0) >= ACCOUNTS_PER_PLATFORM) {
         throw new Error(`You can connect up to ${ACCOUNTS_PER_PLATFORM} accounts on each platform`);
       }
     }
     const row = {
       user_id: context.userId,
+      team_id: team,
       platform: data.platform,
       external_id: profile.external_id,
       name: profile.name,
       avatar_url: profile.avatar_url,
-      access_token_enc: await sealToken(tokens.access_token, context.userId),
+      access_token_enc: await sealToken(tokens.access_token, owner),
       // Keep the old refresh token if the platform didn't send a new one.
       refresh_token_enc: tokens.refresh_token
-        ? await sealToken(tokens.refresh_token, context.userId)
+        ? await sealToken(tokens.refresh_token, owner)
         : (existing?.refresh_token_enc ?? null),
       token_expires_at: new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString(),
       scopes: tokens.scope?.slice(0, 1000) ?? null,
       status: "active",
     };
     const { error } = existing
-      ? await db
-          .from("social_accounts")
-          .update(row)
-          .eq("id", existing.id)
-          .eq("user_id", context.userId)
+      ? await db.from("social_accounts").update(row).eq("id", existing.id)
       : await db.from("social_accounts").insert(row);
     if (error) throw new Error(error.message);
-    return { name: profile.name, reconnected: !!existing };
+    return { name: profile.name, reconnected: !!existing, teamId: team };
   });
 
 /** Disconnects an account: signs out of it and cancels its waiting posts. */
@@ -147,17 +206,28 @@ export const disconnectAccount = createServerFn({ method: "POST" })
       .from("social_accounts")
       .select("*")
       .eq("id", data.id)
-      .eq("user_id", context.userId)
       .maybeSingle();
-    if (!account) throw new Error("Account not found");
-    const { provider, openToken } = await server();
+    // Your own account, or a team's if you're its owner or an admin.
+    const allowed = account
+      ? account.team_id
+        ? manages(await roleIn(account.team_id, context.userId))
+        : account.user_id === context.userId
+      : false;
+    if (!account || !allowed) {
+      throw new Error(
+        account?.team_id
+          ? "Only the team's owner and admins can disconnect it"
+          : "Account not found",
+      );
+    }
+    const { provider, openToken, tokenOwner } = await server();
     try {
       const p = provider(account.platform as Platform);
       const sealed =
         p.revokeWith === "refresh" && account.refresh_token_enc
           ? account.refresh_token_enc
           : account.access_token_enc;
-      await p.revoke(await openToken(sealed, context.userId));
+      await p.revoke(await openToken(sealed, tokenOwner(account)));
     } catch (e) {
       // Still disconnect here: the user can remove access on the platform too.
       console.error("[publishing] Revoking a token failed:", e instanceof Error ? e.message : e);
@@ -166,32 +236,44 @@ export const disconnectAccount = createServerFn({ method: "POST" })
       .from("social_posts")
       .update({ status: "canceled", error: "The account was disconnected" })
       .eq("account_id", account.id)
-      .eq("user_id", context.userId)
       .eq("status", "scheduled");
-    const { error } = await db
-      .from("social_accounts")
-      .delete()
-      .eq("id", account.id)
-      .eq("user_id", context.userId);
+    const { error } = await db.from("social_accounts").delete().eq("id", account.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const listPosts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<SocialPost[]> => {
-    const { data, error } = await context.supabase
+  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .handler(async ({ data: input, context }): Promise<SocialPost[]> => {
+    const team = input.workspace === PERSONAL ? null : input.workspace;
+    let q = context.supabase
       .from("social_posts")
       .select(
-        "id, project_id, account_id, platform, account_name, title, caption, privacy, options, scheduled_at, status, error, external_url, published_at, views, likes, comments, stats_updated_at, projects(title)",
+        "id, user_id, project_id, account_id, platform, account_name, title, caption, privacy, options, scheduled_at, status, error, external_url, published_at, views, likes, comments, stats_updated_at, projects(title)",
       )
-      .eq("user_id", context.userId)
       .order("scheduled_at", { ascending: false })
       .limit(300);
+    q = team ? q.eq("team_id", team) : q.eq("user_id", context.userId).is("team_id", null);
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
-    return (data ?? []).map(({ projects, ...p }) => ({
+    const role = team ? await roleIn(team, context.userId) : null;
+    // Who posted each one (a team's posts come from several people).
+    const names = new Map<string, string>();
+    if (team) {
+      const db = await admin();
+      for (const uid of new Set((data ?? []).map((p) => p.user_id))) {
+        const { data: u } = await db.auth.admin.getUserById(uid);
+        const meta = (u?.user?.user_metadata ?? {}) as { full_name?: string };
+        names.set(uid, meta.full_name || u?.user?.email?.split("@")[0] || "Someone");
+      }
+    }
+    return (data ?? []).map(({ projects, user_id, ...p }) => ({
       ...p,
       project_title: (projects as { title: string } | null)?.title ?? null,
+      by: team ? (user_id === context.userId ? "you" : (names.get(user_id) ?? null)) : null,
+      // Move, cancel, retry or remove: whoever posted it, or the team's owner and admins.
+      can_manage: !team || manages(role) || (role === "editor" && user_id === context.userId),
     })) as SocialPost[];
   });
 
@@ -239,14 +321,8 @@ const PostInput = z.object({
 /** A TikTok account's sign-in, ready to call the API (refreshed if needed). */
 async function tiktokToken(userId: string, accountId: string) {
   const db = await admin();
-  const { data: account } = await db
-    .from("social_accounts")
-    .select("*")
-    .eq("id", accountId)
-    .eq("user_id", userId)
-    .eq("platform", "tiktok")
-    .maybeSingle();
-  if (!account) throw new Error("Account not found");
+  const account = await postableAccount(userId, accountId);
+  if (!account || account.platform !== "tiktok") throw new Error("Account not found");
   if (account.status !== "active") throw new Error(`Reconnect ${account.name} first`);
   const { accessTokenFor } = await server();
   return { account, token: await accessTokenFor(db, account, 5 * 60 * 1000) };
@@ -273,11 +349,12 @@ export const getExportPreview = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: project } = await context.supabase
       .from("projects")
-      .select("output_path")
+      .select("output_path, user_id, team_id")
       .eq("id", data.projectId)
-      .eq("user_id", context.userId)
       .maybeSingle();
-    if (!project?.output_path?.startsWith(`${context.userId}/`)) return { url: null, ext: null };
+    if (!project?.output_path || !inFolder(project.output_path, projectFolder(project))) {
+      return { url: null, ext: null };
+    }
     const { data: signed } = await context.supabase.storage
       .from("renders")
       .createSignedUrl(project.output_path, 60 * 60);
@@ -305,25 +382,34 @@ export const createPosts = createServerFn({ method: "POST" })
 
     const { data: project } = await context.supabase
       .from("projects")
-      .select("id, output_path, thumbnail_url, team_id")
+      .select("id, output_path, thumbnail_url, team_id, user_id")
       .eq("id", data.projectId)
       .maybeSingle();
     if (!project) throw new Error("Project not found");
-    if (project.team_id) {
-      throw new Error("Posting team projects comes with team accounts, in the next update");
+    // A team project: Editors and up post it, to the team's accounts only.
+    const team = project.team_id;
+    if (team && !posts(await roleIn(team, context.userId))) {
+      throw new Error("Viewers can't post the team's projects");
     }
-    if (!project.output_path || !project.output_path.startsWith(`${context.userId}/`)) {
+    if (!team && project.user_id !== context.userId) throw new Error("Project not found");
+    if (!project.output_path || !inFolder(project.output_path, projectFolder(project))) {
       throw new Error("Export this project first, then post it");
     }
 
-    const { data: accounts, error: aErr } = await context.supabase
+    let aq = context.supabase
       .from("social_accounts")
       .select("id, platform, name, status, scopes")
-      .eq("user_id", context.userId)
       .in("id", data.accountIds);
+    aq = team ? aq.eq("team_id", team) : aq.eq("user_id", context.userId).is("team_id", null);
+    const { data: accounts, error: aErr } = await aq;
     if (aErr) throw new Error(aErr.message);
-    if ((accounts ?? []).length !== new Set(data.accountIds).size)
-      throw new Error("Account not found");
+    if ((accounts ?? []).length !== new Set(data.accountIds).size) {
+      throw new Error(
+        team
+          ? "Team projects go to the team's accounts only"
+          : "Personal projects go to your own accounts only",
+      );
+    }
     const stale = (accounts ?? []).find((a) => a.status !== "active");
     if (stale) throw new Error(`Reconnect ${stale.name} on the Publishing page first`);
     if (!title && accounts!.some((a) => a.platform === "youtube")) {
@@ -400,6 +486,7 @@ export const createPosts = createServerFn({ method: "POST" })
       .insert(
         accounts!.map((a) => ({
           user_id: context.userId,
+          team_id: team,
           project_id: project.id,
           account_id: a.id,
           platform: a.platform,
@@ -434,15 +521,31 @@ export const createPosts = createServerFn({ method: "POST" })
 
 const IdInput = z.object({ id: z.string().uuid() });
 
+/** A post the caller may change: theirs, or (for a team post) as its owner or an admin. */
+async function postToChange(supabase: SupabaseClient<Database>, userId: string, id: string) {
+  const { data: post } = await supabase
+    .from("social_posts")
+    .select("id, user_id, team_id, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!post) throw new Error("Post not found");
+  const role = post.team_id ? await roleIn(post.team_id, userId) : null;
+  const ok = post.team_id
+    ? manages(role) || (role === "editor" && post.user_id === userId)
+    : post.user_id === userId;
+  if (!ok) throw new Error("Only whoever posted it, or the team's owner and admins, can change it");
+  return post;
+}
+
 export const cancelPost = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => IdInput.parse(d))
   .handler(async ({ data, context }) => {
+    await postToChange(context.supabase, context.userId, data.id);
     const { data: row, error } = await context.supabase
       .from("social_posts")
       .update({ status: "canceled" })
       .eq("id", data.id)
-      .eq("user_id", context.userId)
       .eq("status", "scheduled")
       .select("id")
       .maybeSingle();
@@ -467,6 +570,7 @@ export const reschedulePost = createServerFn({ method: "POST" })
         throw new Error(`Posts can be scheduled up to ${SCHEDULE_MAX_AHEAD_DAYS} days ahead`);
       }
     }
+    await postToChange(context.supabase, context.userId, data.id);
     const { data: row, error } = await context.supabase
       .from("social_posts")
       .update({
@@ -477,7 +581,6 @@ export const reschedulePost = createServerFn({ method: "POST" })
         external_ref: null,
       })
       .eq("id", data.id)
-      .eq("user_id", context.userId)
       .in("status", ["scheduled", "failed"])
       .select("id")
       .maybeSingle();
@@ -485,7 +588,8 @@ export const reschedulePost = createServerFn({ method: "POST" })
     if (!row) throw new Error("That post can't be changed now");
     if (!data.scheduledAt) {
       const { dispatchDuePosts } = await server();
-      await dispatchDuePosts(await admin(), { ids: [row.id], userId: context.userId });
+      // (Checked above; an admin may retry someone else's team post.)
+      await dispatchDuePosts(await admin(), { ids: [row.id] });
     }
     return { ok: true };
   });
@@ -495,11 +599,11 @@ export const deletePost = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => IdInput.parse(d))
   .handler(async ({ data, context }) => {
+    await postToChange(context.supabase, context.userId, data.id);
     const { error } = await context.supabase
       .from("social_posts")
       .delete()
       .eq("id", data.id)
-      .eq("user_id", context.userId)
       .in("status", ["canceled", "failed"]);
     if (error) throw new Error(error.message);
     return { ok: true };

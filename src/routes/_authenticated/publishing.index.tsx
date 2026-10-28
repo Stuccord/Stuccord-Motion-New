@@ -44,6 +44,7 @@ import {
   startConnect,
 } from "@/lib/publishing.functions";
 import { PlatformIcon } from "@/components/platform-icon";
+import { useWorkspace } from "@/lib/use-workspace";
 import {
   PLATFORM_LABEL,
   TIKTOK_PRIVACY_LABEL,
@@ -112,16 +113,20 @@ function PublishingPage() {
   const fetchAccounts = useServerFn(listSocialAccounts);
   const fetchPosts = useServerFn(listPosts);
   const connect = useServerFn(startConnect);
+  // The workspace's accounts and posts: yours, or the team's.
+  const ws = useWorkspace();
+  const team = ws.team;
+  const canConnect = !team || team.role === "owner" || team.role === "admin";
 
   const setup = useQuery({ queryKey: ["publishing-setup"], queryFn: () => fetchSetup() });
   const accounts = useQuery({
-    queryKey: ["social-accounts"],
-    queryFn: () => fetchAccounts(),
+    queryKey: ["social-accounts", ws.id],
+    queryFn: () => fetchAccounts({ data: { workspace: ws.id } }),
     retry: false,
   });
   const posts = useQuery({
-    queryKey: ["social-posts"],
-    queryFn: () => fetchPosts(),
+    queryKey: ["social-posts", ws.id],
+    queryFn: () => fetchPosts({ data: { workspace: ws.id } }),
     retry: false,
     // Keep an eye on uploads and posts that are about to go out.
     refetchInterval: (q) =>
@@ -139,7 +144,7 @@ function PublishingPage() {
   const [disconnecting, setDisconnecting] = useState<SocialAccount | null>(null);
 
   const go = useMutation({
-    mutationFn: (platform: Platform) => connect({ data: { platform } }),
+    mutationFn: (platform: Platform) => connect({ data: { platform, teamId: team?.id ?? null } }),
     onSuccess: (r) => {
       window.location.href = r.url;
     },
@@ -163,7 +168,11 @@ function PublishingPage() {
   return (
     <AppShell
       title="Publishing"
-      subtitle="Post your exports to YouTube, TikTok and Instagram, now or on a schedule."
+      subtitle={
+        team
+          ? `${team.name}'s accounts and posts: everyone in the team can see them.`
+          : "Post your exports to YouTube, TikTok and Instagram, now or on a schedule."
+      }
     >
       <div className="space-y-6">
         {/* Accounts */}
@@ -172,11 +181,15 @@ function PublishingPage() {
             <div>
               <div className="text-sm font-semibold">Connected accounts</div>
               <div className="text-xs text-neutral-500 mt-0.5">
-                Stuccord posts as these accounts. You can disconnect any time.
+                {team
+                  ? canConnect
+                    ? `Stuccord posts ${team.name}'s projects as these accounts. Editors and up can post to them.`
+                    : `${team.name}'s accounts. Only the team's owner and admins can connect or disconnect them.`
+                  : "Stuccord posts as these accounts. You can disconnect any time."}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {platforms.map((pl) => (
+              {(canConnect ? platforms : []).map((pl) => (
                 <Button
                   key={pl}
                   size="sm"
@@ -238,19 +251,21 @@ function PublishingPage() {
                       )}
                     </div>
                   </div>
-                  {a.status !== "active" && platforms.includes(a.platform) && (
+                  {canConnect && a.status !== "active" && platforms.includes(a.platform) && (
                     <Button size="sm" variant="outline" onClick={() => go.mutate(a.platform)}>
                       Reconnect
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                    onClick={() => setDisconnecting(a)}
-                  >
-                    <Unplug className="w-3.5 h-3.5 mr-1" /> Disconnect
-                  </Button>
+                  {canConnect && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                      onClick={() => setDisconnecting(a)}
+                    >
+                      <Unplug className="w-3.5 h-3.5 mr-1" /> Disconnect
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -279,7 +294,11 @@ function PublishingPage() {
                 </button>
               ))}
             </div>
-            <Button size="sm" onClick={() => setComposing(true)} disabled={list.length === 0}>
+            <Button
+              size="sm"
+              onClick={() => setComposing(true)}
+              disabled={list.length === 0 || !ws.canEdit}
+            >
               <Plus className="w-4 h-4 mr-1.5" /> New post
             </Button>
           </div>
@@ -314,7 +333,7 @@ function PublishingPage() {
         </section>
       </div>
 
-      <PublishDialog open={composing} onOpenChange={setComposing} />
+      <PublishDialog open={composing} onOpenChange={setComposing} workspace={ws.id} />
       <DisconnectDialog account={disconnecting} onClose={() => setDisconnecting(null)} />
     </AppShell>
   );
@@ -401,6 +420,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
         </div>
         <div className="text-[11px] text-neutral-500 mt-0.5 truncate">
           {post.account_name}
+          {post.by ? ` · by ${post.by}` : ""}
           {post.project_title ? ` · ${post.project_title}` : ""} · {timeLabel}
           {audience(post) ? ` · ${audience(post)}` : ""}
         </div>
@@ -441,7 +461,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
       )}
 
       <div className="flex items-center gap-1">
-        {post.status === "scheduled" && (
+        {post.can_manage && post.status === "scheduled" && (
           <>
             <Popover open={moveOpen} onOpenChange={setMoveOpen}>
               <PopoverTrigger asChild>
@@ -483,7 +503,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
             </Button>
           </>
         )}
-        {post.status === "failed" && post.account_id && (
+        {post.can_manage && post.status === "failed" && post.account_id && (
           <Button
             variant="ghost"
             size="sm"
@@ -493,7 +513,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
             <RotateCcw className="w-3.5 h-3.5 mr-1" /> Try again
           </Button>
         )}
-        {(post.status === "failed" || post.status === "canceled") && (
+        {post.can_manage && (post.status === "failed" || post.status === "canceled") && (
           <Button
             variant="ghost"
             size="sm"

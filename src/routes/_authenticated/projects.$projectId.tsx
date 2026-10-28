@@ -2201,7 +2201,7 @@ function EditorPage() {
               project.status === "ready" ? setExportOpen(true) : render.mutate()
             }
             onOpenThumbnail={() => setThumbOpen(true)}
-            onOpenPublish={project.team_id ? undefined : () => setPublishOpen(true)}
+            onOpenPublish={() => setPublishOpen(true)}
             canPublish={!!project.output_path}
             isRenderDisabled={
               render.isPending || (inProgress && project.status !== "ready")
@@ -2540,6 +2540,7 @@ function EditorPage() {
         onOpenChange={setPublishOpen}
         projectId={projectId}
         defaultTitle={project.title.slice(0, 100)}
+        workspace={project.team_id ?? "personal"}
         dark
       />
     </div>

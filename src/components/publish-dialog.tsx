@@ -68,6 +68,7 @@ export function PublishDialog({
   projectId,
   defaultTitle = "",
   dark = false,
+  workspace = "personal",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -76,6 +77,11 @@ export function PublishDialog({
   defaultTitle?: string;
   /** The editor's dark look. */
   dark?: boolean;
+  /**
+   * Whose accounts and projects: "personal" or a team's id (a team project
+   * only goes to the team's accounts, a personal one to your own).
+   */
+  workspace?: string;
 }) {
   const qc = useQueryClient();
   const fetchAccounts = useServerFn(listSocialAccounts);
@@ -84,14 +90,14 @@ export function PublishDialog({
   const fetchCreator = useServerFn(getTikTokCreatorInfo);
   const post = useServerFn(createPosts);
   const accounts = useQuery({
-    queryKey: ["social-accounts"],
-    queryFn: () => fetchAccounts(),
+    queryKey: ["social-accounts", workspace],
+    queryFn: () => fetchAccounts({ data: { workspace } }),
     enabled: open,
     retry: false,
   });
   const projects = useQuery({
-    queryKey: ["projects", "personal"],
-    queryFn: () => fetchProjects({ data: { workspace: "personal" } }),
+    queryKey: ["projects", workspace],
+    queryFn: () => fetchProjects({ data: { workspace } }),
     enabled: open && !projectId,
   });
   const exported = useMemo(

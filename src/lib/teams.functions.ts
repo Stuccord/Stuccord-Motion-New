@@ -471,6 +471,30 @@ export const deleteTeam = createServerFn({ method: "POST" })
         `The team still has ${projects} project${projects === 1 ? "" : "s"}. Move them out or delete them first.`,
       );
     }
+    // Sign out of the team's social accounts (their rows go with the team).
+    const { data: accounts } = await db
+      .from("social_accounts")
+      .select("*")
+      .eq("team_id", data.teamId);
+    if (accounts?.length) {
+      const { provider } = await import("@/lib/publishing/providers.server");
+      const { openToken, tokenOwner } = await import("@/lib/publishing/crypto.server");
+      for (const a of accounts) {
+        try {
+          const p = provider(a.platform as "youtube" | "tiktok" | "instagram");
+          const sealed =
+            p.revokeWith === "refresh" && a.refresh_token_enc
+              ? a.refresh_token_enc
+              : a.access_token_enc;
+          await p.revoke(await openToken(sealed, tokenOwner(a)));
+        } catch (e) {
+          console.error(
+            "[deleteTeam] Signing out of an account failed:",
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    }
     const { error } = await db.from("teams").delete().eq("id", data.teamId);
     if (error) throw new Error(error.message);
     return { ok: true };

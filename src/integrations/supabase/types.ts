@@ -218,6 +218,7 @@ export type Database = {
           refresh_token_enc: string | null
           scopes: string | null
           status: string
+          team_id: string | null
           token_expires_at: string | null
           updated_at: string
           user_id: string
@@ -233,6 +234,7 @@ export type Database = {
           refresh_token_enc?: string | null
           scopes?: string | null
           status?: string
+          team_id?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id: string
@@ -248,6 +250,7 @@ export type Database = {
           refresh_token_enc?: string | null
           scopes?: string | null
           status?: string
+          team_id?: string | null
           token_expires_at?: string | null
           updated_at?: string
           user_id?: string
@@ -278,6 +281,7 @@ export type Database = {
           scheduled_at: string
           stats_updated_at: string | null
           status: string
+          team_id: string | null
           title: string
           updated_at: string
           user_id: string
@@ -307,6 +311,7 @@ export type Database = {
           scheduled_at?: string
           stats_updated_at?: string | null
           status?: string
+          team_id?: string | null
           title?: string
           updated_at?: string
           user_id: string
@@ -336,6 +341,7 @@ export type Database = {
           scheduled_at?: string
           stats_updated_at?: string | null
           status?: string
+          team_id?: string | null
           title?: string
           updated_at?: string
           user_id?: string
@@ -589,6 +595,10 @@ export type Database = {
       team_role: {
         Args: { team: string }
         Returns: string
+      }
+      post_is_in_place: {
+        Args: { p_team: string; p_user: string; p_account: string; p_video: string; p_cover: string }
+        Returns: boolean
       }
     }
     Enums: {

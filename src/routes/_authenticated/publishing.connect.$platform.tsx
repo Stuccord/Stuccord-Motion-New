@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { finishConnect } from "@/lib/publishing.functions";
+import { setWorkspace } from "@/lib/use-workspace";
 import { PLATFORMS, PLATFORM_LABEL, type Platform } from "@/lib/publishing-shared";
 
 // Where a platform sends the user back after they sign in
@@ -49,6 +50,8 @@ function ConnectReturn() {
       .then((r) => {
         toast.success(r.reconnected ? `${r.name} reconnected` : `${r.name} connected`);
         void qc.invalidateQueries({ queryKey: ["social-accounts"] });
+        // Connected for a team: show that team's accounts.
+        if (r.teamId) setWorkspace(r.teamId);
         void navigate({ to: "/publishing", replace: true });
       })
       .catch((e: unknown) => setProblem(e instanceof Error ? e.message : "Couldn't connect"));

@@ -133,6 +133,7 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
       "For Instagram, choose Reel (with your caption, up to 15 minutes; it can also show in the feed) or Story (up to 60 seconds, no caption, gone after 24 hours). Your project cover becomes the Reel's cover.",
       "Scheduled posts go out within a minute or two of the time. You can move or cancel them until then.",
       "Views, likes and comments are updated once a day, on the Publishing page and in Analytics.",
+      "In a team (pick it at the top of the sidebar), the team's owner and admins connect its accounts, and Editors and up post the team's projects to them. Team projects only go to team accounts; personal projects only to yours.",
     ],
   },
 ];

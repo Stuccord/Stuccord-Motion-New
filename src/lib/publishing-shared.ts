@@ -90,6 +90,10 @@ export type SocialAccount = {
 };
 
 export type SocialPost = {
+  /** Who posted it, for a team's posts ("you", or their name); null for personal. */
+  by: string | null;
+  /** The caller can move, cancel, retry or remove it. */
+  can_manage: boolean;
   /** Platform choices: TikTokOptions, InstagramOptions, or {} for YouTube. */
   options: TikTokOptions | InstagramOptions | Record<string, never>;
   id: string;

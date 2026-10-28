@@ -30,7 +30,11 @@ function AnalyticsPage() {
     queryFn: () => fetchStats({ data: { workspace: ws.id } }),
   });
   const fetchPosts = useServerFn(listPosts);
-  const posts = useQuery({ queryKey: ["social-posts"], queryFn: () => fetchPosts(), retry: false });
+  const posts = useQuery({
+    queryKey: ["social-posts", ws.id],
+    queryFn: () => fetchPosts({ data: { workspace: ws.id } }),
+    retry: false,
+  });
 
   // Reach from posted videos (view counts are updated daily).
   const reach = useMemo(() => {
