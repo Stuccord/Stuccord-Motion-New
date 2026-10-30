@@ -55,6 +55,7 @@ import { clampZoom, sliderToZoom, zoomToSlider } from "./timeline-zoom";
 import { FPS, formatFrameTimecode } from "./timecode";
 import { thumbnailKey } from "@/lib/video-thumbnail";
 import { GraphicsBlocks, type GraphicsTrackData } from "./GraphicsTrack";
+import { SoundBlocks, type SoundsTrackData } from "./SoundsTrack";
 import { frameAt, type Filmstrip, type Waveform } from "@/lib/clip-strips";
 import type { Range } from "@/lib/auto-cut";
 import { IMAGE_MIME_TYPES, isImageFilename } from "@/lib/media-kind";
@@ -906,6 +907,8 @@ type TimelineTracksProps = {
   readOnly?: boolean;
   /** The Motion Explainer graphics track (G1); none: no track. */
   graphics?: GraphicsTrackData;
+  /** The Motion Explainer sounds track (S1); none: no track. */
+  sounds?: SoundsTrackData;
   aRoll: ClipRow[];
   bRoll: ClipRow[];
   videoClips: ClipRow[];
@@ -991,6 +994,7 @@ function TimelineTracks({
   onRemoveClip,
   readOnly = false,
   graphics,
+  sounds,
 }: TimelineTracksProps) {
   // Clip being dragged to a new place: how far it's drawn from its place
   // (to where it will land). `settling`: dropped, waiting for the save.
@@ -2436,6 +2440,36 @@ function TimelineTracks({
             </TrackRow>
           )}
 
+          {/* S1 Sounds: the Motion Explainer sounds */}
+          {sounds && (
+            <TrackRow
+              label="S1"
+              name="Sounds"
+              note={sounds.items.length ? "Whooshes, clicks, hits" : "None yet"}
+              icon={AudioLines}
+              toneClass="text-sky-300"
+              toggle={
+                sounds.onToggle && {
+                  on: sounds.enabled,
+                  onToggle: sounds.onToggle,
+                  what: "graphics sounds",
+                  kind: "sound",
+                }
+              }
+              size="slim"
+              innerWidth={trackWidthPx}
+              contentHandlers={scrubHandlers}
+            >
+              {sounds.items.length === 0 ? (
+                <div className="absolute inset-0 flex items-center px-3 text-[12px] italic text-neutral-500 pointer-events-none">
+                  {sounds.enabled ? "Sounds follow the graphics" : "Sounds are off"}
+                </div>
+              ) : (
+                <SoundBlocks data={sounds} pxPerSec={pxPerSec} />
+              )}
+            </TrackRow>
+          )}
+
           {/* V3 Captions: the phrases the export burns in */}
           <TrackRow
             label="V3"
@@ -2649,6 +2683,8 @@ export interface TimelinePanelProps {
   readOnly?: boolean;
   /** The Motion Explainer graphics track (G1); none: no track. */
   graphics?: GraphicsTrackData;
+  /** The Motion Explainer sounds track (S1); none: no track. */
+  sounds?: SoundsTrackData;
   projectTitle: string;
   aRoll: ClipRow[];
   bRoll: ClipRow[];
@@ -2758,6 +2794,7 @@ export function TimelinePanel({
   onRemoveClip,
   readOnly = false,
   graphics,
+  sounds,
 }: TimelinePanelProps) {
   // Length of the exported video: until the last clip on V1 or V2 ends.
   const programMs = videoEndMs(aRoll, bRoll, clipVisibleMs);
@@ -2954,6 +2991,7 @@ export function TimelinePanel({
         onRemoveClip={onRemoveClip}
         readOnly={readOnly}
         graphics={graphics}
+        sounds={sounds}
       />
     </div>
   );

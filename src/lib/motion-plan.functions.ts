@@ -230,12 +230,18 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
     if (runErr) console.error("[planMotionGraphics] Recording the plan failed:", runErr.message);
 
     const elements = draftsToElements(result.draft.elements, words);
+    // The sound switch and volume carry over; hand-moved or deleted sounds
+    // belonged to the old graphics, so they don't.
+    const before = parseMotionPlan(project.motion_plan)?.sound;
     const plan: MotionPlan = {
       version: 1,
       style: MOTION_STYLE,
       model: result.model.slice(0, 64),
       language: result.draft.language.slice(0, 16) || "en",
       created_at: new Date().toISOString(),
+      ...(before && (before.enabled !== undefined || before.volume !== undefined)
+        ? { sound: { enabled: before.enabled, volume: before.volume } }
+        : {}),
       elements,
     };
 

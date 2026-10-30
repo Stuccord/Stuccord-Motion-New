@@ -117,6 +117,17 @@ export const MotionElement = z.object({
 });
 export type MotionElement = z.infer<typeof MotionElement>;
 
+/** The automatic sounds' settings and hand edits (src/motion/sounds.ts). */
+const SoundSettings = z.object({
+  enabled: z.boolean().optional(),
+  volume: z.number().int().min(0).max(100).optional(),
+  removed: z.array(z.string().max(100)).max(2000).optional(),
+  moved: z
+    .record(z.string().max(100), z.number().int().min(-20_000).max(20_000))
+    .refine((m) => Object.keys(m).length <= 2000, "Too many moved sounds")
+    .optional(),
+});
+
 export const MotionPlan = z.object({
   version: z.literal(1),
   style: z.literal(MOTION_STYLE),
@@ -125,6 +136,8 @@ export const MotionPlan = z.object({
   created_at: z.string().max(40),
   /** Off: no graphics in the preview or export (the track's eye button). Missing means on. */
   enabled: z.boolean().optional(),
+  /** Automatic sounds: on/off, volume, and sounds moved or deleted by hand. */
+  sound: SoundSettings.optional(),
   elements: z.array(MotionElement).max(MAX_ELEMENTS),
 });
 export type MotionPlan = z.infer<typeof MotionPlan>;

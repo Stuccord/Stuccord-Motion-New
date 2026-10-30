@@ -210,3 +210,152 @@ export function composeArgs({ input, pieces, zoom, textFilters, output }) {
   );
   return args;
 }
+
+// ---------- sounds (mirrors src/motion/sounds.ts) ----------
+
+export const SOUNDS_DIR = path.join(here, "sounds");
+const SOUND_KINDS = new Set(["whoosh-light", "whoosh-deep", "click", "pop", "ui-blip", "glitch", "riser", "hit"]);
+const KIND_GAIN = {
+  "whoosh-light": 0.9,
+  "whoosh-deep": 0.9,
+  click: 0.8,
+  pop: 0.9,
+  "ui-blip": 0.8,
+  glitch: 0.8,
+  riser: 0.75,
+  hit: 0.9,
+};
+export const MUSIC_BEDS = ["bed-calm", "bed-focus", "bed-drive"];
+const WHOOSH_LEAD_MS = 250;
+const RISER_MS = 1500;
+const DEFAULT_SOUND_VOLUME = 70;
+const MIN_MUSIC_MS = 4000;
+const frameMs = (f) => (f / MOTION_FPS) * 1000;
+
+/** Where the sounds go, before hand edits. */
+export function baseSoundEvents(graphics, zooms) {
+  const out = [];
+  const add = (g, part, kind, atMs) =>
+    out.push({ id: `${g.id}:${part}`, kind, atMs: Math.max(0, Math.round(atMs)), graphicId: g.id });
+  for (const g of graphics) {
+    const at = frameMs(g.from);
+    const len = g.to - g.from;
+    switch (g.type) {
+      case "keyline":
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        add(g, "pop", "pop", at);
+        break;
+      case "counter":
+        add(g, "enter", "ui-blip", at);
+        add(g, "done", "click", at + frameMs(30));
+        break;
+      case "list": {
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        const step = g.items.length > 1 ? Math.max(6, (len * 0.66) / g.items.length) : 0;
+        g.items.forEach((_, i) => add(g, `item${i}`, "click", at + frameMs(Math.round(i * step))));
+        break;
+      }
+      case "card":
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        add(g, "blip", "ui-blip", at + frameMs(4));
+        break;
+      case "compare": {
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        const second = Math.max(10, Math.round(len * 0.4));
+        add(g, "second", "whoosh-deep", at + frameMs(second) - WHOOSH_LEAD_MS);
+        break;
+      }
+      case "chapter":
+        if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
+        add(g, "hit", "hit", at);
+        add(g, "title", "glitch", at + frameMs(4));
+        break;
+      case "label":
+        add(g, "pop", "pop", at);
+        break;
+      case "cta":
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        add(g, "click", "click", at + frameMs(22));
+        break;
+    }
+  }
+  for (const z of zooms) {
+    if (z.zoom === "in") add(z, "enter", "whoosh-light", frameMs(z.from) - WHOOSH_LEAD_MS);
+  }
+  return out.sort((a, b) => a.atMs - b.atMs);
+}
+
+/** The sounds after hand edits; none when off. Bad settings are ignored. */
+export function soundEvents(graphics, zooms, settings) {
+  const s = settings && typeof settings === "object" ? settings : {};
+  if (s.enabled === false) return [];
+  const removed = new Set(Array.isArray(s.removed) ? s.removed.filter((x) => typeof x === "string") : []);
+  const moved = s.moved && typeof s.moved === "object" ? s.moved : {};
+  return baseSoundEvents(graphics, zooms)
+    .filter((e) => !removed.has(e.id))
+    .map((e) => {
+      const m = Number(moved[e.id]);
+      return Number.isFinite(m) && m ? { ...e, atMs: Math.max(0, e.atMs + Math.max(-20000, Math.min(20000, m))) } : e;
+    })
+    .sort((a, b) => a.atMs - b.atMs);
+}
+
+export function soundGain(kind, settings) {
+  const raw = Number(settings?.volume);
+  const v = Math.min(100, Math.max(0, Number.isFinite(raw) ? raw : DEFAULT_SOUND_VOLUME));
+  return Number((((KIND_GAIN[kind] ?? 0.8) * v) / 100).toFixed(3));
+}
+
+/** The music's stretches: a new one at each chapter. */
+export function chapterStretches(graphics, endMs, pick) {
+  const starts = [0];
+  for (const g of graphics) {
+    if (g.type !== "chapter") continue;
+    const at = frameMs(g.from);
+    if (at - starts[starts.length - 1] >= MIN_MUSIC_MS && endMs - at >= MIN_MUSIC_MS) starts.push(at);
+  }
+  return starts.map((s, i) => ({ what: pick(i), startMs: s, endMs: starts[i + 1] ?? endMs }));
+}
+
+// Sounds per ffmpeg run: keeps the command line well under Windows' limit
+// and the number of open files small.
+const SOUNDS_PER_RUN = 40;
+
+/**
+ * The ffmpeg runs, in order, that mix every automatic sound into one track
+ * `durationMs` long at `out`, for the music mix to take as a single sound:
+ * the sounds in batches, each to its own part, then the parts together.
+ * null when there are none. Each sound is its own input: one file split to
+ * several delays (asplit) stalls ffmpeg.
+ */
+export function sfxTrackArgs(events, durationMs, out) {
+  const usable = events.filter((e) => SOUND_KINDS.has(e.kind) && e.atMs < durationMs);
+  if (!usable.length) return null;
+  const D = (durationMs / 1000).toFixed(3);
+  const fmt = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
+  const mixTo = (inputs, filters, dest) => [
+    "-nostdin",
+    "-y",
+    ...inputs.flatMap((p) => ["-i", p]),
+    "-filter_complex",
+    [
+      ...filters,
+      `${inputs.map((_, i) => `[e${i}]`).join("")}amix=inputs=${inputs.length}:duration=longest:` +
+        `dropout_transition=0:normalize=0,apad,atrim=0:${D}[out]`,
+    ].join(";"),
+    "-map", "[out]", "-c:a", "pcm_s16le", dest,
+  ];
+  const batches = [];
+  for (let i = 0; i < usable.length; i += SOUNDS_PER_RUN) batches.push(usable.slice(i, i + SOUNDS_PER_RUN));
+  const parts = batches.length === 1 ? [out] : batches.map((_, b) => out.replace(/\.wav$/, `.part${b}.wav`));
+  const runs = batches.map((evs, b) =>
+    mixTo(
+      evs.map((e) => path.join(SOUNDS_DIR, `${e.kind}.m4a`)),
+      evs.map((e, i) => `[${i}:a]${fmt},volume=${e.gain},adelay=${Math.round(e.atMs)}:all=1[e${i}]`),
+      parts[b],
+    ),
+  );
+  // The parts all start at 0:00, so they mix without delays.
+  if (parts.length > 1) runs.push(mixTo(parts, parts.map((_, i) => `[${i}:a]anull[e${i}]`), out));
+  return runs;
+}

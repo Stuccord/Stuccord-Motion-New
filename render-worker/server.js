@@ -34,10 +34,16 @@ import { fileURLToPath } from "url";
 import { registerPublishing } from "./publish.js";
 import {
   MOTION_FPS,
+  MUSIC_BEDS,
+  SOUNDS_DIR,
   captionGaps,
+  chapterStretches,
   composeArgs,
   placeGraphics,
   renderGraphics,
+  sfxTrackArgs,
+  soundEvents,
+  soundGain,
   zoomFilter,
 } from "./motion.js";
 
@@ -785,7 +791,7 @@ function musicGain(volume) {
  *    musicPlan { mode: "sequence", paths } plays the files one after another
  *    from 0:00, looped to the end of the video; { mode: "segments",
  *    segments: [{ path, startMs, endMs }] } loops each file over its own span,
- *  - sfxEvents: [{ path, atMs }], each SFX played once at its time,
+ *  - sfxEvents: [{ path, atMs, gain? }], each SFX played once at its time,
  *  - voiceovers: [{ path, atMs, inMs, outMs }], each played once at its
  *    time (the part from inMs to outMs); the video's own sound and the
  *    music get quieter under them.
@@ -918,7 +924,8 @@ function buildAudioMixArgs({
   sfxEvents.slice(0, MAX_SFX).forEach((ev, k) => {
     inputs.push("-i", ev.path);
     const at = Math.max(0, Math.round(ev.atMs));
-    graph.push(`[${firstSfx + k}:a]${AUDIO_FMT},volume=${SFX_GAIN},adelay=${at}:all=1[s${k}]`);
+    const gain = Number.isFinite(ev.gain) ? ev.gain : SFX_GAIN;
+    graph.push(`[${firstSfx + k}:a]${AUDIO_FMT},volume=${gain},adelay=${at}:all=1[s${k}]`);
     mixInputs.push(`[s${k}]`);
   });
 
@@ -1536,7 +1543,12 @@ async function runRender(job) {
     const voClips = (Array.isArray(job.voiceovers) ? job.voiceovers : []).filter(
       (c) => c && isAbsoluteHttpUrl(c.download_url),
     );
-    if (musicClips.length || sfxClips.length || voClips.length) {
+    // Motion Explainer graphics on the final video (from their words), for
+    // their sounds and music here and their drawing in 4d.
+    const placedMotion = motionJob ? placeGraphics(motionJob.elements, placedWords) : null;
+    const graphicsSounds = !!placedMotion && motionJob.sound?.enabled !== false;
+    const builtInMusic = !!placedMotion && musicOn && musicClips.length === 0;
+    if (musicClips.length || sfxClips.length || voClips.length || graphicsSounds || builtInMusic) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 80,
         stage_message: voClips.length ? "Mixing voiceover & music" : "Mixing music & SFX",
@@ -1574,6 +1586,24 @@ async function runRender(job) {
           });
           musicPlan = { mode: "segments", segments };
         }
+        // With Motion Explainer graphics, the music changes at each chapter:
+        // the built-in beds when no song was added, or the added songs in
+        // turn (when there are two or more and none was placed by hand).
+        if (placedMotion && musicOn) {
+          const chapters = placedMotion.graphics.some((g) => g.type === "chapter");
+          const stretchesOf = (pick) =>
+            chapterStretches(placedMotion.graphics, video.durationMs, pick)
+              .filter((st) => st.endMs - st.startMs >= 100)
+              .map((st) => ({ path: st.what, startMs: st.startMs, endMs: st.endMs }));
+          if (!musicClips.length) {
+            musicPlan = {
+              mode: "segments",
+              segments: stretchesOf((i) => path.join(SOUNDS_DIR, `${MUSIC_BEDS[i % MUSIC_BEDS.length]}.m4a`)),
+            };
+          } else if (chapters && musicPaths.length >= 2 && !musicClips.some((c) => c.start_ms != null)) {
+            musicPlan = { mode: "segments", segments: stretchesOf((i) => musicPaths[i % musicPaths.length]) };
+          }
+        }
 
         // SFX: one with no start plays on every cut (where each main clip
         // after the first starts), taking turns with the others; a placed
@@ -1588,6 +1618,23 @@ async function runRender(job) {
         sfxClips.forEach((c, i) => {
           if (c.start_ms != null) sfxEvents.push({ path: sfxPaths[i], atMs: Number(c.start_ms) });
         });
+        // The graphics' sounds, mixed into one track first (best-effort).
+        if (graphicsSounds) {
+          try {
+            const events = soundEvents(placedMotion.graphics, placedMotion.zooms, motionJob.sound).map(
+              (e) => ({ ...e, gain: soundGain(e.kind, motionJob.sound) }),
+            );
+            const trackPath = path.join(workdir, "graphics-sounds.wav");
+            const runs = sfxTrackArgs(events, video.durationMs, trackPath);
+            if (runs) {
+              for (const args of runs) await run(ffmpegPath, args);
+              sfxEvents.push({ path: trackPath, atMs: 0, gain: 1 });
+            }
+          } catch (e) {
+            console.warn(`[Worker] Graphics sounds failed for job=${job.job_id}:`, e?.message || e);
+            editPlan = { ...(editPlan ?? {}), sounds_error: String(e?.message ?? e).slice(0, 300) };
+          }
+        }
 
         const mixedOut = path.join(workdir, "mixed.mp4");
         await run(
@@ -1624,7 +1671,7 @@ async function runRender(job) {
     let zoom = null;
     if (motionJob) {
       try {
-        const placed = placeGraphics(motionJob.elements, placedWords);
+        const placed = placedMotion;
         const totalMs = await probeDurationMs(composedOut);
         const totalFrames = Math.ceil(((totalMs ?? 0) / 1000) * MOTION_FPS);
         if (totalFrames > 0 && placed.graphics.length) {

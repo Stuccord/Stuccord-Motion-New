@@ -1673,7 +1673,12 @@ export async function startCloudRender(
       // transcript; the worker places them from the words, like captions,
       // and draws them in the colours below (see src/motion).
       motion: withGraphics
-        ? { elements: motionPlan.elements, theme: themeFromAccent(kit.highlightColor) }
+        ? {
+            elements: motionPlan.elements,
+            theme: themeFromAccent(kit.highlightColor),
+            // Automatic sounds: on/off, volume, and hand edits.
+            sound: motionPlan.sound ?? null,
+          }
         : null,
       // Voiceovers go apart from the clips, so a worker from before
       // voiceovers leaves them out instead of taking them for videos.

@@ -6,7 +6,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AudioLines, Loader2, Undo2, Wand2 } from "lucide-react";
+import { AudioLines, Loader2, RotateCcw, Undo2, Volume2, Wand2 } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,15 +53,31 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   zoom: "text-neutral-400 border-white/10",
 };
 
+/** The automatic sounds' controls (the editor keeps the plan and saves it). */
+export type SoundControls = {
+  enabled: boolean;
+  /** 0-100. */
+  volume: number;
+  /** Sounds deleted by hand. */
+  removedCount: number;
+  canEdit: boolean;
+  onToggle: (on: boolean) => void;
+  onVolume: (volume: number) => void;
+  onRestore: () => void;
+};
+
 export function MotionPlanSection({
   projectId,
   words,
   onSeekWord,
+  sound,
 }: {
   projectId: string;
   /** The project's words where they are on the timeline now. */
   words: TimelineWord[];
   onSeekWord?: (word: TimelineWord) => void;
+  /** Shown once there are graphics. */
+  sound?: SoundControls;
 }) {
   const qc = useQueryClient();
   const fetchPlan = useServerFn(getMotionPlan);
@@ -200,6 +218,8 @@ export function MotionPlanSection({
         <p className="text-[10px] text-amber-300">No AI plans left this month.</p>
       )}
 
+      {sound && current && <SoundRow sound={sound} />}
+
       {current ? (
         <PlanList plan={current} byKey={byKey} onSeekWord={onSeekWord} />
       ) : (
@@ -297,6 +317,55 @@ function PlanList({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+function SoundRow({ sound }: { sound: SoundControls }) {
+  // The slider moves freely; the plan changes when it's let go.
+  const [draft, setDraft] = useState<number | null>(null);
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5 space-y-2">
+      <div className="flex items-center gap-2">
+        <Volume2 className="w-3 h-3 text-sky-300" />
+        <span className="text-[11px] text-neutral-300 flex-1">Sounds (whooshes, clicks, hits)</span>
+        <Switch
+          checked={sound.enabled}
+          disabled={!sound.canEdit}
+          onCheckedChange={sound.onToggle}
+          aria-label="Graphics sounds"
+          className="data-[state=checked]:bg-sky-600"
+        />
+      </div>
+      {sound.enabled && (
+        <div className="flex items-center gap-2">
+          <Slider
+            value={[draft ?? sound.volume]}
+            max={100}
+            step={1}
+            disabled={!sound.canEdit}
+            onValueChange={(v) => setDraft(v[0])}
+            onValueCommit={(v) => {
+              setDraft(null);
+              sound.onVolume(v[0]);
+            }}
+            className="flex-1"
+            aria-label="Sounds volume"
+          />
+          <span className="text-[10px] font-mono text-neutral-500 w-7 text-right tabular-nums">
+            {draft ?? sound.volume}
+          </span>
+        </div>
+      )}
+      {sound.removedCount > 0 && sound.canEdit && (
+        <button
+          onClick={sound.onRestore}
+          className="inline-flex items-center gap-1 text-[10px] text-neutral-400 hover:text-white"
+        >
+          <RotateCcw className="w-3 h-3" /> Bring back {sound.removedCount} deleted sound
+          {sound.removedCount === 1 ? "" : "s"}
+        </button>
+      )}
     </div>
   );
 }

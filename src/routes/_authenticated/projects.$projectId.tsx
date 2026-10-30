@@ -51,6 +51,19 @@ import {
 } from "@/lib/motion-plan";
 import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
 import { themeFromAccent } from "@/motion/theme";
+import {
+  DEFAULT_SOUND_VOLUME,
+  SOUND_LABEL,
+  SOUND_LENGTH_MS,
+  baseSoundEvents,
+  bedStretches,
+  soundEvents,
+  soundGain,
+  type SoundSettings,
+} from "@/motion/sounds";
+import { SoundInspector } from "@/components/editor/SoundInspector";
+import type { SoundsTrackData } from "@/components/editor/SoundsTrack";
+import type { AutoAudio } from "@/components/editor/usePreviewAudio";
 
 // The graphics renderer (Remotion) loads only when the editor shows graphics,
 // so it doesn't slow down opening the page.
@@ -347,10 +360,18 @@ function EditorPage() {
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   // The Motion Explainer graphic selected on the G1 track (its inspector shows).
   const [selectedGraphicId, setSelectedGraphicId] = useState<string | null>(null);
-  // Picking a clip puts the graphic away.
+  // The Motion Explainer sound selected on the S1 track.
+  const [selectedSoundId, setSelectedSoundId] = useState<string | null>(null);
+  // Picking a clip puts the graphic or sound away.
   useEffect(() => {
-    if (selectedClipId) setSelectedGraphicId(null);
+    if (selectedClipId) {
+      setSelectedGraphicId(null);
+      setSelectedSoundId(null);
+    }
   }, [selectedClipId]);
+  // The Motion Explainer sounds and music beds for the preview's audio,
+  // worked out further down on every render.
+  const autoAudio = useRef<AutoAudio>({ sfx: [], music: [] });
   const motion = useMotionPlan(projectId);
   const [muted, setMuted] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -1588,6 +1609,7 @@ function EditorPage() {
   const programEndForHooks = videoEndMs(mainForHooks, overForHooks, clipVisibleMs);
   const overStartsForHooks = layoutTrack(overForHooks, clipVisibleMs).starts;
   const previewAudioTick = usePreviewAudio({
+    auto: autoAudio,
     audioClips: ((data?.clips ?? []) as ClipRow[]).filter(
       (c) => c.role === "music" || c.role === "sfx",
     ),
@@ -1673,6 +1695,71 @@ function EditorPage() {
     const i = nearestWord(wordsInOrder, ms);
     if (i >= 0) seekToCaption(wordsInOrder[i]);
   };
+  // Motion Explainer sounds: placed from the graphics, with the hand edits.
+  const soundSettings: SoundSettings | undefined = motionPlan?.sound;
+  const soundsOn = graphicsOn && soundSettings?.enabled !== false;
+  const placedSounds = graphicsOn
+    ? soundEvents(placedMotion.graphics, placedMotion.zooms, soundSettings)
+    : [];
+  const hasSongs = audioClips.some((c) => c.role === "music");
+  autoAudio.current = {
+    sfx: placedSounds.map((e) => ({
+      key: e.id,
+      url: `/sounds/${e.kind}.m4a`,
+      atMs: e.atMs,
+      gain: soundGain(e.kind, soundSettings),
+    })),
+    // The built-in beds, changing at each chapter, when no song was added.
+    music:
+      graphicsOn && !hasSongs
+        ? bedStretches(placedMotion.graphics, programEndForHooks).map((b, i) => ({
+            key: `${b.what}:${i}`,
+            url: `/sounds/${b.what}.m4a`,
+            startMs: b.startMs,
+            endMs: b.endMs,
+          }))
+        : [],
+  };
+  const changeSound = (change: (s: SoundSettings) => SoundSettings) =>
+    motion.update((p) => ({ ...p, sound: change(p.sound ?? {}) }));
+  const selectedSound = placedSounds.find((e) => e.id === selectedSoundId) ?? null;
+  const graphicLabelOf = (graphicId: string) => {
+    const el = motionPlan?.elements.find((e) => e.id === graphicId);
+    return el ? elementSummary(el) : "";
+  };
+  const soundsTrack: SoundsTrackData | undefined =
+    motion.state && motionPlan
+      ? {
+          items: placedSounds.map((e) => ({
+            id: e.id,
+            kind: e.kind,
+            label: `${SOUND_LABEL[e.kind]} · ${graphicLabelOf(e.graphicId)}`,
+            atMs: e.atMs,
+            lengthMs: SOUND_LENGTH_MS[e.kind],
+          })),
+          enabled: soundsOn,
+          selectedId: selectedSoundId,
+          canEdit: canEditGraphics,
+          onSelect: (id) => {
+            setSelectedSoundId(id);
+            setSelectedGraphicId(null);
+            setSelectedClipId(null);
+            setRightTab("edit");
+          },
+          onToggle: canEditGraphics
+            ? () => changeSound((s) => ({ ...s, enabled: s.enabled === false }))
+            : undefined,
+          onMove: (id, atMs) => {
+            const base = baseSoundEvents(placedMotion.graphics, placedMotion.zooms).find(
+              (e) => e.id === id,
+            );
+            if (!base) return;
+            const offset = Math.max(-20_000, Math.min(20_000, Math.round(atMs - base.atMs)));
+            changeSound((s) => ({ ...s, moved: { ...(s.moved ?? {}), [id]: offset } }));
+          },
+        }
+      : undefined;
+
   const graphicsTrack: GraphicsTrackData | undefined = motion.state
     ? {
         items: (motionPlan?.elements ?? []).flatMap((el) => {
@@ -1686,6 +1773,7 @@ function EditorPage() {
         canEdit: canEditGraphics,
         onSelect: (id) => {
           setSelectedGraphicId(id);
+          setSelectedSoundId(null);
           setSelectedClipId(null);
           setRightTab("edit");
         },
@@ -2454,7 +2542,9 @@ function EditorPage() {
                   )}
                 >
                   {tab === "edit"
-                    ? selectedGraphic
+                    ? selectedSound
+                      ? "Sound"
+                      : selectedGraphic
                       ? "Graphic"
                       : selectedClip
                         ? "Clip"
@@ -2498,6 +2588,29 @@ function EditorPage() {
                     await saveWordsMut.mutateAsync({ storage_path: storagePath, words });
                   }}
                   isSaving={saveWordsMut.isPending}
+                />
+              ) : selectedSound ? (
+                <SoundInspector
+                  kind={selectedSound.kind}
+                  atMs={selectedSound.atMs}
+                  graphicLabel={graphicLabelOf(selectedSound.graphicId)}
+                  movedMs={soundSettings?.moved?.[selectedSound.id] ?? 0}
+                  readOnly={!canEditGraphics}
+                  onReset={() => {
+                    const id = selectedSound.id;
+                    changeSound((s) => {
+                      const moved = { ...(s.moved ?? {}) };
+                      delete moved[id];
+                      return { ...s, moved };
+                    });
+                  }}
+                  onDelete={() => {
+                    const id = selectedSound.id;
+                    changeSound((s) => ({ ...s, removed: [...(s.removed ?? []), id] }));
+                    setSelectedSoundId(null);
+                  }}
+                  onSeek={() => seekToMs(selectedSound.atMs)}
+                  onClose={() => setSelectedSoundId(null)}
                 />
               ) : selectedGraphic ? (
                 <GraphicInspector
@@ -2566,6 +2679,19 @@ function EditorPage() {
                       projectId={projectId}
                       words={captionWords}
                       onSeekWord={seekToCaption}
+                      sound={
+                        motionPlan
+                          ? {
+                              enabled: soundSettings?.enabled !== false,
+                              volume: soundSettings?.volume ?? DEFAULT_SOUND_VOLUME,
+                              removedCount: soundSettings?.removed?.length ?? 0,
+                              canEdit: canEditGraphics,
+                              onToggle: (on) => changeSound((s) => ({ ...s, enabled: on })),
+                              onVolume: (v) => changeSound((s) => ({ ...s, volume: v })),
+                              onRestore: () => changeSound((s) => ({ ...s, removed: [] })),
+                            }
+                          : undefined
+                      }
                     />
                   }
                 />
@@ -2577,6 +2703,7 @@ function EditorPage() {
           <TimelinePanel
             readOnly={readOnly}
             graphics={graphicsTrack}
+            sounds={soundsTrack}
             projectTitle={project.title}
             aRoll={aRoll}
             bRoll={bRoll}

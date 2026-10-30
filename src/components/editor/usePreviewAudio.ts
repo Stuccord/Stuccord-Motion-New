@@ -4,7 +4,10 @@
 // shows it, at the Music volume, quieter while the voice is on, faded in at
 // the start and out at the end; each SFX once at its time (or just before
 // each cut). Voiceovers (the VO track) play at their time whatever the
-// Music switch says, with the music quieter under them.
+// Music switch says, with the music quieter under them. Motion Explainer sounds
+// play at their times whatever the Music switch says (they have their own);
+// its built-in music beds play, like music, only with the switch on and only
+// when no song has been added.
 
 import { useCallback, useEffect, useRef } from "react";
 import { musicBars, sfxPlays, voiceoverSpans } from "@/lib/timeline-layout";
@@ -40,7 +43,21 @@ type Options = {
   muted: boolean;
   /** Whether the voice (a main-track video) is on at a time, for ducking. */
   voiceAt: (timeMs: number) => boolean;
+  /**
+   * Motion Explainer sounds (each once at its time) and built-in music beds
+   * (looped over their stretches, when there are no songs). A ref, since the
+   * editor works them out after this hook runs; read on every tick.
+   */
+  auto?: { current: AutoAudio };
 };
+
+export type AutoAudio = {
+  sfx: { key: string; url: string; atMs: number; gain: number }[];
+  music: { key: string; url: string; startMs: number; endMs: number }[];
+};
+
+/** The built-in beds are 32 s loops (render-worker/make-sounds.mjs). */
+const BED_LOOP_S = 32;
 
 /** Returns the player's tick handler, which keeps the music and SFX in step. */
 export function usePreviewAudio(options: Options) {
@@ -61,6 +78,18 @@ export function usePreviewAudio(options: Options) {
       elements.current.set(clip.id, el);
     }
     if (el.src !== url) el.src = url;
+    return el;
+  };
+
+  /** One audio element per built-in sound (by key), made as needed. */
+  const audioForUrl = (key: string, url: string) => {
+    let el = elements.current.get(key);
+    if (!el) {
+      el = new Audio();
+      el.preload = "auto";
+      elements.current.set(key, el);
+    }
+    if (el.src !== new URL(url, location.href).href) el.src = url;
     return el;
   };
 
@@ -95,7 +124,27 @@ export function usePreviewAudio(options: Options) {
       if (Math.abs(audio.currentTime - want) > MAX_DRIFT_S) audio.currentTime = want;
       if (audio.paused) audio.play().catch(() => {});
     }
+    // Motion Explainer sounds: start each one whose time the playhead just
+    // passed (only while playing on, not when jumping around).
+    const steppedOn = prev.playing && t > prev.t && t - prev.t < 500;
+    if (steppedOn) {
+      for (const s of o.auto?.current.sfx ?? []) {
+        if (s.atMs > prev.t && s.atMs <= t) {
+          const audio = audioForUrl(`sfx:${s.key}`, s.url);
+          audio.muted = o.muted;
+          audio.volume = Math.min(1, Math.max(0, s.gain));
+          audio.playbackRate = rate;
+          audio.currentTime = Math.max(0, (t - s.atMs) / 1000);
+          audio.play().catch(() => {});
+        }
+      }
+    }
+
     if (!o.enabled) {
+      for (const m of o.auto?.current.music ?? []) {
+        const el = elements.current.get(`bed:${m.key}`);
+        if (el && !el.paused) el.pause();
+      }
       for (const c of o.audioClips) {
         const el = elements.current.get(c.id);
         if (el && !el.paused) el.pause();
@@ -116,6 +165,23 @@ export function usePreviewAudio(options: Options) {
     const fade = Math.min(1, t / FADE_IN_MS, Math.max(0, o.endMs - t) / FADE_OUT_MS);
     const musicVolume =
       (Math.min(100, Math.max(0, o.volume)) / 100) * MUSIC_MAX * duckLevel.current * fade;
+    // The built-in beds, only when no song was added.
+    for (const m of o.auto?.current.music ?? []) {
+      const el = elements.current.get(`bed:${m.key}`);
+      if (songs.length || t < m.startMs || t >= m.endMs) {
+        if (el && !el.paused) el.pause();
+        continue;
+      }
+      const audio = audioForUrl(`bed:${m.key}`, m.url);
+      audio.loop = true;
+      const want = ((t - m.startMs) / 1000) % BED_LOOP_S;
+      audio.muted = o.muted;
+      audio.volume = Math.min(1, Math.max(0, musicVolume));
+      audio.playbackRate = rate;
+      if (Math.abs(audio.currentTime - want) > MAX_DRIFT_S) audio.currentTime = want;
+      if (audio.paused) audio.play().catch(() => {});
+    }
+
     for (const song of songs) {
       const el = elements.current.get(song.id);
       if (!bar || bar.clip.id !== song.id) {
