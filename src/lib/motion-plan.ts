@@ -128,6 +128,14 @@ const SoundSettings = z.object({
     .optional(),
 });
 
+const Hex = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
+
+/** The graphics' colour: picked by hand, and the video's (src/motion/theme.ts). */
+const MotionColour = z.object({
+  choice: Hex.nullable().optional(),
+  footage: z.array(Hex).max(6).nullable().optional(),
+});
+
 export const MotionPlan = z.object({
   version: z.literal(1),
   style: z.literal(MOTION_STYLE),
@@ -138,6 +146,8 @@ export const MotionPlan = z.object({
   enabled: z.boolean().optional(),
   /** Automatic sounds: on/off, volume, and sounds moved or deleted by hand. */
   sound: SoundSettings.optional(),
+  /** The colour: picked by hand, or from the brand kit or the video. */
+  colour: MotionColour.optional(),
   elements: z.array(MotionElement).max(MAX_ELEMENTS),
 });
 export type MotionPlan = z.infer<typeof MotionPlan>;

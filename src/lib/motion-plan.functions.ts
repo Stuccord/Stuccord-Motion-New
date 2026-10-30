@@ -231,8 +231,11 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
 
     const elements = draftsToElements(result.draft.elements, words);
     // The sound switch and volume carry over; hand-moved or deleted sounds
-    // belonged to the old graphics, so they don't.
-    const before = parseMotionPlan(project.motion_plan)?.sound;
+    // belonged to the old graphics, so they don't. The colour (the same
+    // video's) carries over too.
+    const old = parseMotionPlan(project.motion_plan);
+    const before = old?.sound;
+    const colourBefore = old?.colour;
     const plan: MotionPlan = {
       version: 1,
       style: MOTION_STYLE,
@@ -242,6 +245,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
       ...(before && (before.enabled !== undefined || before.volume !== undefined)
         ? { sound: { enabled: before.enabled, volume: before.volume } }
         : {}),
+      ...(colourBefore ? { colour: colourBefore } : {}),
       elements,
     };
 

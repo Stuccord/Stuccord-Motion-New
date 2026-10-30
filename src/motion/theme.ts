@@ -2,7 +2,7 @@
 // (docs/style-research/t1-complete-guide.md): a dark main colour for
 // backgrounds and cards, a lighter secondary for panels and lines, and a
 // vibrant accent for key words, numbers and glows. Built from one accent
-// colour (the brand kit's highlight colour until stage 5 reads the footage).
+// colour (see motionAccent: the user's pick, the brand kit, or the footage).
 
 export type MotionTheme = {
   /** ~60%: backgrounds, card fills. */
@@ -62,6 +62,37 @@ function toHsl(hex: string): [number, number, number] {
 
 const hsl = (h: number, s: number, l: number, a = 1) =>
   `hsla(${Math.round(h)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%, ${a})`;
+
+/**
+ * The brand kit's default highlight colour (brand-kit.ts DEFAULT_KIT): a kit
+ * still on it hasn't chosen a colour, so the footage's colour is used.
+ */
+export const DEFAULT_KIT_HIGHLIGHT = "#FFD700";
+
+/** The plan's colour: the user's pick, and the colours found in the video. */
+export type MotionColour = {
+  /** Picked by hand (#RRGGBB); none: automatic. */
+  choice?: string | null;
+  /** From the first clip's first frames, strongest first; none: not read yet. */
+  footage?: string[] | null;
+};
+
+/**
+ * The graphics' accent colour: the user's pick, else the brand kit's
+ * highlight colour when one was chosen, else the video's main colour, else
+ * the kit's (default) colour. `from` says which.
+ */
+export function motionAccent(
+  colour: MotionColour | null | undefined,
+  kitHighlight: string | null | undefined,
+): { hex: string | null; from: "choice" | "kit" | "footage" | "default" } {
+  if (colour?.choice && HEX.test(colour.choice)) return { hex: colour.choice, from: "choice" };
+  const kit = kitHighlight && HEX.test(kitHighlight) ? kitHighlight.toUpperCase() : null;
+  if (kit && kit !== DEFAULT_KIT_HIGHLIGHT) return { hex: kit, from: "kit" };
+  const footage = colour?.footage?.find((c) => HEX.test(c));
+  if (footage) return { hex: footage, from: "footage" };
+  return { hex: kit, from: "default" };
+}
 
 /** The 60/30/10 colours from one accent colour (#RRGGBB; anything else: a blue-violet). */
 export function themeFromAccent(accentHex: string | null | undefined): MotionTheme {

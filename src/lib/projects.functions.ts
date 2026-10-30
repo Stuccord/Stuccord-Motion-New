@@ -9,7 +9,7 @@ import { isAudioRole } from "@/lib/media-kind";
 import { PERSONAL, inFolder, projectFolder, type ProjectAccess } from "@/lib/workspace";
 import { planFor, type TeamRole } from "@/lib/plans";
 import { parseMotionPlan } from "@/lib/motion-plan";
-import { themeFromAccent } from "@/motion/theme";
+import { motionAccent, themeFromAccent } from "@/motion/theme";
 
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
@@ -1675,7 +1675,8 @@ export async function startCloudRender(
       motion: withGraphics
         ? {
             elements: motionPlan.elements,
-            theme: themeFromAccent(kit.highlightColor),
+            // The user's pick, the brand kit's colour, or the video's.
+            theme: themeFromAccent(motionAccent(motionPlan.colour, kit.highlightColor).hex),
             // Automatic sounds: on/off, volume, and hand edits.
             sound: motionPlan.sound ?? null,
           }

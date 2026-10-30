@@ -50,7 +50,8 @@ import {
   type MotionElement,
 } from "@/lib/motion-plan";
 import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
-import { themeFromAccent } from "@/motion/theme";
+import { motionAccent, themeFromAccent } from "@/motion/theme";
+import { readFootageColours } from "@/lib/footage-colours";
 import {
   DEFAULT_SOUND_VOLUME,
   SOUND_LABEL,
@@ -1495,6 +1496,38 @@ function EditorPage() {
     return new Map([...main.starts, ...broll.starts]);
   }, [videoClipsForHooks]);
 
+  // The Motion Explainer graphics' colour from the video: read once from the
+  // main track's first clip (its first seconds) and kept with the plan.
+  const coloursTried = useRef<string | null>(null);
+  const firstMainClip =
+    videoClipsForHooks
+      .filter(
+        (c) =>
+          (hasMainTrackClips ? c.role !== "broll" : c.role === "broll") &&
+          !isImageFilename(c.filename),
+      )
+      .sort((a, b) => (programOffsets.get(a.id) ?? 0) - (programOffsets.get(b.id) ?? 0))[0] ?? null;
+  const needFootageColours =
+    !!motion.plan && motion.plan.colour?.footage == null && motion.canEdit && !readOnly;
+  useEffect(() => {
+    if (!needFootageColours || !firstMainClip || !motion.plan) return;
+    const key = `${motion.plan.created_at}:${firstMainClip.storage_path}`;
+    if (coloursTried.current === key) return;
+    coloursTried.current = key;
+    const from = firstMainClip.trim_in_ms ?? 0;
+    const len = Math.min(3000, clipVisibleMs(firstMainClip));
+    const times = [0.15, 0.5, 0.85].map((f) => Math.round(from + len * f));
+    void (async () => {
+      try {
+        const { url } = await signClip({ data: { path: firstMainClip.storage_path } });
+        const footage = await readFootageColours(url, times);
+        if (footage) motion.update((p) => ({ ...p, colour: { ...p.colour, footage } }));
+      } catch (e) {
+        console.warn("[editor] Couldn't read the video's colours:", e);
+      }
+    })();
+  }, [needFootageColours, firstMainClip, motion, signClip]);
+
   // The main player is the live timeline, the render, or the selected clip's
   // file (see PreviewCanvas). currentTime means a position in whichever one it
   // is showing, so every time conversion has to check this first. Render
@@ -1674,7 +1707,10 @@ function EditorPage() {
   const placedMotion = motionPlan
     ? placeGraphics(motionPlan.elements, graphicWordMap)
     : { graphics: [], zooms: [] };
-  const motionTheme = themeFromAccent(brand.data?.kit?.highlightColor);
+  // The user's pick, the brand kit's colour, or the video's (motionAccent).
+  const kitHighlight = brand.data?.kit?.highlightColor;
+  const accent = motionAccent(motionPlan?.colour, kitHighlight);
+  const motionTheme = themeFromAccent(accent.hex);
   const frameAtMs = (ms: number) => Math.round((ms / 1000) * MOTION_FPS);
   // Captions step aside while a key line or chapter fills the same space.
   const captionsHiddenAt = (ms: number) => {
@@ -2689,6 +2725,22 @@ function EditorPage() {
                               onToggle: (on) => changeSound((s) => ({ ...s, enabled: on })),
                               onVolume: (v) => changeSound((s) => ({ ...s, volume: v })),
                               onRestore: () => changeSound((s) => ({ ...s, removed: [] })),
+                            }
+                          : undefined
+                      }
+                      colour={
+                        motionPlan
+                          ? {
+                              hex: accent.hex,
+                              from: accent.from,
+                              footage: motionPlan.colour?.footage ?? null,
+                              kit: kitHighlight ?? null,
+                              canEdit: canEditGraphics,
+                              onPick: (hex) =>
+                                motion.update((p) => ({
+                                  ...p,
+                                  colour: { ...p.colour, choice: hex },
+                                })),
                             }
                           : undefined
                       }

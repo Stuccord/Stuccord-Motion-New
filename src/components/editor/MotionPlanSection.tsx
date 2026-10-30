@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AudioLines, Loader2, RotateCcw, Undo2, Volume2, Wand2 } from "lucide-react";
+import { AudioLines, Loader2, Palette, RotateCcw, Undo2, Volume2, Wand2 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -66,11 +66,26 @@ export type SoundControls = {
   onRestore: () => void;
 };
 
+/** The graphics' colour controls (the editor keeps the plan and saves it). */
+export type ColourControls = {
+  /** The colour in use (#RRGGBB), and where it comes from (motionAccent). */
+  hex: string | null;
+  from: "choice" | "kit" | "footage" | "default";
+  /** Colours found in the video; null: not read yet. */
+  footage: string[] | null;
+  /** The brand kit's highlight colour. */
+  kit: string | null;
+  canEdit: boolean;
+  /** A colour, or null for automatic. */
+  onPick: (hex: string | null) => void;
+};
+
 export function MotionPlanSection({
   projectId,
   words,
   onSeekWord,
   sound,
+  colour,
 }: {
   projectId: string;
   /** The project's words where they are on the timeline now. */
@@ -78,6 +93,8 @@ export function MotionPlanSection({
   onSeekWord?: (word: TimelineWord) => void;
   /** Shown once there are graphics. */
   sound?: SoundControls;
+  /** Shown once there are graphics. */
+  colour?: ColourControls;
 }) {
   const qc = useQueryClient();
   const fetchPlan = useServerFn(getMotionPlan);
@@ -218,6 +235,7 @@ export function MotionPlanSection({
         <p className="text-[10px] text-amber-300">No AI plans left this month.</p>
       )}
 
+      {colour && current && <ColourRow colour={colour} />}
       {sound && current && <SoundRow sound={sound} />}
 
       {current ? (
@@ -317,6 +335,99 @@ function PlanList({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+const COLOUR_FROM: Record<ColourControls["from"], string> = {
+  choice: "Picked by you",
+  kit: "Automatic: your brand kit's colour",
+  footage: "Automatic: from your video",
+  default: "Automatic",
+};
+
+function ColourRow({ colour }: { colour: ColourControls }) {
+  const auto = colour.from !== "choice";
+  const same = (a: string | null, b: string | null) =>
+    !!a && !!b && a.toUpperCase() === b.toUpperCase();
+  // The video's colours, then the brand kit's (when it isn't one of them).
+  const swatches = [
+    ...(colour.footage ?? []).map((hex) => ({ hex, label: "From your video" })),
+    ...(colour.kit && !(colour.footage ?? []).some((c) => same(c, colour.kit))
+      ? [{ hex: colour.kit, label: "Brand kit" }]
+      : []),
+  ];
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5 space-y-2">
+      <div className="flex items-center gap-2">
+        <Palette className="w-3 h-3 text-violet-300" />
+        <span className="text-[11px] text-neutral-300 flex-1">Colour</span>
+        {colour.hex && (
+          <span
+            className="w-3.5 h-3.5 rounded-full border border-white/20"
+            style={{ background: colour.hex }}
+            aria-hidden
+          />
+        )}
+      </div>
+      <p className="text-[10px] text-neutral-500 leading-snug">
+        {COLOUR_FROM[colour.from]}
+        {colour.footage === null
+          ? " · reading your video's colours…"
+          : colour.footage.length === 0
+            ? " · no clear colour in your video"
+            : ""}
+      </p>
+      {colour.canEdit && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={() => colour.onPick(null)}
+            aria-pressed={auto}
+            className={cn(
+              "h-6 px-2 rounded-md text-[10px] font-medium border",
+              auto
+                ? "border-violet-400/60 bg-violet-500/15 text-violet-200"
+                : "border-white/10 text-neutral-400 hover:text-white",
+            )}
+          >
+            Auto
+          </button>
+          {swatches.map((s) => {
+            const picked = !auto && same(colour.hex, s.hex);
+            return (
+              <button
+                key={s.hex + s.label}
+                onClick={() => colour.onPick(s.hex.toUpperCase())}
+                title={`${s.label} (${s.hex})`}
+                aria-label={`${s.label}: ${s.hex}`}
+                aria-pressed={picked}
+                className={cn(
+                  "w-6 h-6 rounded-full border transition",
+                  picked
+                    ? "border-white ring-2 ring-violet-400/70"
+                    : "border-white/20 hover:scale-110",
+                )}
+                style={{ background: s.hex }}
+              />
+            );
+          })}
+          <label
+            title="Any colour"
+            className="relative w-6 h-6 rounded-full border border-white/20 cursor-pointer overflow-hidden"
+            style={{
+              background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)",
+            }}
+          >
+            <input
+              type="color"
+              value={colour.hex ?? "#7C5CFF"}
+              onChange={(e) => colour.onPick(e.target.value.toUpperCase())}
+              className="absolute inset-0 opacity-0 cursor-pointer"
+              aria-label="Pick any colour"
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
