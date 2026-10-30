@@ -8,6 +8,8 @@ import { parseBrandKit } from "@/lib/brand-kit";
 import { isAudioRole } from "@/lib/media-kind";
 import { PERSONAL, inFolder, projectFolder, type ProjectAccess } from "@/lib/workspace";
 import { planFor, type TeamRole } from "@/lib/plans";
+import { parseMotionPlan } from "@/lib/motion-plan";
+import { themeFromAccent } from "@/motion/theme";
 
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
@@ -1572,11 +1574,17 @@ export async function startCloudRender(
       process.env.PUBLIC_APP_URL || process.env.PUBLIC_URL,
     );
 
+    // The Motion Explainer graphics, when there are some and they're on.
+    const motionPlan = parseMotionPlan(project.motion_plan);
+    const withGraphics =
+      !!motionPlan && motionPlan.enabled !== false && motionPlan.elements.length > 0;
+
     // Saved transcripts (and the user's corrections) for these source files,
     // so the worker only transcribes files it hasn't seen. Best-effort: if
-    // this lookup fails the worker simply transcribes again.
+    // this lookup fails the worker simply transcribes again. Graphics are
+    // placed by their words, so they need them too.
     const savedWords = new Map<string, unknown>();
-    if (data.captions) {
+    if (data.captions || withGraphics) {
       const paths = [...new Set(clips.map((c) => c.storage_path))];
       // A team's files are the team's, whoever transcribed them; personal
       // files are looked up by their owner.
@@ -1661,6 +1669,12 @@ export async function startCloudRender(
       captions: data.captions,
       music: data.music,
       brand_kit: brandKit,
+      // Motion Explainer graphics: each anchored to a clip and a word in its
+      // transcript; the worker places them from the words, like captions,
+      // and draws them in the colours below (see src/motion).
+      motion: withGraphics
+        ? { elements: motionPlan.elements, theme: themeFromAccent(kit.highlightColor) }
+        : null,
       // Voiceovers go apart from the clips, so a worker from before
       // voiceovers leaves them out instead of taking them for videos.
       clips: clipUrls.filter((c) => c.role !== "voiceover"),

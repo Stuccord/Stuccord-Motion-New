@@ -32,6 +32,14 @@ import path from "path";
 import ffmpegPath from "ffmpeg-static";
 import { fileURLToPath } from "url";
 import { registerPublishing } from "./publish.js";
+import {
+  MOTION_FPS,
+  captionGaps,
+  composeArgs,
+  placeGraphics,
+  renderGraphics,
+  zoomFilter,
+} from "./motion.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -735,11 +743,14 @@ function sanitizeWords(words) {
  */
 function placeWordsOnTimeline(segments) {
   const placed = [];
-  for (const { words, trimInMs, durationMs, offsetMs } of segments) {
+  for (const { words, trimInMs, durationMs, offsetMs, clipId } of segments) {
     const windowEnd = trimInMs + durationMs;
-    for (const w of words) {
+    for (const [wordIndex, w] of words.entries()) {
       if (w.start_ms < trimInMs || w.start_ms >= windowEnd) continue;
       placed.push({
+        // Which clip and word it is, for graphics anchored to words.
+        clip_id: clipId,
+        word_index: wordIndex,
         text: w.text,
         start_ms: offsetMs + (w.start_ms - trimInMs),
         end_ms: offsetMs + (Math.min(w.end_ms, windowEnd) - trimInMs),
@@ -1050,9 +1061,10 @@ function buildCaptionsAss(words, { w, h, fontName, kit = brandKitFromJob({}), bo
 
 // Quotes a file path for use inside an ffmpeg filter argument. Everything
 // inside single quotes is literal; a quote in the path closes, escapes and
-// reopens the quoting.
+// reopens the quoting. A colon (a Windows drive, "C:") is escaped as well, or
+// the filter's own options read it as a separator; Linux paths have none.
 function filterPath(p) {
-  return `'${String(p).replace(/\\/g, "/").replace(/'/g, "'\\''")}'`;
+  return `'${String(p).replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "'\\''")}'`;
 }
 
 // ---------- AI edit plan ----------
@@ -1195,7 +1207,13 @@ async function runRender(job) {
       job_id: job.job_id, status: "planning", progress: 30,
       stage_message: "Planning cuts, captions & hook",
     });
-    const plan = await generateEditPlan(job);
+    // Motion Explainer graphics from the app's plan, when they're on. They
+    // cover the opening, so the old AI hook line isn't made for them.
+    const motionJob =
+      job.motion && Array.isArray(job.motion.elements) && job.motion.elements.length
+        ? job.motion
+        : null;
+    const plan = motionJob ? null : await generateEditPlan(job);
     const hook = typeof plan?.hook === "string" ? plan.hook.trim() : "";
 
     // 3. Normalize each source to target aspect at 1080p / 30fps / H.264 + AAC.
@@ -1344,7 +1362,9 @@ async function runRender(job) {
     const wantCaptions = job.captions !== false;
     let editPlan = plan;
     let captionWords = [];
-    if (wantCaptions) {
+    // Every placed word, with its clip and index (graphics are anchored to them).
+    let placedWords = [];
+    if (wantCaptions || motionJob) {
       const sourceKey = (c) => c.storage_path || c.id;
       const sourceWords = new Map();
       for (const c of mainClips) {
@@ -1426,13 +1446,15 @@ async function runRender(job) {
           break;
         }
         segments.push({
+          clipId: mainClips[i].id,
           words: sourceWords.get(sourceKey(mainClips[i])) ?? [],
           trimInMs: Math.max(0, Math.round(Number(mainClips[i].trim_in_ms ?? 0))),
           durationMs,
           offsetMs: mainStartsMs[i],
         });
       }
-      captionWords = placeWordsOnTimeline(segments);
+      placedWords = placeWordsOnTimeline(segments);
+      if (wantCaptions) captionWords = placedWords;
 
       editPlan = {
         ...(plan ?? {}),
@@ -1595,8 +1617,60 @@ async function runRender(job) {
       }
     }
 
+    // 4d. Motion Explainer graphics (best-effort: a problem keeps the video
+    //     without them). Drawn with Remotion where they're on screen, then
+    //     laid over the picture with the zooms in the text encode below.
+    let graphicPieces = [];
+    let zoom = null;
+    if (motionJob) {
+      try {
+        const placed = placeGraphics(motionJob.elements, placedWords);
+        const totalMs = await probeDurationMs(composedOut);
+        const totalFrames = Math.ceil(((totalMs ?? 0) / 1000) * MOTION_FPS);
+        if (totalFrames > 0 && placed.graphics.length) {
+          await callback(job.callback_url, {
+            job_id: job.job_id, status: "rendering", progress: 80,
+            stage_message: "Drawing graphics",
+          });
+          let lastPct = -1;
+          graphicPieces = await renderGraphics({
+            graphics: placed.graphics,
+            theme: motionJob.theme,
+            w,
+            h,
+            totalFrames,
+            workdir,
+            onProgress: (share) => {
+              const pct = Math.round(share * 100);
+              if (pct >= lastPct + 20) {
+                lastPct = pct;
+                void callback(job.callback_url, {
+                  job_id: job.job_id, status: "rendering", progress: 80 + Math.round(share * 4),
+                  stage_message: `Drawing graphics (${pct}%)`,
+                });
+              }
+            },
+          });
+        }
+        zoom = zoomFilter(placed.zooms, w, h);
+        // Captions step aside while a key line or chapter fills their space.
+        if (graphicPieces.length && captionWords.length) {
+          const gaps = captionGaps(placed.graphics);
+          captionWords = captionWords.filter(
+            (wd) => !gaps.some(([a, b]) => wd.start_ms >= a && wd.start_ms < b),
+          );
+        }
+      } catch (e) {
+        console.warn(`[Worker] Graphics failed for job=${job.job_id}:`, e?.message || e);
+        graphicPieces = [];
+        zoom = null;
+        editPlan = { ...(editPlan ?? {}), graphics_error: String(e?.message ?? e).slice(0, 300) };
+      }
+    }
+
     // 5. Burn in text: word-by-word captions in the lower third and the AI
-    //    hook at the top for the first 3 seconds, in a single encode.
+    //    hook at the top for the first 3 seconds, in a single encode (with
+    //    the graphics and zooms, when there are some).
     let finalOut = composedOut;
     // The brand kit's font when it picked one (bundled in ./fonts), else the system's.
     const kit = brandKitFromJob(job);
@@ -1643,7 +1717,26 @@ async function runRender(job) {
       return out;
     };
 
-    if (captionsFilter || hookFilter) {
+    const textFilters = [captionsFilter, hookFilter].filter(Boolean);
+    let graphicsDone = false;
+    if (graphicPieces.length || zoom) {
+      await callback(job.callback_url, {
+        job_id: job.job_id, status: "rendering", progress: 85,
+        stage_message: "Adding graphics and captions",
+      });
+      try {
+        const out = path.join(workdir, "final-graphics.mp4");
+        await run(ffmpegPath, composeArgs({ input: composedOut, pieces: graphicPieces, zoom, textFilters, output: out }));
+        finalOut = out;
+        graphicsDone = true;
+      } catch (e) {
+        // Without the graphics: the captions and hook still go on below.
+        console.warn(`[Worker] Adding graphics failed for job=${job.job_id}:`, e?.message || e);
+        editPlan = { ...(editPlan ?? {}), graphics_error: String(e?.message ?? e).slice(0, 300) };
+      }
+    }
+
+    if (!graphicsDone && (captionsFilter || hookFilter)) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 85,
         stage_message: captionsFilter ? "Adding captions" : "Adding hook caption",

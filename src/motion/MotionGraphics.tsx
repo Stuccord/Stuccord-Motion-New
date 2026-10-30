@@ -24,10 +24,19 @@ export type MotionGraphicsProps = {
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
 const easeOut = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
 
-/** Graphics move at 15 fps (every other frame at 30), like the studied edits. */
+/** Timings below are in frames at 30 fps. */
+const BASE_FPS = 30;
+
+/**
+ * Graphics move at 15 fps (every other frame at 30), like the studied edits.
+ * Returns the frame in 30 fps terms, whatever rate the composition runs at:
+ * the export draws at 15 fps, since every other frame would be the same.
+ */
 function useStepFrame() {
   const frame = useCurrentFrame();
-  return Math.floor(frame / 2) * 2;
+  const { fps } = useVideoConfig();
+  if (fps >= BASE_FPS) return Math.floor(frame / 2) * 2;
+  return Math.floor((frame * BASE_FPS) / fps / 2) * 2;
 }
 
 /** A pop-in that starts `delay` frames in: rise, unblur, fade in. */
@@ -550,7 +559,8 @@ function Cta({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
         style={{
           position: "absolute",
           left: "50%",
-          bottom: portrait ? "18%" : "12%",
+          // Above the captions (which sit about 20% up from the bottom).
+          bottom: portrait ? "32%" : "31%",
           transform: `translateX(-50%) scale(${click ? 0.94 : 1})`,
           display: "flex",
           alignItems: "center",
@@ -603,6 +613,9 @@ const DRAW: Record<
 
 /** Every graphic, each in its own stretch of the timeline. */
 export function MotionGraphics({ graphics, theme }: MotionGraphicsProps) {
+  // Graphics are placed in 30 fps frames; at a lower rate, scale them.
+  const { fps } = useVideoConfig();
+  const scale = fps / BASE_FPS;
   return (
     <AbsoluteFill>
       {graphics.map((g) => {
@@ -610,8 +623,8 @@ export function MotionGraphics({ graphics, theme }: MotionGraphicsProps) {
         return (
           <Sequence
             key={g.id}
-            from={g.from}
-            durationInFrames={Math.max(1, g.to - g.from)}
+            from={Math.round(g.from * scale)}
+            durationInFrames={Math.max(1, Math.round(g.to * scale) - Math.round(g.from * scale))}
             layout="none"
           >
             <Draw g={g} theme={theme} />

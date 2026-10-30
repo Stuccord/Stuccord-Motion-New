@@ -49,10 +49,16 @@ services:
 
   - type: web
     name: stuccord-render-worker
-    runtime: node
-    rootDir: render-worker
-    buildCommand: npm install
-    startCommand: npm start
+    # Docker, so Remotion's headless Chrome has the system libraries it needs
+    # (Motion Explainer graphics in exports). Built from the repository root,
+    # since the graphics come from the app's src/motion.
+    runtime: docker
+    dockerfilePath: ./render-worker/Dockerfile
+    dockerContext: .
+    buildFilter:
+      paths:
+        - render-worker/**
+        - src/motion/**
     healthCheckPath: /health
     envVars:
       - key: RENDER_WORKER_SECRET

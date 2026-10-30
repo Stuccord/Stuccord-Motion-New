@@ -1,0 +1,11 @@
+# The render worker's Docker build (render-worker/Dockerfile) uses the
+# repository root as its context but only needs render-worker/ and
+# src/motion; keep the rest (and anything built locally) out.
+**/node_modules
+render-worker/graphics-bundle
+.output
+dist
+.git
+.env
+.env.*
+docs

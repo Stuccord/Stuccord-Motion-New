@@ -137,10 +137,10 @@ function StepCard({
         failed
           ? "border-red-500/30 bg-red-500/10 text-red-300"
           : active
-          ? "border-violet-400/40 bg-violet-400/10 text-violet-200"
-          : done
-          ? "border-white/[0.06] bg-white/[0.02] text-neutral-300"
-          : "border-white/[0.04] bg-transparent text-neutral-600",
+            ? "border-violet-400/40 bg-violet-400/10 text-violet-200"
+            : done
+              ? "border-white/[0.06] bg-white/[0.02] text-neutral-300"
+              : "border-white/[0.04] bg-transparent text-neutral-600",
       )}
     >
       <div className="flex items-start gap-2">
@@ -150,10 +150,10 @@ function StepCard({
             failed
               ? "bg-red-500/70 text-white"
               : active
-              ? "bg-violet-500 text-white"
-              : done
-              ? "bg-emerald-500/80 text-neutral-950"
-              : "bg-white/5 text-neutral-600",
+                ? "bg-violet-500 text-white"
+                : done
+                  ? "bg-emerald-500/80 text-neutral-950"
+                  : "bg-white/5 text-neutral-600",
           )}
         >
           {failed ? "!" : n}
@@ -184,12 +184,13 @@ function EditPlanCard({ plan }: { plan: EditPlan }) {
       {open && (
         <div className="px-3 pb-3 space-y-2">
           {plan.brief && (
-            <p className="text-[11px] text-neutral-300 leading-relaxed italic">&ldquo;{plan.brief}&rdquo;</p>
+            <p className="text-[11px] text-neutral-300 leading-relaxed italic">
+              &ldquo;{plan.brief}&rdquo;
+            </p>
           )}
           {plan.style && (
             <div className="text-[10px] text-neutral-500">
-              Style:{" "}
-              <span className="text-violet-300 font-mono">{plan.style}</span>
+              Style: <span className="text-violet-300 font-mono">{plan.style}</span>
             </div>
           )}
           {plan.hooks && plan.hooks.length > 0 && (
@@ -312,7 +313,9 @@ export function AIMotionPanel({
             {inProgress && (
               <div>
                 <div className="flex items-center justify-between mb-1 text-[10px] font-mono text-neutral-500">
-                  <span className="text-violet-300 truncate">{latestJob?.stage_message ?? "Working…"}</span>
+                  <span className="text-violet-300 truncate">
+                    {latestJob?.stage_message ?? "Working…"}
+                  </span>
                   <span className="tabular-nums">{latestJob?.progress ?? 0}%</span>
                 </div>
                 <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
@@ -333,9 +336,19 @@ export function AIMotionPanel({
             </div>
 
             {/* Edit plan (if available) */}
-            {latestJob?.edit_plan && (
-              <EditPlanCard plan={latestJob.edit_plan as EditPlan} />
-            )}
+            {latestJob?.edit_plan && <EditPlanCard plan={latestJob.edit_plan as EditPlan} />}
+
+            {/* The export finished, but the graphics couldn't be added (the
+                worker's detail stays in the job's edit plan). */}
+            {jobStatus === "completed" &&
+              typeof (latestJob?.edit_plan as { graphics_error?: unknown } | null)
+                ?.graphics_error === "string" && (
+                <div className="rounded-lg p-2.5 border border-amber-500/30 bg-amber-500/10 text-amber-200 text-[11px] leading-relaxed">
+                  <div className="font-semibold mb-0.5">Exported without graphics</div>
+                  The video was made, but the Motion Explainer graphics couldn&apos;t be added this
+                  time. Try exporting again; if it keeps happening, let us know.
+                </div>
+              )}
 
             {/* Error details */}
             {jobStatus === "failed" && latestJob?.error && (
@@ -369,7 +382,7 @@ export function AIMotionPanel({
                 <span className="text-[11px] text-neutral-400">Burn word-by-word</span>
               </div>
               <Textarea
-                value={captionsText ?? (script ?? "")}
+                value={captionsText ?? script ?? ""}
                 onChange={(e) => onScriptChange(e.target.value)}
                 onBlur={onScriptBlur}
                 placeholder="AI captions will be generated from audio. Override here…"

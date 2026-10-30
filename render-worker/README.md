@@ -15,33 +15,40 @@ from the Lovable app, so it never needs Supabase service keys.
 
 ## Deploy on Render.com
 
-1. Push this folder to GitHub (or use the existing repo).
-2. Render → **New → Web Service** → connect the repo.
-3. Root directory: `render-worker`
-4. Runtime: **Node**
-5. Build Command: `npm install`
-6. Start Command: `npm start`
-7. Instance type: at least **Starter** (ffmpeg is CPU-heavy; the free tier
-   will time out on longer clips).
-8. Environment variables (Render dashboard → Environment):
-   - `RENDER_WORKER_SECRET` — must match the value stored in your Lovable app.
-   - `LOVABLE_API_KEY` *(optional but recommended)* — enables the AI hook /
-     edit plan. Without it the worker still renders, just without the hook
-     overlay.
+The worker runs as a **Docker** service (see `render.yaml` and `Dockerfile`):
+Motion Explainer graphics are drawn with Remotion's headless Chrome, which
+needs Linux system libraries that a native Node service can't install.
 
-The `ffmpeg-static` npm dependency bundles a working ffmpeg binary, so
-Render's Node image needs no extra system packages.
+1. Render → the worker service → Settings: Runtime **Docker**,
+   Dockerfile path `./render-worker/Dockerfile`, Docker build context `.`
+   (the repository root: the graphics are built from the app's `src/motion`).
+   Or sync the Blueprint (`render.yaml`), which sets the same.
+2. Instance type: graphics are drawn on the CPU, so more CPUs mean faster
+   exports (see the timings measured in the Stage 3 notes).
+3. Environment variables (Render dashboard → Environment):
+   - `RENDER_WORKER_SECRET` — must match the value stored in your Lovable app.
+   - `ELEVENLABS_API_KEY` *(optional)* — speech-to-text for captions and
+     graphics, and AI voiceovers.
+   - `LOVABLE_API_KEY` *(optional)* — the older AI hook line, for projects
+     without Motion Explainer graphics.
+   - `PUBLIC_APP_URL` *(optional)* — scheduled posts.
+
+The image installs the libraries, a system font for captions, and (at build,
+`node build-graphics.mjs`) bundles the graphics and downloads the headless
+Chrome. `ffmpeg-static` still provides ffmpeg.
 
 ## Endpoints
 
 - `GET /health` → `{ ok: true, ffmpeg: true }`
 - `POST /jobs` → accepts signed job payloads from the Lovable app
+- `POST /transcribe` → transcribes clips before export (for planning graphics)
 
 ## Local test
 
 ```
 cd render-worker
 npm install
+npm run build   # bundles the graphics, downloads headless Chrome
 RENDER_WORKER_SECRET=dev npm start
 ```
 
