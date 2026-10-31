@@ -386,6 +386,21 @@ export const MotionPlan = z.object({
   colour: MotionColour.optional(),
   /** The graphics' look, one per video: dark glass (the default) or paper on a desk. */
   look: z.enum(MOTION_LOOKS).optional(),
+  /**
+   * Camera angles: switching between the full shot and a close crop on the
+   * speaker (src/motion/angles.ts). On unless turned off; `center` is where
+   * the speaker is in the frame (0-1), found by the editor; null when no
+   * one was found (the zooms then centre on the upper middle).
+   */
+  angles: z
+    .object({
+      enabled: z.boolean().optional(),
+      center: z
+        .object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })
+        .nullable()
+        .optional(),
+    })
+    .optional(),
   elements: z.array(MotionElement).max(MAX_ELEMENTS),
 });
 export type MotionPlan = z.infer<typeof MotionPlan>;

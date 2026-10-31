@@ -209,3 +209,125 @@ export function grabFrames(src: string, timesMs: number[], width = 960): Promise
     video.src = src;
   });
 }
+
+/**
+ * Where the speaker's face is in a frame's person mask (0-1 of the frame):
+ * across the middle of the head, about an eighth of the person's height
+ * below the top of their head. Null when there's hardly anyone.
+ */
+export function faceInMask(alpha: Uint8ClampedArray, width: number, height: number) {
+  const rowCount = (y: number) => {
+    let n = 0;
+    for (let x = 0; x < width; x++) if (alpha[(y * width + x) * 4 + 3] > 127) n++;
+    return n;
+  };
+  const enough = Math.max(2, width * 0.03);
+  let top = -1;
+  let bottom = -1;
+  for (let y = 0; y < height; y++) {
+    if (rowCount(y) >= enough) {
+      if (top < 0) top = y;
+      bottom = y;
+    }
+  }
+  if (top < 0 || bottom - top < height * 0.1) return null;
+  const personH = bottom - top;
+  // The head: the top quarter of the person.
+  let sx = 0;
+  let n = 0;
+  for (let y = top; y <= top + personH * 0.25; y++) {
+    for (let x = 0; x < width; x++) {
+      if (alpha[(y * width + x) * 4 + 3] > 127) {
+        sx += x;
+        n++;
+      }
+    }
+  }
+  if (!n) return null;
+  return { x: sx / n / width, y: Math.min(1, (top + personH * 0.12) / height) };
+}
+
+/**
+ * Where the speaker's face is in a clip, from frames at `timesMs` (the
+ * middle of what's found, 0-1 of the clip's own frame), with the clip's
+ * shape (width / height); null when no one was found or the video couldn't
+ * be read.
+ */
+export async function findSpeakerFace(
+  src: string,
+  timesMs: number[],
+): Promise<{ x: number; y: number; ratio: number } | null> {
+  const segmenter = await loadPersonSegmenter();
+  if (!segmenter) return null;
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.preload = "auto";
+    video.playsInline = true;
+    const mask = document.createElement("canvas");
+    const found: { x: number; y: number }[] = [];
+    let ratio = 16 / 9;
+    let i = 0;
+    let done = false;
+    const timer = setTimeout(() => finish(), TIMEOUT_MS);
+
+    function finish() {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      video.removeAttribute("src");
+      video.load();
+      if (!found.length) return resolve(null);
+      const mid = (vals: number[]) => vals.sort((a, b) => a - b)[Math.floor(vals.length / 2)];
+      resolve({ x: mid(found.map((f) => f.x)), y: mid(found.map((f) => f.y)), ratio });
+    }
+    const next = () => {
+      if (i >= timesMs.length) return finish();
+      video.currentTime = Math.min(timesMs[i] / 1000, Math.max(0, (video.duration || 0) - 0.05));
+    };
+    video.addEventListener("error", () => finish());
+    video.addEventListener("loadedmetadata", () => {
+      if (video.videoWidth && video.videoHeight) ratio = video.videoWidth / video.videoHeight;
+      next();
+    });
+    video.addEventListener("seeked", () => {
+      i++;
+      try {
+        if (segmenter.maskInto(video, mask)) {
+          const m = mask.getContext("2d", { willReadFrequently: true });
+          const face = m
+            ? faceInMask(
+                m.getImageData(0, 0, mask.width, mask.height).data,
+                mask.width,
+                mask.height,
+              )
+            : null;
+          if (face) found.push(face);
+        }
+      } catch {
+        // A cross-origin frame can't be read back.
+        return finish();
+      }
+      next();
+    });
+    video.src = src;
+  });
+}
+
+/**
+ * A point in a clip's own frame (0-1) as a point in the video's frame, for a
+ * clip fitted inside it (letterboxed, as the editor and the export show it).
+ */
+export function clipPointInFrame(
+  point: { x: number; y: number },
+  clipRatio: number,
+  frameRatio: number,
+): { x: number; y: number } {
+  if (clipRatio < frameRatio) {
+    const share = clipRatio / frameRatio;
+    return { x: 0.5 + (point.x - 0.5) * share, y: point.y };
+  }
+  const share = frameRatio / clipRatio;
+  return { x: point.x, y: 0.5 + (point.y - 0.5) * share };
+}

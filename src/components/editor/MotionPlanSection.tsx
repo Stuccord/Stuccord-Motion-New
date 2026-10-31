@@ -8,6 +8,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   AudioLines,
+  Camera,
   Layers,
   Loader2,
   Palette,
@@ -72,6 +73,17 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   zoom: "text-neutral-400 border-white/10",
 };
 
+/** Camera angles: on/off, and whether the speaker has been found. */
+export type AngleControls = {
+  enabled: boolean;
+  /** "found": centred on the speaker; "finding": still looking; "none": no one found. */
+  center: "found" | "finding" | "none";
+  /** Close shots in the video now. */
+  shots: number;
+  canEdit: boolean;
+  onToggle: (on: boolean) => void;
+};
+
 /** The graphics' look (the editor keeps the plan and saves it). */
 export type LookControls = {
   look: MotionLook;
@@ -113,6 +125,7 @@ export function MotionPlanSection({
   sound,
   colour,
   look,
+  angles,
   cartoon,
 }: {
   projectId: string;
@@ -125,6 +138,8 @@ export function MotionPlanSection({
   colour?: ColourControls;
   /** Shown once there are graphics. */
   look?: LookControls;
+  /** Shown once there are graphics. */
+  angles?: AngleControls;
   /** Shown once there are graphics. */
   cartoon?: CartoonControls;
 }) {
@@ -277,6 +292,7 @@ export function MotionPlanSection({
       )}
 
       {look && current && <LookRow look={look} />}
+      {angles && current && <AnglesRow angles={angles} />}
       {colour && current && <ColourRow colour={colour} />}
       {sound && current && <SoundRow sound={sound} />}
       {cartoon && current && <SpeakerCartoonRow cartoon={cartoon} />}
@@ -471,6 +487,34 @@ function ColourRow({ colour }: { colour: ColourControls }) {
           </label>
         </div>
       )}
+    </div>
+  );
+}
+
+function AnglesRow({ angles }: { angles: AngleControls }) {
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <Camera className="w-3 h-3 text-emerald-300" />
+        <span className="text-[11px] text-neutral-300 flex-1">Camera angles</span>
+        <Switch
+          checked={angles.enabled}
+          disabled={!angles.canEdit}
+          onCheckedChange={angles.onToggle}
+          aria-label="Camera angles"
+          className="data-[state=checked]:bg-emerald-600"
+        />
+      </div>
+      <p className="text-[10px] text-neutral-500 leading-snug">
+        {angles.enabled
+          ? `Cuts between wide and close every 5-10 s, at sentence ends (${angles.shots} close shot${angles.shots === 1 ? "" : "s"}). ` +
+            (angles.center === "found"
+              ? "Centred on you."
+              : angles.center === "finding"
+                ? "Finding where you are…"
+                : "No one found, so it centres on the upper middle.")
+          : "Off: the picture stays wide except for zooms."}
+      </p>
     </div>
   );
 }

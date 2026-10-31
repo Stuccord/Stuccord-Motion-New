@@ -51,10 +51,16 @@ import {
   type MotionElement,
 } from "@/lib/motion-plan";
 import { MOTION_FPS, placeGraphics, splitShift, zoomAt } from "@/motion/timing";
+import { DEFAULT_ANGLE_CENTER, angleAt, closeShots } from "@/motion/angles";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
-import { grabFrames, pickSpeakerFrames } from "@/lib/speaker-frames";
+import {
+  clipPointInFrame,
+  findSpeakerFace,
+  grabFrames,
+  pickSpeakerFrames,
+} from "@/lib/speaker-frames";
 import { useStoryImages } from "@/components/editor/useStoryImages";
 import {
   DEFAULT_SOUND_VOLUME,
@@ -1545,6 +1551,36 @@ function EditorPage() {
     })();
   }, [needFootageColours, firstMainClip, motion, signClip]);
 
+  // Camera angles: where the speaker is, found once per plan from the first
+  // main video (the close-ups and zooms centre on them).
+  const anglesTried = useRef<string | null>(null);
+  const needSpeakerCenter =
+    !!motion.plan &&
+    motion.plan.angles?.enabled !== false &&
+    motion.plan.angles?.center === undefined &&
+    motion.canEdit &&
+    !readOnly;
+  useEffect(() => {
+    if (!needSpeakerCenter || !firstMainClip || !motion.plan || !data) return;
+    const key = `${motion.plan.created_at}:${firstMainClip.storage_path}`;
+    if (anglesTried.current === key) return;
+    anglesTried.current = key;
+    const from = firstMainClip.trim_in_ms ?? 0;
+    const len = Math.min(60_000, clipVisibleMs(firstMainClip));
+    const times = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => Math.round(from + len * f));
+    const [rw, rh] = (data.project.aspect_ratio ?? "9:16").split(":").map(Number);
+    void (async () => {
+      try {
+        const { url } = await signClip({ data: { path: firstMainClip.storage_path } });
+        const face = await findSpeakerFace(url, times);
+        const center = face ? clipPointInFrame(face, face.ratio, rw / rh || 9 / 16) : null;
+        motion.update((p) => ({ ...p, angles: { ...p.angles, center } }));
+      } catch (e) {
+        console.warn("[editor] Couldn't find the speaker for the camera angles:", e);
+      }
+    })();
+  }, [needSpeakerCenter, firstMainClip, motion, signClip, data]);
+
   // Story scenes' pictures: links to show them, and making and uploading
   // them (tinted toward the graphics' colour).
   // Clear frames of the speaker for their cartoon: spread over the first
@@ -1774,6 +1810,19 @@ function EditorPage() {
   const placedMotion = motionPlan
     ? placeGraphics(motionPlan.elements, graphicWordMap)
     : { graphics: [], zooms: [] };
+  // Camera angles: the close shots (wide during zooms and Notes pages), and
+  // the point the picture zooms around.
+  const anglesOn = !!motionPlan && motionPlan.angles?.enabled !== false;
+  // (Not a hook: this runs after the loading return above. One pass over the words.)
+  const angleShots = anglesOn
+    ? closeShots(captionWords, [
+        ...placedMotion.zooms.map((z): [number, number] => [z.from, z.to]),
+        ...placedMotion.graphics
+          .filter((g) => g.type === "notes")
+          .map((g): [number, number] => [g.from, g.to]),
+      ])
+    : [];
+  const angleCenter = motionPlan?.angles?.center ?? DEFAULT_ANGLE_CENTER;
   // The user's pick, the brand kit's colour, or the video's (motionAccent).
   const kitHighlight = brand.data?.kit?.highlightColor;
   const accent = motionAccent(motionPlan?.colour, kitHighlight);
@@ -2587,8 +2636,11 @@ function EditorPage() {
                 </>
               ),
               pictureScale: graphicsOn
-                ? (timeMs) => zoomAt(placedMotion.zooms, frameAtMs(timeMs))
+                ? (timeMs) =>
+                    zoomAt(placedMotion.zooms, frameAtMs(timeMs)) *
+                    angleAt(angleShots, frameAtMs(timeMs))
                 : undefined,
+              pictureOrigin: graphicsOn ? angleCenter : undefined,
               // A Notes page beside the speaker moves them aside.
               pictureShift: graphicsOn
                 ? (timeMs) =>
@@ -2852,6 +2904,23 @@ function EditorPage() {
                               look: motionPlan.look ?? "glass",
                               canEdit: canEditGraphics,
                               onPick: (next) => motion.update((p) => ({ ...p, look: next })),
+                            }
+                          : undefined
+                      }
+                      angles={
+                        motionPlan
+                          ? {
+                              enabled: motionPlan.angles?.enabled !== false,
+                              center:
+                                motionPlan.angles?.center === undefined
+                                  ? "finding"
+                                  : motionPlan.angles.center
+                                    ? "found"
+                                    : "none",
+                              shots: angleShots.length,
+                              canEdit: canEditGraphics,
+                              onToggle: (on) =>
+                                motion.update((p) => ({ ...p, angles: { ...p.angles, enabled: on } })),
                             }
                           : undefined
                       }

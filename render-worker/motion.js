@@ -276,13 +276,95 @@ export function zoomExpression(zooms) {
   return expr;
 }
 
-/** The zoompan filter for the zooms (around the upper middle), or null with none. */
-export function zoomFilter(zooms, w, h) {
-  if (!zooms.length) return null;
+/**
+ * The zoompan filter for the zooms and the camera angles' close shots, or
+ * null with neither. It zooms around `center` (the speaker, 0-1; the upper
+ * middle when unknown), like the preview's transform-origin: that point
+ * stays put while the picture grows.
+ */
+export function zoomFilter(zooms, w, h, { shots = [], center = null } = {}) {
+  if (!zooms.length && !shots.length) return null;
+  const c = angleCenter(center);
+  const close = shots.length
+    ? `*(1+${num(ANGLE_CLOSE - 1)}*(${shots.map((s) => `between(in,${s.from},${s.to - 1})`).join("+")}))`
+    : "";
   return (
-    `zoompan=z='${zoomExpression(zooms)}':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)*0.4'` +
+    `zoompan=z='(${zoomExpression(zooms)})${close}'` +
+    `:x='${num(c.x)}*iw*(1-1/zoom)':y='${num(c.y)}*ih*(1-1/zoom)'` +
     `:d=1:s=${w}x${h}:fps=${MOTION_FPS}`
   );
+}
+
+// ---------- camera angles (mirrors src/motion/angles.ts) ----------
+
+export const ANGLE_CLOSE = 1.3;
+const DEFAULT_ANGLE_CENTER = { x: 0.5, y: 0.4 };
+
+/** The plan's speaker point, if it's a valid one; else the upper middle. */
+export function angleCenter(center) {
+  const ok = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+  return center && ok(center.x) && ok(center.y) ? { x: center.x, y: center.y } : DEFAULT_ANGLE_CENTER;
+}
+
+/**
+ * The close shots: cuts on pauses and sentence ends, wide first, every 5-10 s
+ * (3.5-7 s in the first minute); `blocked` stretches (frames) stay wide.
+ * `words` are the placed words ({ text, start_ms, end_ms }).
+ */
+export function closeShots(words, blocked) {
+  const FPS = 30;
+  const frameOf = (ms) => Math.round((ms / 1000) * FPS);
+  const list = (Array.isArray(words) ? words : [])
+    .filter((w) => w && Number.isFinite(w.start_ms))
+    .map((w) => ({ text: String(w.text ?? ""), startMs: w.start_ms, endMs: w.end_ms }))
+    .sort((a, b) => a.startMs - b.startMs);
+  if (list.length < 2) return [];
+  const cuts = [];
+  for (let i = 1; i < list.length; i++) {
+    const prev = list[i - 1];
+    const w = list[i];
+    const gap = w.startMs - prev.endMs;
+    const natural = /[.!?…]["'”’)]*$/.test(prev.text.trim()) || gap >= 350;
+    cuts.push({ ms: gap > 0 ? prev.endMs + gap / 2 : w.startMs, natural });
+  }
+  const startMs = list[0].startMs;
+  const endMs = list[list.length - 1].endMs;
+  let shots = [];
+  let last = startMs;
+  let close = false;
+  for (const c of cuts) {
+    const len = (c.ms - last) / 1000;
+    const hook = c.ms - startMs < 60_000;
+    const min = hook ? 3.5 : 5;
+    const max = hook ? 7 : 10;
+    if ((c.natural && len >= min) || len >= max) {
+      if (close) shots.push({ from: frameOf(last), to: frameOf(c.ms) });
+      close = !close;
+      last = c.ms;
+    }
+  }
+  if (close) shots.push({ from: frameOf(last), to: frameOf(endMs) + 10 });
+  for (const [a, b] of blocked) {
+    const next = [];
+    for (const s of shots) {
+      if (b <= s.from || a >= s.to) {
+        next.push(s);
+        continue;
+      }
+      if (a > s.from) next.push({ from: s.from, to: a });
+      if (b < s.to) next.push({ from: b, to: s.to });
+    }
+    shots = next;
+  }
+  return shots.filter((s) => s.to - s.from >= 30);
+}
+
+/** The stretches that stay wide: zooms, and Notes pages (frames). */
+export function angleBlocked(zooms, graphics) {
+  return [
+    ...zooms.map((z) => [z.from, z.to]),
+    ...graphics.filter((g) => g.type === "notes").map((g) => [g.from, g.to]),
+  ];
 }
 
 /** The graphics are drawn at half the video's rate (they change every other frame). */

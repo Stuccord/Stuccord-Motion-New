@@ -28,6 +28,7 @@ interface PreviewCanvasProps {
     /** How much the picture is zoomed in at a time (Motion Explainer zooms). */
     pictureScale?: (timeMs: number) => number;
     pictureShift?: (timeMs: number) => { x: number; y: number } | null;
+    pictureOrigin?: { x: number; y: number };
     /** Graphics behind the speaker: how far in a time is (0-1), and what's drawn there. */
     behindAt?: (timeMs: number) => number;
     renderBehind?: (timeMs: number) => React.ReactNode;
@@ -470,6 +471,7 @@ export function PreviewCanvas({
               renderOverlay={timeline!.renderOverlay}
               pictureScale={timeline!.pictureScale}
               pictureShift={timeline!.pictureShift}
+              pictureOrigin={timeline!.pictureOrigin}
               behindAt={timeline!.behindAt}
               renderBehind={timeline!.renderBehind}
               onStall={timeline!.onStall}

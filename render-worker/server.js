@@ -42,6 +42,8 @@ import {
   chapterStretches,
   composeArgs,
   splitRanges,
+  closeShots,
+  angleBlocked,
   placeGraphics,
   renderGraphics,
   sfxTrackArgs,
@@ -1653,7 +1655,12 @@ async function runRender(job) {
         const placed = placedMotion;
         const totalMs = await probeDurationMs(composedOut);
         const totalFrames = Math.ceil(((totalMs ?? 0) / 1000) * MOTION_FPS);
-        zoom = zoomFilter(placed.zooms, w, h);
+        // Camera angles: on unless the plan turns them off.
+        const anglesOn = motionJob.angles?.enabled !== false;
+        zoom = zoomFilter(placed.zooms, w, h, {
+          shots: anglesOn ? closeShots(placedWords, angleBlocked(placed.zooms, placed.graphics)) : [],
+          center: motionJob.angles?.center ?? null,
+        });
         const ranges = splitRanges(placed.graphics);
         split = ranges.length ? { ranges, portrait: h > w } : null;
         // Behind the speaker only when the cut-out model is in the image.

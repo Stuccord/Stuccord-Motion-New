@@ -1767,6 +1767,8 @@ export async function startCloudRender(
             images: sceneImages,
             // The graphics' look: glass or paper.
             look: motionPlan.look ?? "glass",
+            // Camera angles (on unless turned off) and where the speaker is.
+            angles: motionPlan.angles ?? null,
           }
         : null,
       // Voiceovers go apart from the clips, so a worker from before

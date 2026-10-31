@@ -65,6 +65,8 @@ type Props = {
    * a Notes page beside the speaker; null or none: not moved.
    */
   pictureShift?: (timeMs: number) => { x: number; y: number } | null;
+  /** The point (0-1) the picture zooms around: the speaker, or the upper middle. */
+  pictureOrigin?: { x: number; y: number };
   /**
    * Graphics behind the speaker: how far in a time is (0 none, 1 full: the
    * room darkened and blurred, the speaker cut out in front), and what's
@@ -102,6 +104,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     renderOverlay,
     pictureScale,
     pictureShift,
+    pictureOrigin,
     behindAt,
     renderBehind,
     onStall,
@@ -397,7 +400,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     scale !== 1 || shift
       ? {
           transform: `${shift ? `translate(${shift.x * 100}%, ${shift.y * 100}%) ` : ""}scale(${scale})`,
-          transformOrigin: "50% 40%",
+          transformOrigin: `${(pictureOrigin?.x ?? 0.5) * 100}% ${(pictureOrigin?.y ?? 0.4) * 100}%`,
         }
       : undefined;
   const behind = behindAt?.(t) ?? 0;
