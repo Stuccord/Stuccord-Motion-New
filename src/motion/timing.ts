@@ -157,22 +157,5 @@ export function zoomAt(zooms: PlacedZoom[], frame: number): number {
   return ZOOM_SCALE;
 }
 
-// ---------- story camera (drawn in MotionGraphics) ----------
-
-/** Frames the camera takes to fly from one scene to the next. */
-const STORY_MOVE = 16;
-
-/**
- * Where the camera is (in scenes: 1.5 = halfway from the second to the
- * third) at a frame into the story; the move into each scene is centred on
- * its start, so the camera is fastest exactly at the cut.
- */
-export function storyCamera(starts: number[], frame: number): number {
-  let c = 0;
-  for (let i = 1; i < starts.length; i++) {
-    const room = Math.min(starts[i] - starts[i - 1], (starts[i + 1] ?? Infinity) - starts[i]);
-    const move = Math.max(4, Math.min(STORY_MOVE, room));
-    c += easeInOut(clamp01((frame - (starts[i] - move / 2)) / move));
-  }
-  return c;
-}
+// The story camera lives in ./camera (the worker bundles it without src/lib).
+export { storyCamera } from "@/motion/camera";

@@ -12,7 +12,8 @@ import React from "react";
 import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
 import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
-import { storyCamera, type PlacedGraphic } from "@/motion/timing";
+import { storyCamera } from "@/motion/camera";
+import type { PlacedGraphic } from "@/motion/timing";
 
 export type MotionGraphicsProps = {
   graphics: PlacedGraphic[];
