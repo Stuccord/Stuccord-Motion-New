@@ -363,7 +363,8 @@ export function closeShots(words, blocked) {
 export function angleBlocked(zooms, graphics) {
   return [
     ...zooms.map((z) => [z.from, z.to]),
-    ...graphics.filter((g) => g.type === "notes").map((g) => [g.from, g.to]),
+    // Behind the speaker: wide, so the words show around the head.
+    ...graphics.filter((g) => g.type === "notes" || g.behind).map((g) => [g.from, g.to]),
   ];
 }
 

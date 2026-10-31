@@ -21,8 +21,10 @@ export const BEHIND_DARKEN = 0.45;
 export const BEHIND_BLUR = 0.006;
 // The model's input and output size.
 const MASK_SIZE = 256;
-const MASK_LOW = 0.3;
-const MASK_HIGH = 0.7;
+// Only fairly sure pixels: a lower start let a ring of the bright,
+// unblurred room show around the speaker.
+const MASK_LOW = 0.5;
+const MASK_HIGH = 0.8;
 
 /** Frame stretches with a behind graphic on screen (touching ones joined). */
 export function behindRanges(graphics) {

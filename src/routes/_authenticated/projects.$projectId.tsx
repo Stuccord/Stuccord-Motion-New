@@ -1810,7 +1810,8 @@ function EditorPage() {
   const placedMotion = motionPlan
     ? placeGraphics(motionPlan.elements, graphicWordMap)
     : { graphics: [], zooms: [] };
-  // Camera angles: the close shots (wide during zooms and Notes pages), and
+  // Camera angles: the close shots (wide during zooms, Notes pages and
+  // graphics behind the speaker, whose words must show around the head), and
   // the point the picture zooms around.
   const anglesOn = !!motionPlan && motionPlan.angles?.enabled !== false;
   // (Not a hook: this runs after the loading return above. One pass over the words.)
@@ -1818,7 +1819,7 @@ function EditorPage() {
     ? closeShots(captionWords, [
         ...placedMotion.zooms.map((z): [number, number] => [z.from, z.to]),
         ...placedMotion.graphics
-          .filter((g) => g.type === "notes")
+          .filter((g) => g.type === "notes" || g.behind)
           .map((g): [number, number] => [g.from, g.to]),
       ])
     : [];

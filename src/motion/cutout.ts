@@ -47,8 +47,10 @@ export function behindRanges(graphics: PlacedGraphic[]): [number, number][] {
 }
 
 // The mask's soft edge: below LOW is room, above HIGH is the person.
-const MASK_LOW = 0.3;
-const MASK_HIGH = 0.7;
+// Only fairly sure pixels: a lower start let a ring of the bright,
+// unblurred room show around the speaker.
+const MASK_LOW = 0.5;
+const MASK_HIGH = 0.8;
 
 /** The person mask's opacity (0-255) from the model's confidence (0-1). */
 export function maskAlpha(confidence: number): number {

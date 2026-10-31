@@ -47,16 +47,17 @@ export function exitOpacity(frame: number, length: number, frames = 8) {
 }
 
 /**
- * Graphics behind the speaker sit big, at head height, so the words show
- * either side of the head (the cut-out covers the middle).
+ * Graphics behind the speaker sit big, around head height, so the words show
+ * above and either side of the head (the cut-out covers the middle).
  */
 export function behindBand(portrait: boolean): React.CSSProperties {
   return {
     position: "absolute",
     left: 0,
     right: 0,
-    top: portrait ? "20%" : "14%",
-    height: portrait ? "30%" : "46%",
+    // Tall videos: level with the top of the head, so the head covers less.
+    top: portrait ? "9%" : "14%",
+    height: portrait ? "28%" : "46%",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
