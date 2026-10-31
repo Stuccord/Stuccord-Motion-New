@@ -31,7 +31,50 @@ export type PlacedGraphic = {
   chapter: { index: number; count: number } | null;
   /** Drawn behind the speaker (cut out in front of it). */
   behind: boolean;
+  /** A story's scenes, in order; null for other graphics. */
+  scenes: PlacedScene[] | null;
 };
+
+/** A story scene as drawn: from which frame, its words, and its picture's storage path. */
+export type PlacedScene = {
+  from: number;
+  text: string;
+  emphasis: string | null;
+  image: string | null;
+};
+
+/**
+ * Where a story's scenes start (frames): at their words when those are in
+ * the story and in order, else spread evenly over it.
+ */
+export function sceneStarts(froms: (number | null)[], from: number, to: number): number[] {
+  const n = froms.length;
+  const ok = froms.every(
+    (f, i) => f != null && f >= from && f < to && (i === 0 || f > (froms[i - 1] as number)),
+  );
+  if (ok) return froms.map((f, i) => (i === 0 ? from : (f as number)));
+  return froms.map((_, i) => Math.round(from + ((to - from) * i) / n));
+}
+
+function placeScenes(
+  el: MotionElement,
+  from: number,
+  to: number,
+  wordsByKey: Map<string, TimelineWord>,
+): PlacedScene[] {
+  const scenes = el.scenes ?? [];
+  const froms = scenes.map((sc) => {
+    const w = wordsByKey.get(`${sc.at.clip_id}:${sc.at.word_index}`);
+    return w ? msToFrame(w.startMs) : null;
+  });
+  const starts = sceneStarts(froms, from, to);
+  return scenes.map((sc, i) => ({
+    from: starts[i],
+    text: sc.text,
+    emphasis: sc.emphasis,
+    image: sc.image?.path ?? null,
+  }));
+}
 
 export type PlacedZoom = { id: string; from: number; to: number; zoom: "in" | "out" };
 
@@ -77,6 +120,12 @@ export function placeGraphics(
       cta: el.cta,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
+      scenes:
+        el.type === "story" && el.scenes?.length
+          ? placeScenes(el, from, to, wordsByKey)
+          : el.type === "story"
+            ? []
+            : null,
     });
   }
   return { graphics, zooms };
@@ -104,4 +153,24 @@ export function zoomAt(zooms: PlacedZoom[], frame: number): number {
   if (t < inF) return 1 + (ZOOM_SCALE - 1) * easeOut(t / inF);
   if (t > len - outF) return 1 + (ZOOM_SCALE - 1) * easeInOut(clamp01((len - t) / outF));
   return ZOOM_SCALE;
+}
+
+// ---------- story camera (drawn in MotionGraphics) ----------
+
+/** Frames the camera takes to fly from one scene to the next. */
+const STORY_MOVE = 16;
+
+/**
+ * Where the camera is (in scenes: 1.5 = halfway from the second to the
+ * third) at a frame into the story; the move into each scene is centred on
+ * its start, so the camera is fastest exactly at the cut.
+ */
+export function storyCamera(starts: number[], frame: number): number {
+  let c = 0;
+  for (let i = 1; i < starts.length; i++) {
+    const room = Math.min(starts[i] - starts[i - 1], (starts[i + 1] ?? Infinity) - starts[i]);
+    const move = Math.max(4, Math.min(STORY_MOVE, room));
+    c += easeInOut(clamp01((frame - (starts[i] - move / 2)) / move));
+  }
+  return c;
 }

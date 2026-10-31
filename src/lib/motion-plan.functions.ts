@@ -22,6 +22,7 @@ import {
   MOTION_STYLE,
   MotionPlan as MotionPlanSchema,
   draftsToElements,
+  sceneImageFolder,
   mainSegments,
   numberedTranscript,
   parseMotionPlan,
@@ -29,7 +30,7 @@ import {
   type MotionPlan,
   type PlanClip,
 } from "@/lib/motion-plan";
-import { planFor } from "@/lib/plans";
+import { planFor, type Plan } from "@/lib/plans";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
 
 const ProjectInput = z.object({ project_id: z.string().uuid() });
@@ -56,13 +57,35 @@ function monthStartIso(): string {
 
 /**
  * This month's AI plans against an allowance: a team's (plans for its
- * projects) or a person's own (plans outside teams). Counted with the admin
- * client so plans for projects that have since moved or gone still count.
+ * projects) or a person's own (plans outside teams).
  */
-export async function planAllowance(userId: string, teamId: string | null): Promise<PlanAllowance> {
+export function planAllowance(userId: string, teamId: string | null): Promise<PlanAllowance> {
+  return monthlyAllowance("motion_plan_runs", userId, teamId, (p, team) =>
+    team ? p.teamPlans : p.personalPlans,
+  );
+}
+
+/** This month's AI story pictures against an allowance, counted like plans. */
+export function imageAllowance(userId: string, teamId: string | null): Promise<PlanAllowance> {
+  return monthlyAllowance("motion_image_runs", userId, teamId, (p, team) =>
+    team ? p.teamImages : p.personalImages,
+  );
+}
+
+/**
+ * This month's runs in `table` against an allowance: a team's (runs for its
+ * projects) or a person's own (runs outside teams). Counted with the admin
+ * client so runs for projects that have since moved or gone still count.
+ */
+async function monthlyAllowance(
+  table: "motion_plan_runs" | "motion_image_runs",
+  userId: string,
+  teamId: string | null,
+  capOf: (plan: Plan, team: boolean) => number,
+): Promise<PlanAllowance> {
   const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
   let q = admin
-    .from("motion_plan_runs")
+    .from(table)
     .select("id", { count: "exact", head: true })
     .gte("created_at", monthStartIso());
   if (teamId) {
@@ -75,14 +98,14 @@ export async function planAllowance(userId: string, teamId: string | null): Prom
     if (error) throw new Error(error.message);
     return {
       used: count ?? 0,
-      cap: planFor(team?.plan).teamPlans,
+      cap: capOf(planFor(team?.plan), true),
       team: { id: teamId, name: team?.name ?? "This team" },
     };
   }
   q = q.eq("user_id", userId).is("team_id", null);
   const { count, error } = await q;
   if (error) throw new Error(error.message);
-  return { used: count ?? 0, cap: planFor("free").personalPlans, team: null };
+  return { used: count ?? 0, cap: capOf(planFor("free"), false), team: null };
 }
 
 // ---------- the project's words ----------
@@ -134,6 +157,8 @@ export type MotionPlanState = {
   /** Main-track videos still without a transcript. */
   untranscribed: number;
   allowance: PlanAllowance;
+  /** AI story pictures this month. */
+  images: PlanAllowance;
 };
 
 export const getMotionPlan = createServerFn({ method: "POST" })
@@ -165,6 +190,7 @@ export const getMotionPlan = createServerFn({ method: "POST" })
       },
       untranscribed: missing.length,
       allowance: await planAllowance(context.userId, project.team_id),
+      images: await imageAllowance(context.userId, project.team_id),
     };
   });
 
@@ -322,6 +348,17 @@ export const saveMotionPlan = createServerFn({ method: "POST" })
     const clipIds = new Set((rows ?? []).map((c) => c.id));
     if (plan.elements.some((e) => !clipIds.has(e.start.clip_id) || !clipIds.has(e.end.clip_id))) {
       throw new Error("A graphic points at a clip that isn't in this project.");
+    }
+    // Story scenes: on this project's clips, and their pictures in this
+    // project's own folder (the export hands out links to them).
+    const folder = sceneImageFolder(project.user_id, project.id);
+    for (const sc of plan.elements.flatMap((e) => e.scenes ?? [])) {
+      if (!clipIds.has(sc.at.clip_id)) {
+        throw new Error("A story scene points at a clip that isn't in this project.");
+      }
+      if (sc.image && (!sc.image.path.startsWith(folder) || sc.image.path.includes(".."))) {
+        throw new Error("A story picture isn't one of this project's.");
+      }
     }
     const ids = new Set(plan.elements.map((e) => e.id));
     if (ids.size !== plan.elements.length) throw new Error("Two graphics have the same id.");

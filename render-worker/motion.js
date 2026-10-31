@@ -22,7 +22,8 @@ export const MOTION_FPS = 30;
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
-const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "chapter", "label", "cta"]);
+const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "chapter", "label", "cta"]);
+const MAX_SCENES = 6;
 // Types that can go behind the speaker (src/lib/motion-plan.ts BEHIND_TYPES).
 const BEHIND_TYPES = new Set(["keyline", "counter", "list", "card", "compare", "chapter"]);
 const msToFrame = (ms) => Math.round((ms / 1000) * MOTION_FPS);
@@ -76,9 +77,50 @@ export function placeGraphics(elements, words) {
       cta: ["like", "subscribe", "comment", "link"].includes(el.cta) ? el.cta : null,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
+      scenes: el.type === "story" ? placeScenes(el.scenes, from, to, byKey) : null,
     });
   }
   return { graphics, zooms };
+}
+
+/**
+ * Where a story's scenes start (frames): at their words when those are in
+ * the story and in order, else spread evenly (src/motion/timing.ts).
+ */
+export function sceneStarts(froms, from, to) {
+  const n = froms.length;
+  const ok = froms.every((f, i) => f != null && f >= from && f < to && (i === 0 || f > froms[i - 1]));
+  if (ok) return froms.map((f, i) => (i === 0 ? from : f));
+  return froms.map((_, i) => Math.round(from + ((to - from) * i) / n));
+}
+
+function placeScenes(scenes, from, to, byKey) {
+  const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
+  const list = (Array.isArray(scenes) ? scenes : []).filter((sc) => sc && typeof sc === "object").slice(0, MAX_SCENES);
+  const froms = list.map((sc) => {
+    const w = byKey.get(`${sc.at?.clip_id}:${sc.at?.word_index}`);
+    return w ? msToFrame(w.start_ms) : null;
+  });
+  const starts = sceneStarts(froms, from, to);
+  return list.map((sc, i) => ({
+    from: starts[i],
+    text: str(sc.text, 80),
+    emphasis: typeof sc.emphasis === "string" ? sc.emphasis.slice(0, 60) : null,
+    image: typeof sc.image?.path === "string" ? sc.image.path.slice(0, 300) : null,
+  }));
+}
+
+/**
+ * Story pictures' links from the job: storage path -> https link, only
+ * well-formed entries (the drawing loads them in Chrome).
+ */
+export function storyImages(images) {
+  const out = {};
+  if (!images || typeof images !== "object") return out;
+  for (const [k, v] of Object.entries(images).slice(0, 60)) {
+    if (typeof k === "string" && k.length <= 300 && typeof v === "string" && /^https:\/\//.test(v)) out[k] = v;
+  }
+  return out;
 }
 
 /** Frame stretches with graphics on screen, close ones joined (inclusive start, exclusive end). */
@@ -96,10 +138,10 @@ export function graphicRanges(graphics, totalFrames, joinGap = 15) {
   return out;
 }
 
-/** Time ranges (ms) where a key line or chapter fills the captions' space. */
+/** Time ranges (ms) where a key line, chapter or story fills the captions' space. */
 export function captionGaps(graphics) {
   return graphics
-    .filter((g) => g.type === "keyline" || g.type === "chapter")
+    .filter((g) => g.type === "keyline" || g.type === "chapter" || g.type === "story")
     .map((g) => [(g.from / MOTION_FPS) * 1000, (g.to / MOTION_FPS) * 1000]);
 }
 
@@ -158,11 +200,12 @@ export async function renderGraphics({
   workdir,
   onProgress,
   name = "graphics",
+  images = {},
 }) {
   const ranges = graphicRanges(graphics, totalFrames);
   if (!ranges.length) return [];
   const { renderMedia, selectComposition } = await import("@remotion/renderer");
-  const inputProps = { graphics, theme, width: w, height: h, durationInFrames: totalFrames };
+  const inputProps = { graphics, theme, images, width: w, height: h, durationInFrames: totalFrames };
   const composition = await selectComposition({ serveUrl: GRAPHICS_BUNDLE, id: "graphics", inputProps });
   const totalToDraw = ranges.reduce((s, [a, b]) => s + Math.ceil(b / 2) - Math.floor(a / 2), 0);
   let drawn = 0;
@@ -293,6 +336,11 @@ export function baseSoundEvents(graphics, zooms) {
         add(g, "second", "whoosh-deep", at + frameMs(second) - WHOOSH_LEAD_MS);
         break;
       }
+      case "story":
+        (g.scenes ?? []).forEach((sc, i) =>
+          add(g, `scene${i}`, i === 0 ? "whoosh-deep" : "whoosh-light", frameMs(sc.from) - WHOOSH_LEAD_MS),
+        );
+        break;
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
         add(g, "hit", "hit", at);

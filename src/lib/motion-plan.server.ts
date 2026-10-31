@@ -25,6 +25,7 @@ Graphic types (field "type"):
 - list: items that stack one by one as each is named ("faster, cheaper, and at scale"). "items" has 2-8 short items in spoken order; "text" is an optional title.
 - card: a glass UI card for a concept, tip or piece of advice. "text" is the title; "items" up to 4 short lines.
 - compare: an A-vs-B idea ("a powerful tool or an expensive burden"). "items" has exactly the two sides; "text" is an optional title.
+- story: a short story or journey told over a few sentences ("when I started I had nothing... I slept on a friend's floor... then I made my first sale"). Shown as a sequence of cinematic AI-generated pictures joined by one camera move. Set "scenes": 2-6 scenes in spoken order, each with "from_word" (the word that scene's phrase starts on, within the story's words), "text" (3-7 words on screen, the speaker's words), "emphasis" (one word from that text, or null) and "prompt" (what the picture shows: a person or place living that moment, the setting, the light and mood, in one or two sentences; no words or lettering in the picture; never a real, named person, brand or logo). "text" is an optional title for the whole story. Use it for real stories only, at most one or two per video.
 - chapter: a section divider when the speaker starts a new part, tip or step ("tip number one", "moving on to..."). "text" is the section title.
 - label: a small "you are here" label naming the current item or topic; it may stay up while other graphics come and go.
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
@@ -37,14 +38,14 @@ Behind the speaker (field "behind"):
 
 Timing:
 - "from_word" is the first word that triggers the graphic; "to_word" the last word it stays up for (usually the end of the phrase or sentence, 1.5-8 seconds of speech). A list stays until its last item is said.
-- One main graphic at a time: keyline, counter, list, card, compare, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
+- One main graphic at a time: keyline, counter, list, card, compare, story, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
 - Pace: the opening (hook) is the densest - a visual every 3-4 seconds. Later, a graphic or a zoom roughly every 5-10 seconds. Leave the speaker on screen for personal, emotional moments.
 
 Writing:
 - Use the speaker's own words and language. Keep on-screen text short: titles under 6 words, items under 5 words, key lines under 12 words.
 - Never invent facts, numbers, names or claims that weren't said. If the script differs from what was said, follow what was said.
 - "reason" is a few words on why this graphic fits here (e.g. "number said", "three benefits listed", "new tip starts").
-- Use null for fields a type doesn't use, and [] for unused items.
+- Use null for fields a type doesn't use, and [] for unused items and for "scenes" on every type but story.
 - "language" is the transcript's language as a short code (e.g. "en").`;
 
 export type PlanRequest = {

@@ -53,6 +53,7 @@ import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
+import { useStoryImages } from "@/components/editor/useStoryImages";
 import {
   DEFAULT_SOUND_VOLUME,
   SOUND_LABEL,
@@ -1529,6 +1530,14 @@ function EditorPage() {
     })();
   }, [needFootageColours, firstMainClip, motion, signClip]);
 
+  // Story scenes' pictures: links to show them, and making and uploading
+  // them (tinted toward the graphics' colour).
+  const storyImages = useStoryImages(
+    projectId,
+    motion,
+    motionAccent(motion.plan?.colour, brand.data?.kit?.highlightColor).hex,
+  );
+
   // The main player is the live timeline, the render, or the selected clip's
   // file (see PreviewCanvas). currentTime means a position in whichever one it
   // is showing, so every time conversion has to check this first. Render
@@ -1713,12 +1722,15 @@ function EditorPage() {
   const accent = motionAccent(motionPlan?.colour, kitHighlight);
   const motionTheme = themeFromAccent(accent.hex);
   const frameAtMs = (ms: number) => Math.round((ms / 1000) * MOTION_FPS);
-  // Captions step aside while a key line or chapter fills the same space.
+  // Captions step aside while a key line, chapter or story fills the same space.
   const captionsHiddenAt = (ms: number) => {
     if (!graphicsOn) return false;
     const f = frameAtMs(ms);
     return placedMotion.graphics.some(
-      (g) => (g.type === "keyline" || g.type === "chapter") && f >= g.from && f < g.to,
+      (g) =>
+        (g.type === "keyline" || g.type === "chapter" || g.type === "story") &&
+        f >= g.from &&
+        f < g.to,
     );
   };
   const selectedGraphic = motionPlan?.elements.find((e) => e.id === selectedGraphicId) ?? null;
@@ -2483,6 +2495,7 @@ function EditorPage() {
                       theme={motionTheme}
                       aspect={project.aspect_ratio}
                       layer="behind"
+                      images={storyImages.urls}
                     />
                   </Suspense>
                 ),
@@ -2499,6 +2512,7 @@ function EditorPage() {
                         theme={motionTheme}
                         aspect={project.aspect_ratio}
                         layer="front"
+                        images={storyImages.urls}
                       />
                     </Suspense>
                   )}
@@ -2682,6 +2696,7 @@ function EditorPage() {
                   }}
                   onSeek={seekToMs}
                   onClose={() => setSelectedGraphicId(null)}
+                  story={storyImages}
                 />
               ) : selectedClip ? (
                 <ClipInspector

@@ -29,6 +29,7 @@ export const ELEMENT_TYPES = [
   "list",
   "card",
   "compare",
+  "story",
   "chapter",
   "label",
   "cta",
@@ -42,6 +43,7 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   list: "List",
   card: "Card",
   compare: "A vs B",
+  story: "Story",
   chapter: "Chapter",
   label: "Label",
   cta: "Call to action",
@@ -51,6 +53,11 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
 /** Longest main text, and most graphics in one plan. */
 const MAX_TEXT = 200;
 const MAX_ELEMENTS = 300;
+/** A story's scenes: at least two, at most this many. */
+export const MAX_SCENES = 6;
+/** Longest scene text on screen, and longest image description. */
+const MAX_SCENE_TEXT = 80;
+export const MAX_SCENE_PROMPT = 600;
 
 /**
  * Types that can go behind the speaker (the person cut out in front of
@@ -79,6 +86,19 @@ const NumberValue = z.object({
 
 // ---------- what the AI returns ----------
 
+/** One scene of a story: from a word on, an AI image with a few words on it. */
+export const DraftScene = z.object({
+  /** Number of the word the scene starts on. */
+  from_word: z.number().int(),
+  /** The words on screen (a few). */
+  text: z.string(),
+  /** One word or short phrase from `text` in the special font, or null. */
+  emphasis: z.string().nullable(),
+  /** What the image shows (no text in it). */
+  prompt: z.string(),
+});
+export type DraftScene = z.infer<typeof DraftScene>;
+
 export const DraftElement = z.object({
   type: z.enum(ELEMENT_TYPES),
   /** Number of the first word that triggers it, from the word list. */
@@ -96,6 +116,8 @@ export const DraftElement = z.object({
   zoom: z.enum(ZOOM_KINDS).nullable(),
   /** Drawn behind the speaker (cut out in front of it). */
   behind: z.boolean(),
+  /** A story's scenes, in order; [] for every other type. */
+  scenes: z.array(DraftScene),
   /** Why this graphic, in a few words (shown to the user). */
   reason: z.string(),
 });
@@ -116,6 +138,29 @@ const Anchor = z.object({
 });
 export type Anchor = z.infer<typeof Anchor>;
 
+/** Story pictures' storage bucket, and a project's folder in it (by its owner). */
+export const SCENE_BUCKET = "motion-images";
+export const sceneImageFolder = (ownerId: string, projectId: string) => `${ownerId}/${projectId}/`;
+
+/** A story scene's picture in storage (bucket motion-images), made by the AI or uploaded. */
+const SceneImage = z.object({
+  path: z.string().min(1).max(300),
+  source: z.enum(["ai", "upload"]),
+});
+export type SceneImage = z.infer<typeof SceneImage>;
+
+export const MotionScene = z.object({
+  /** The word the scene starts on. */
+  at: Anchor,
+  text: z.string().max(MAX_SCENE_TEXT),
+  emphasis: z.string().max(60).nullable(),
+  /** What the AI image shows. */
+  prompt: z.string().max(MAX_SCENE_PROMPT),
+  /** The picture; null until it's made. */
+  image: SceneImage.nullable(),
+});
+export type MotionScene = z.infer<typeof MotionScene>;
+
 export const MotionElement = z.object({
   id: z.string().min(1).max(64),
   type: z.enum(ELEMENT_TYPES),
@@ -130,6 +175,8 @@ export const MotionElement = z.object({
   reason: z.string().max(300),
   /** Drawn behind the speaker, who is cut out in front of it (BEHIND_TYPES only). */
   behind: z.boolean().optional(),
+  /** A story's scenes, in order (stories only). */
+  scenes: z.array(MotionScene).max(MAX_SCENES).optional(),
   /** "ai" as planned; "user" once added or changed by hand. */
   source: z.enum(["ai", "user"]),
 });
@@ -234,6 +281,7 @@ const EXCLUSIVE: ReadonlySet<ElementType> = new Set([
   "list",
   "card",
   "compare",
+  "story",
   "chapter",
   "cta",
 ]);
@@ -266,7 +314,25 @@ export function draftsToElements(
       const emphasis =
         emphasisRaw && text.toLowerCase().includes(emphasisRaw.toLowerCase()) ? emphasisRaw : null;
       const items = d.items.map((i) => clean(i, 80)).filter(Boolean);
-      return { ...d, text, emphasis, items };
+      // A story's scenes: inside its words, in order, one per starting word.
+      const scenes: DraftScene[] = [];
+      if (d.type === "story") {
+        for (const sc of [...d.scenes].sort((a, b) => a.from_word - b.from_word)) {
+          const sceneText = clean(sc.text, MAX_SCENE_TEXT);
+          const prompt = clean(sc.prompt, MAX_SCENE_PROMPT);
+          if (!Number.isInteger(sc.from_word) || sc.from_word < d.from_word) continue;
+          if (sc.from_word > d.to_word || !sceneText || !prompt) continue;
+          if (scenes.length && scenes[scenes.length - 1].from_word === sc.from_word) continue;
+          const em = sc.emphasis ? clean(sc.emphasis, 60) : "";
+          scenes.push({
+            from_word: sc.from_word,
+            text: sceneText,
+            emphasis: em && sceneText.toLowerCase().includes(em.toLowerCase()) ? em : null,
+            prompt,
+          });
+        }
+      }
+      return { ...d, text, emphasis, items, scenes: scenes.slice(0, MAX_SCENES) };
     })
     .filter((d) => {
       switch (d.type) {
@@ -280,6 +346,8 @@ export function draftsToElements(
           return d.cta != null;
         case "zoom":
           return d.zoom != null;
+        case "story":
+          return d.scenes.length >= 2;
         default:
           return d.text !== "";
       }
@@ -317,6 +385,17 @@ export function draftsToElements(
       zoom: d.type === "zoom" ? d.zoom : null,
       reason: clean(d.reason, 300),
       ...(d.behind === true && BEHIND_TYPES.has(d.type) ? { behind: true } : {}),
+      ...(d.type === "story"
+        ? {
+            scenes: d.scenes.map((sc) => ({
+              at: anchorOf(words[sc.from_word]),
+              text: sc.text,
+              emphasis: sc.emphasis,
+              prompt: sc.prompt,
+              image: null,
+            })),
+          }
+        : {}),
       source: "ai",
     });
   }
@@ -359,6 +438,8 @@ export function elementSummary(el: MotionElement): string {
       return el.text || `Ask to ${el.cta}`;
     case "zoom":
       return el.zoom === "in" ? "Punch in" : "Ease out";
+    case "story":
+      return el.text || (el.scenes ?? []).map((sc) => sc.text).join(" → ");
     default:
       return el.text;
   }
@@ -481,6 +562,21 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
     cta: type === "cta" ? (el.cta ?? "like") : null,
     zoom: type === "zoom" ? (el.zoom ?? "in") : null,
     behind: BEHIND_TYPES.has(type) ? el.behind : undefined,
+    // A story starts with one scene from the graphic's own words.
+    scenes:
+      type === "story"
+        ? el.scenes?.length
+          ? el.scenes
+          : [
+              {
+                at: el.start,
+                text: el.text.slice(0, MAX_SCENE_TEXT),
+                emphasis: null,
+                prompt: "",
+                image: null,
+              },
+            ]
+        : undefined,
   });
 }
 

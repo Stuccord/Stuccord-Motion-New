@@ -8,6 +8,7 @@ export const GRAPHIC_TINT: Record<ElementType, string> = {
   list: "bg-cyan-500/20 border-cyan-400/50 text-cyan-100",
   card: "bg-sky-500/20 border-sky-400/50 text-sky-100",
   compare: "bg-pink-500/20 border-pink-400/50 text-pink-100",
+  story: "bg-orange-500/20 border-orange-400/50 text-orange-100",
   chapter: "bg-emerald-500/20 border-emerald-400/50 text-emerald-100",
   label: "bg-white/10 border-white/25 text-neutral-200",
   cta: "bg-red-500/20 border-red-400/50 text-red-100",

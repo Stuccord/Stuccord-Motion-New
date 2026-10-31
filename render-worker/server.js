@@ -44,6 +44,7 @@ import {
   sfxTrackArgs,
   soundEvents,
   soundGain,
+  storyImages,
   zoomFilter,
 } from "./motion.js";
 import { behindRanges, personMasks, personModelReady } from "./cutout.js";
@@ -1693,6 +1694,7 @@ async function runRender(job) {
             renderGraphics({
               graphics,
               theme: motionJob.theme,
+              images: storyImages(motionJob.images),
               w,
               h,
               totalFrames,

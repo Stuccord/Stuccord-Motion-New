@@ -543,6 +543,33 @@ export type Database = {
         }
         Relationships: []
       }
+      motion_image_runs: {
+        Row: {
+          created_at: string
+          id: string
+          model: string | null
+          project_id: string | null
+          team_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          model?: string | null
+          project_id?: string | null
+          team_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          model?: string | null
+          project_id?: string | null
+          team_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       render_jobs: {
         Row: {
           created_at: string

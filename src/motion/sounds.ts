@@ -123,6 +123,17 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
         add(g, "second", "whoosh-deep", at + frameMs(second) - WHOOSH_LEAD_MS);
         break;
       }
+      case "story":
+        // A whoosh into each scene as the camera moves on, a deeper one first.
+        (g.scenes ?? []).forEach((sc, i) =>
+          add(
+            g,
+            `scene${i}`,
+            i === 0 ? "whoosh-deep" : "whoosh-light",
+            frameMs(sc.from) - WHOOSH_LEAD_MS,
+          ),
+        );
+        break;
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
         add(g, "hit", "hit", at);

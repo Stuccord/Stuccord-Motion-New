@@ -24,7 +24,7 @@ function WithFonts(props: Props) {
       .catch((e) => console.error("Graphics fonts didn't load", e))
       .finally(() => continueRender(handle));
   }, [handle]);
-  return <MotionGraphics graphics={props.graphics} theme={props.theme} />;
+  return <MotionGraphics graphics={props.graphics} theme={props.theme} images={props.images} />;
 }
 
 const DEFAULTS: Props = {

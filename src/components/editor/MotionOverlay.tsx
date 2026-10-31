@@ -37,6 +37,7 @@ export function MotionOverlay({
   theme,
   aspect,
   layer,
+  images,
 }: {
   timeMs: number;
   graphics: PlacedGraphic[];
@@ -44,6 +45,8 @@ export function MotionOverlay({
   aspect: string;
   /** Only the graphics behind the speaker, or only the others. */
   layer: "behind" | "front";
+  /** Links to story pictures, by storage path. */
+  images?: Record<string, string>;
 }) {
   useMotionFonts();
   const { width, height } = frameSize(aspect);
@@ -55,9 +58,9 @@ export function MotionOverlay({
   // the same graphics are showing.
   const activeKey = active.map((g) => g.id).join(",");
   const inputProps = useMemo<MotionGraphicsProps>(
-    () => ({ graphics: active, theme }),
+    () => ({ graphics: active, theme, images }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeKey, graphics, theme],
+    [activeKey, graphics, theme, images],
   );
   if (active.length === 0) return null;
   const durationInFrames = Math.max(frame + 1, ...active.map((g) => g.to));

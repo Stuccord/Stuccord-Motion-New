@@ -20,6 +20,7 @@ import {
   type MotionElement,
 } from "@/lib/motion-plan";
 import { GRAPHIC_TINT } from "./graphic-tint";
+import { StoryScenesEditor, type StoryTools } from "./StoryScenesEditor";
 
 const CTA_LABEL: Record<(typeof CTA_KINDS)[number], string> = {
   like: "Like",
@@ -34,6 +35,7 @@ const HINT: Record<ElementType, string> = {
   list: "Items that stack one by one.",
   card: "A glass card with a title and a few lines.",
   compare: "Two sides, A vs B.",
+  story: "A short story: one AI picture per scene, joined by one camera move.",
   chapter: "A full-screen divider for a new part, with progress.",
   label: "A small label naming the current topic.",
   cta: "A button the pointer clicks (like, subscribe…).",
@@ -67,6 +69,7 @@ export function GraphicInspector({
   onDelete,
   onSeek,
   onClose,
+  story,
 }: {
   element: MotionElement;
   /** Where it is on the timeline now; null when its words are trimmed away. */
@@ -76,6 +79,8 @@ export function GraphicInspector({
   onDelete: () => void;
   onSeek: (ms: number) => void;
   onClose: () => void;
+  /** Story pictures: making, uploading and showing them. */
+  story?: StoryTools;
 }) {
   const el = element;
   const set = (patch: Partial<MotionElement>) => onChange(markEdited({ ...el, ...patch }));
@@ -147,7 +152,7 @@ export function GraphicInspector({
             label={
               el.type === "counter"
                 ? "Caption"
-                : el.type === "list" || el.type === "compare"
+                : el.type === "list" || el.type === "compare" || el.type === "story"
                   ? "Title (optional)"
                   : "Text"
             }
@@ -160,6 +165,19 @@ export function GraphicInspector({
               className={cn(inputCls, "min-h-[64px] resize-none")}
             />
           </Field>
+        )}
+
+        {el.type === "story" && story && (
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase tracking-wide text-neutral-500">Scenes</span>
+            <StoryScenesEditor
+              element={el}
+              tools={story}
+              readOnly={readOnly}
+              onScenes={(scenes) => set({ scenes })}
+              inputCls={inputCls}
+            />
+          </div>
         )}
 
         {showEmphasis && (

@@ -16,6 +16,10 @@ export type Plan = {
   personalPlans: number;
   /** AI graphics plans a month for a team, shared by its members. */
   teamPlans: number;
+  /** AI story pictures a month in a personal workspace. */
+  personalImages: number;
+  /** AI story pictures a month for a team, shared by its members. */
+  teamImages: number;
 };
 
 export const PLANS: Record<PlanId, Plan> = {
@@ -26,6 +30,8 @@ export const PLANS: Record<PlanId, Plan> = {
     teamSeats: 3,
     personalPlans: 20,
     teamPlans: 20,
+    personalImages: 100,
+    teamImages: 100,
   },
 };
 

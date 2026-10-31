@@ -9,15 +9,20 @@
 // and graphics stepped at 15 fps for a hand-made feel.
 
 import React from "react";
-import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
 import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
-import type { PlacedGraphic } from "@/motion/timing";
+import { storyCamera, type PlacedGraphic } from "@/motion/timing";
 
 export type MotionGraphicsProps = {
   graphics: PlacedGraphic[];
   theme: MotionTheme;
+  /** Links to story pictures, by storage path. */
+  images?: Record<string, string>;
 };
+
+/** Story pictures' links, for the story graphic. */
+const ImagesContext = React.createContext<Record<string, string>>({});
 
 // ---------- motion helpers ----------
 
@@ -71,6 +76,190 @@ function behindBand(portrait: boolean): React.CSSProperties {
     justifyContent: "center",
     textAlign: "center",
   };
+}
+
+// ---------- story: pictures in 3D space, one moving camera ----------
+
+function Story({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  const frame = useStepFrame();
+  const { unit, portrait, width, height } = useUnit();
+  const images = React.useContext(ImagesContext);
+  const scenes = g.scenes ?? [];
+  const length = g.to - g.from;
+  // Scene starts relative to the story.
+  const starts = scenes.map((sc) => Math.max(0, sc.from - g.from));
+  const cam = storyCamera(starts, frame);
+  const speed = Math.abs(storyCamera(starts, frame + 2) - cam) / 2;
+  const current = Math.min(scenes.length - 1, Math.max(0, Math.round(cam)));
+
+  // Each scene's card: alternating left and right, further away each time,
+  // turned a little toward the path.
+  const cardW = width * (portrait ? 0.8 : 0.62);
+  const cardH = (cardW * height) / width;
+  const place = (i: number) => ({
+    x: i === 0 ? 0 : (i % 2 ? 1 : -1) * width * 0.62,
+    y: (i % 2 ? -1 : 1) * height * 0.03,
+    z: -i * width * 1.5,
+    r: i === 0 ? 0 : (i % 2 ? -1 : 1) * 22,
+  });
+  // The camera between two scenes' places, plus a slow constant push in.
+  const a = place(Math.floor(cam));
+  const b = place(Math.min(scenes.length - 1, Math.floor(cam) + 1));
+  const t = cam - Math.floor(cam);
+  const mix = (p: number, q: number) => p + (q - p) * t;
+  const push = frame * unit * 0.06;
+  const world =
+    `translateZ(${push}px) rotateY(${-mix(a.r, b.r)}deg) ` +
+    `translate3d(${-mix(a.x, b.x)}px, ${-mix(a.y, b.y)}px, ${-mix(a.z, b.z)}px)`;
+
+  return (
+    <AbsoluteFill
+      style={{
+        opacity: Math.min(easeOut(frame / 8), exitOpacity(frame, length)),
+        background: `radial-gradient(ellipse at 50% 40%, ${theme.secondary} 0%, ${theme.main} 70%)`,
+        fontFamily: SANS,
+        color: theme.text,
+        overflow: "hidden",
+      }}
+    >
+      {/* Blur on fast moves sells the camera's speed. */}
+      <AbsoluteFill
+        style={{
+          perspective: width * 1.1,
+          filter: speed > 0.02 ? `blur(${Math.min(unit * 1.6, speed * unit * 9)}px)` : undefined,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transformStyle: "preserve-3d",
+            transform: world,
+          }}
+        >
+          {scenes.map((sc, i) => {
+            const p = place(i);
+            const url = sc.image ? images[sc.image] : undefined;
+            return (
+              <div
+                key={i}
+                style={{
+                  position: "absolute",
+                  width: cardW,
+                  height: cardH,
+                  left: -cardW / 2,
+                  top: -cardH / 2,
+                  transform: `translate3d(${p.x}px, ${p.y}px, ${p.z}px) rotateY(${p.r}deg)`,
+                  borderRadius: unit * 3,
+                  overflow: "hidden",
+                  background: `linear-gradient(160deg, ${theme.secondary}, ${theme.main})`,
+                  boxShadow: `0 ${unit * 3}px ${unit * 10}px rgba(0,0,0,0.55), 0 0 ${unit * 4}px ${theme.glow}`,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                }}
+              >
+                {url && (
+                  <Img
+                    src={url}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                )}
+                {/* Darker toward the bottom, where the words go. */}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.25) 38%, transparent 60%)",
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </AbsoluteFill>
+
+      {/* The current scene's words, flat on top, with a line drawing on. */}
+      {scenes[current] && (
+        <SceneWords
+          key={current}
+          text={scenes[current].text}
+          emphasis={scenes[current].emphasis}
+          frame={frame - starts[current]}
+          theme={theme}
+          unit={unit}
+          portrait={portrait}
+        />
+      )}
+    </AbsoluteFill>
+  );
+}
+
+function SceneWords({
+  text,
+  emphasis,
+  frame,
+  theme,
+  unit,
+  portrait,
+}: {
+  text: string;
+  emphasis: string | null;
+  frame: number;
+  theme: MotionTheme;
+  unit: number;
+  portrait: boolean;
+}) {
+  const words = splitWords(text, emphasis);
+  const size = unit * (portrait ? 6 : 4.8);
+  const line = easeOut((frame - 6) / 16);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: unit * 8,
+        right: unit * 8,
+        bottom: portrait ? "18%" : "12%",
+        textAlign: "center",
+        fontWeight: 700,
+        fontSize: size,
+        lineHeight: 1.15,
+      }}
+    >
+      {words.map(({ w, special }, i) => (
+        <span
+          key={i}
+          style={{
+            display: "inline-block",
+            marginRight: size * 0.26,
+            ...pop(frame, 4 + i * 3, unit),
+            ...(special
+              ? {
+                  fontFamily: SERIF,
+                  fontStyle: "italic",
+                  fontWeight: 400,
+                  fontSize: size * 1.2,
+                  color: theme.accent,
+                  textShadow: `0 0 ${unit * 2.4}px ${theme.glow}`,
+                }
+              : { textShadow: "0 2px 14px rgba(0,0,0,0.6)" }),
+          }}
+        >
+          {w}
+        </span>
+      ))}
+      <div
+        style={{
+          margin: `${unit * 2.2}px auto 0`,
+          height: unit * 0.6,
+          width: `${Math.round(line * 46)}%`,
+          borderRadius: unit,
+          background: theme.accent,
+          boxShadow: `0 0 ${unit * 2}px ${theme.glow}`,
+        }}
+      />
+    </div>
+  );
 }
 
 function useUnit() {
@@ -671,31 +860,34 @@ const DRAW: Record<
   list: List,
   card: Card,
   compare: Compare,
+  story: Story,
   chapter: Chapter,
   label: Label,
   cta: Cta,
 };
 
 /** Every graphic, each in its own stretch of the timeline. */
-export function MotionGraphics({ graphics, theme }: MotionGraphicsProps) {
+export function MotionGraphics({ graphics, theme, images }: MotionGraphicsProps) {
   // Graphics are placed in 30 fps frames; at a lower rate, scale them.
   const { fps } = useVideoConfig();
   const scale = fps / BASE_FPS;
   return (
-    <AbsoluteFill>
-      {graphics.map((g) => {
-        const Draw = DRAW[g.type];
-        return (
-          <Sequence
-            key={g.id}
-            from={Math.round(g.from * scale)}
-            durationInFrames={Math.max(1, Math.round(g.to * scale) - Math.round(g.from * scale))}
-            layout="none"
-          >
-            <Draw g={g} theme={theme} />
-          </Sequence>
-        );
-      })}
-    </AbsoluteFill>
+    <ImagesContext.Provider value={images ?? {}}>
+      <AbsoluteFill>
+        {graphics.map((g) => {
+          const Draw = DRAW[g.type];
+          return (
+            <Sequence
+              key={g.id}
+              from={Math.round(g.from * scale)}
+              durationInFrames={Math.max(1, Math.round(g.to * scale) - Math.round(g.from * scale))}
+              layout="none"
+            >
+              <Draw g={g} theme={theme} />
+            </Sequence>
+          );
+        })}
+      </AbsoluteFill>
+    </ImagesContext.Provider>
   );
 }

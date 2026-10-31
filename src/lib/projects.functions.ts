@@ -8,7 +8,7 @@ import { parseBrandKit } from "@/lib/brand-kit";
 import { isAudioRole } from "@/lib/media-kind";
 import { PERSONAL, inFolder, projectFolder, type ProjectAccess } from "@/lib/workspace";
 import { planFor, type TeamRole } from "@/lib/plans";
-import { parseMotionPlan } from "@/lib/motion-plan";
+import { SCENE_BUCKET, parseMotionPlan, sceneImageFolder } from "@/lib/motion-plan";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 
 // A finished render no longer matches the timeline once clips or
@@ -1656,6 +1656,25 @@ export async function startCloudRender(
       ...kit,
       logo: kit.logo && logoUrl ? { ...kit.logo, url: logoUrl } : null,
     };
+    // Story scenes' pictures (this project's own), linked for the worker.
+    const sceneImages: Record<string, string> = {};
+    if (withGraphics) {
+      const folder = sceneImageFolder(project.user_id, project.id);
+      const paths = [
+        ...new Set(
+          motionPlan.elements
+            .flatMap((e) => e.scenes ?? [])
+            .map((sc) => sc.image?.path)
+            .filter((x): x is string => !!x && x.startsWith(folder)),
+        ),
+      ];
+      if (paths.length) {
+        const { data: signed } = await supabaseAdmin.storage
+          .from(SCENE_BUCKET)
+          .createSignedUrls(paths, 60 * 60 * 6);
+        for (const s of signed ?? []) if (s.path && s.signedUrl) sceneImages[s.path] = s.signedUrl;
+      }
+    }
 
     const payload = {
       job_id: job.id,
@@ -1679,6 +1698,8 @@ export async function startCloudRender(
             theme: themeFromAccent(motionAccent(motionPlan.colour, kit.highlightColor).hex),
             // Automatic sounds: on/off, volume, and hand edits.
             sound: motionPlan.sound ?? null,
+            // Story pictures: a link for each storage path in the scenes.
+            images: sceneImages,
           }
         : null,
       // Voiceovers go apart from the clips, so a worker from before

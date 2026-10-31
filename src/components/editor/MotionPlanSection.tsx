@@ -47,6 +47,7 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   list: "text-cyan-300 border-cyan-400/30",
   card: "text-sky-300 border-sky-400/30",
   compare: "text-pink-300 border-pink-400/30",
+  story: "text-orange-300 border-orange-400/30",
   chapter: "text-emerald-300 border-emerald-400/30",
   label: "text-neutral-300 border-white/15",
   cta: "text-red-300 border-red-400/30",
@@ -163,7 +164,15 @@ export function MotionPlanSection({
     );
   }
 
-  const { plan: current, canUndo, canEdit, transcribe: tr, untranscribed, allowance } = state.data;
+  const {
+    plan: current,
+    canUndo,
+    canEdit,
+    transcribe: tr,
+    untranscribed,
+    allowance,
+    images,
+  } = state.data;
   const running = tr.status === "running";
   const outOfPlans = allowance.used >= allowance.cap;
   const busy = plan.isPending || undo.isPending;
@@ -173,6 +182,7 @@ export function MotionPlanSection({
       <p className="text-[10px] text-neutral-500 tabular-nums">
         {allowance.used} of {allowance.cap} AI plans used this month
         {allowance.team ? ` (${allowance.team.name})` : ""}
+        {images ? ` · ${images.used} of ${images.cap} AI pictures` : ""}
       </p>
 
       {untranscribed > 0 ? (
