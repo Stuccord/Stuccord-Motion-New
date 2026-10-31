@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Film, Music2, Image as ImageIcon, Trash2, Check, Clock, HardDrive, Sparkles } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { CLIP_DRAG_TYPE, type ClipRow } from "./types";
 import { MediaUploadZone } from "./MediaUploadZone";
+import { filesOf } from "./media-files";
 import { IMAGE_DEFAULT_MS, isImageFilename } from "@/lib/media-kind";
 
 interface MediaLibraryProps {
@@ -14,6 +15,11 @@ interface MediaLibraryProps {
   selectedClipId: string | null;
   onSelectClip: (clipId: string) => void;
   onRemoveClip: (clipId: string) => void;
+  /**
+   * Removes an uploaded file: every clip on the timeline made from it (split
+   * halves and copies share the file). Falls back to onRemoveClip per clip.
+   */
+  onRemoveFile?: (clipIds: string[]) => void;
   onUpload: (files: FileList | File[]) => void;
   isUploading?: boolean;
   /** Files being uploaded, shown under the Import button. */
@@ -117,12 +123,16 @@ export function MediaLibrary({
   selectedClipId,
   onSelectClip,
   onRemoveClip,
+  onRemoveFile,
   onUpload,
   isUploading = false,
   uploads,
 }: MediaLibraryProps) {
   const [tab, setTab] = useState<"video" | "audio">("video");
-  const totalClips = clips.length + audioClips.length;
+  const files = useMemo(() => filesOf(clips), [clips]);
+  const totalClips = files.length + audioClips.length;
+  const removeFile = (ids: string[]) =>
+    onRemoveFile ? onRemoveFile(ids) : ids.forEach((id) => onRemoveClip(id));
   const tabClass = (active: boolean) =>
     cn(
       "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium transition",
@@ -143,7 +153,7 @@ export function MediaLibrary({
             </h2>
           </div>
           <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-neutral-400 border border-white/[0.06]">
-            {totalClips} {totalClips === 1 ? "clip" : "clips"}
+            {totalClips} {totalClips === 1 ? "file" : "files"}
           </span>
         </div>
 
@@ -156,7 +166,7 @@ export function MediaLibrary({
             className={tabClass(tab === "video")}
           >
             <Film className="w-3.5 h-3.5" />
-            <span>Video ({clips.length})</span>
+            <span>Video ({files.length})</span>
           </button>
 
           <button
@@ -227,8 +237,9 @@ export function MediaLibrary({
               </p>
             </div>
           ) : (
-            clips.map((clip, index) => {
-              const isSelected = selectedClipId === clip.id;
+            files.map(({ clip, ids }, index) => {
+              const isSelected = selectedClipId != null && ids.includes(selectedClipId);
+              const pieces = ids.length;
               const isARoll = clip.role === "aroll" || clip.role === "auto";
 
               return (
@@ -279,7 +290,7 @@ export function MediaLibrary({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onRemoveClip(clip.id);
+                            removeFile(ids);
                           }}
                           className="w-6 h-6 rounded flex items-center justify-center text-neutral-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
                           aria-label={`Remove clip ${clip.filename}`}
@@ -288,7 +299,9 @@ export function MediaLibrary({
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="left" className="text-xs">
-                        Remove clip
+                        {pieces > 1
+                          ? `Remove the file and its ${pieces} clips on the timeline`
+                          : "Remove clip"}
                       </TooltipContent>
                     </Tooltip>
                   </div>

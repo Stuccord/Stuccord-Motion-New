@@ -664,6 +664,19 @@ function EditorPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // An uploaded file and every clip made from it (split halves, copies), one
+  // after another so the shared file is deleted once, with the last of them.
+  const removeFileClips = async (ids: string[]) => {
+    try {
+      for (const id of ids) await dropClip({ data: { id } });
+      setSelectedClipId((current) => (current && ids.includes(current) ? null : current));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't remove the file");
+    } finally {
+      refetch();
+    }
+  };
+
   type Placement = { id: string; ordinal: number; role?: string; start_ms?: number | null };
   const reorderMut = useMutation({
     // The timeline only knows clip ids, so the project always comes from the route.
@@ -2499,6 +2512,7 @@ function EditorPage() {
             selectedClipId={selectedClipId}
             onSelectClip={(id) => setSelectedClipId(id)}
             onRemoveClip={(id) => removeClipMut.mutate(id)}
+            onRemoveFile={(ids) => void removeFileClips(ids)}
             onUpload={(files) => handleUpload(files)}
             uploads={
               <UploadList
