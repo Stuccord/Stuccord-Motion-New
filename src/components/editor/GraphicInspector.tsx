@@ -22,6 +22,7 @@ import {
 } from "@/lib/motion-plan";
 import { GRAPHIC_TINT } from "./graphic-tint";
 import { StoryScenesEditor, type StoryTools } from "./StoryScenesEditor";
+import { PictureSetEditor, type PictureTools } from "./PictureSetEditor";
 
 const CTA_LABEL: Record<(typeof CTA_KINDS)[number], string> = {
   like: "Like",
@@ -41,6 +42,8 @@ const HINT: Record<ElementType, string> = {
   steps: "Numbered 3D platforms, lit one by one as the camera climbs.",
   loop: "A glowing sphere with an orbit; each stop lights up as the line reaches it.",
   coins: "A glossy coin spins up, then many fan out in a ring.",
+  stream: "A pile of your pictures jumping in, ending on your logo.",
+  profile: "A social profile that builds itself, then its photos flick through.",
   chapter: "A full-screen divider for a new part, with progress.",
   label: "A small label naming the current topic.",
   cta: "A button the pointer clicks (like, subscribe…).",
@@ -75,6 +78,7 @@ export function GraphicInspector({
   onSeek,
   onClose,
   story,
+  hasLogo = false,
 }: {
   element: MotionElement;
   /** Where it is on the timeline now; null when its words are trimmed away. */
@@ -85,12 +89,14 @@ export function GraphicInspector({
   onSeek: (ms: number) => void;
   onClose: () => void;
   /** Story pictures: making, uploading and showing them. */
-  story?: StoryTools;
+  story?: StoryTools & PictureTools;
+  /** The brand kit has a logo (it ends a card stream). */
+  hasLogo?: boolean;
 }) {
   const el = element;
   const set = (patch: Partial<MotionElement>) => onChange(markEdited({ ...el, ...patch }));
   // A cartoon's words are its scene's caption.
-  const showText = el.type !== "zoom" && el.type !== "cartoon";
+  const showText = el.type !== "zoom" && el.type !== "cartoon" && el.type !== "profile";
   const showEmphasis =
     el.type === "keyline" ||
     el.type === "card" ||
@@ -173,7 +179,8 @@ export function GraphicInspector({
                     el.type === "compare" ||
                     el.type === "story" ||
                     el.type === "steps" ||
-                    el.type === "loop"
+                    el.type === "loop" ||
+                    el.type === "stream"
                   ? "Title (optional)"
                   : el.type === "coins"
                     ? "Line"
@@ -188,6 +195,22 @@ export function GraphicInspector({
               className={cn(inputCls, "min-h-[64px] resize-none")}
             />
           </Field>
+        )}
+
+        {(el.type === "stream" || el.type === "profile") && story && (
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase tracking-wide text-neutral-500">
+              {el.type === "profile" ? "Profile" : "Pictures"}
+            </span>
+            <PictureSetEditor
+              element={el}
+              tools={story}
+              readOnly={readOnly}
+              hasLogo={hasLogo}
+              onProfile={(profile) => set({ profile })}
+              inputCls={inputCls}
+            />
+          </div>
         )}
 
         {(el.type === "story" || el.type === "cartoon") && story && (

@@ -7,9 +7,11 @@ import type { TimelineWord } from "@/lib/captions";
 import {
   BEHIND_TYPES,
   elementSpan,
-  SCENE_TYPES,
+  PICTURE_TYPES,
+  maxScenes,
   type ElementType,
   type MotionElement,
+  type ProfileDetails,
 } from "@/lib/motion-plan";
 
 export const MOTION_FPS = 30;
@@ -39,7 +41,9 @@ export type PlacedGraphic = {
   behind: boolean;
   /** A loop's stop whose words change near the end; null otherwise. */
   swap: { item: number; text: string } | null;
-  /** A story's scenes in order, or a cartoon's one; null for other graphics. */
+  /** A social profile's details; null for other graphics. */
+  profile: ProfileDetails | null;
+  /** The pictures (a story's scenes, a cartoon's one, a card stream's or profile's); null for other graphics. */
   scenes: PlacedScene[] | null;
 };
 
@@ -70,8 +74,7 @@ function placeScenes(
   to: number,
   wordsByKey: Map<string, TimelineWord>,
 ): PlacedScene[] {
-  // A cartoon has one scene.
-  const scenes = (el.scenes ?? []).slice(0, el.type === "cartoon" ? 1 : undefined);
+  const scenes = (el.scenes ?? []).slice(0, maxScenes(el.type));
   const froms = scenes.map((sc) => {
     const w = wordsByKey.get(`${sc.at.clip_id}:${sc.at.word_index}`);
     return w ? msToFrame(w.startMs) : null;
@@ -130,7 +133,8 @@ export function placeGraphics(
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
       swap: el.type === "loop" && el.swap ? el.swap : null,
-      scenes: SCENE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
+      profile: el.type === "profile" && el.profile ? el.profile : null,
+      scenes: PICTURE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
     });
   }
   return { graphics, zooms };

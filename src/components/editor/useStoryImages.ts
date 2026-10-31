@@ -4,6 +4,8 @@
 // Right after the AI plans a story, its pictures are made automatically.
 // Stage 8: the speaker's cartoon (made here from a photo, with consent);
 // scenes with the speaker and cartoon graphics wait for it, then get made.
+// Stage 9b: card streams' and profiles' pictures: the user's uploads, or
+// frames of their footage (filled in automatically when the AI plans one).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,10 +15,14 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   SCENE_BUCKET,
   SCENE_TYPES,
+  PROFILE_GRID,
+  maxScenes,
   type MotionElement,
   type MotionPlan,
+  type MotionScene,
   type SceneImage,
 } from "@/lib/motion-plan";
+import type { SpeakerFrame } from "@/lib/speaker-frames";
 import {
   makeSceneImage,
   makeSpeakerCartoon,
@@ -35,6 +41,23 @@ type Motion = {
   canEdit: boolean;
   update: (change: (p: MotionPlan) => MotionPlan) => void;
 };
+
+/** Frames of the user's footage, for pictures they haven't uploaded. */
+export type FootageFrames = {
+  /** Frames spread over the footage, as JPEG photos (null: couldn't read it). */
+  frames: (count: number) => Promise<Blob[] | null>;
+  /** Clear frames of the speaker, best first. */
+  speaker: () => Promise<SpeakerFrame[] | null>;
+};
+
+/** A picture with no words or description: a card stream's or profile's. */
+const pictureScene = (el: MotionElement, image: SceneImage | null): MotionScene => ({
+  at: el.start,
+  text: "",
+  emphasis: null,
+  prompt: "",
+  image,
+});
 
 /** The speaker is in this scene's picture (always, in a cartoon graphic). */
 const withSpeaker = (el: MotionElement, index: number) =>
@@ -63,7 +86,12 @@ function withSceneImage(
   };
 }
 
-export function useStoryImages(projectId: string, motion: Motion, accent: string | null) {
+export function useStoryImages(
+  projectId: string,
+  motion: Motion,
+  accent: string | null,
+  footage: FootageFrames,
+) {
   const qc = useQueryClient();
   const makeFn = useServerFn(makeSceneImage);
   const slotFn = useServerFn(sceneUploadSlot);
@@ -297,12 +325,168 @@ export function useStoryImages(projectId: string, motion: Motion, accent: string
     [cartoonFn, projectId, qc, store],
   );
 
+  // ---------- card streams' and profiles' pictures ----------
+
+  /** Stores pictures and adds them to a card stream (up to its limit). */
+  const addPictures = useCallback(
+    async (elementId: string, files: Blob[], source: "upload" | "footage") => {
+      const el = latestPlan.current?.elements.find((e) => e.id === elementId);
+      if (!el) return;
+      const room = maxScenes(el.type) - (el.scenes?.length ?? 0);
+      const ok = files.filter(
+        (f) =>
+          SCENE_UPLOAD_TYPES.includes(f.type as (typeof SCENE_UPLOAD_TYPES)[number]) &&
+          f.size <= SCENE_UPLOAD_MAX,
+      );
+      if (ok.length < files.length)
+        toast.error("Some pictures were skipped (JPG, PNG or WebP, up to 10 MB).");
+      if (room <= 0) {
+        toast.error(`A card stream holds up to ${maxScenes(el.type)} pictures.`);
+        return;
+      }
+      const key = `${elementId}:pics`;
+      mark(key, true);
+      try {
+        const images: SceneImage[] = [];
+        for (const f of ok.slice(0, room)) {
+          const path = await store(f, f.type as (typeof SCENE_UPLOAD_TYPES)[number]);
+          setFresh((m) => ({ ...m, [path]: URL.createObjectURL(f) }));
+          images.push({ path, source });
+        }
+        motion.update((p) => ({
+          ...p,
+          elements: p.elements.map((e) =>
+            e.id === elementId
+              ? {
+                  ...e,
+                  scenes: [...(e.scenes ?? []), ...images.map((im) => pictureScene(e, im))].slice(
+                    0,
+                    maxScenes(e.type),
+                  ),
+                }
+              : e,
+          ),
+        }));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't add the pictures");
+      } finally {
+        mark(key, false);
+      }
+    },
+    [motion, store],
+  );
+
+  /** Puts one picture in a slot (a profile's photo is slot 0, its grid 1-6); null clears it. */
+  const setPicture = useCallback(
+    async (elementId: string, index: number, file: Blob | null, source: "upload" | "footage") => {
+      const el = latestPlan.current?.elements.find((e) => e.id === elementId);
+      if (!el || index >= maxScenes(el.type)) return;
+      let image: SceneImage | null = null;
+      const key = `${elementId}:${index}`;
+      mark(key, true);
+      try {
+        if (file) {
+          const type = file.type as (typeof SCENE_UPLOAD_TYPES)[number];
+          if (!SCENE_UPLOAD_TYPES.includes(type) || file.size > SCENE_UPLOAD_MAX) {
+            toast.error("Use a JPG, PNG or WebP picture up to 10 MB.");
+            return;
+          }
+          const path = await store(file, type);
+          setFresh((m) => ({ ...m, [path]: URL.createObjectURL(file) }));
+          image = { path, source };
+        }
+        motion.update((p) => ({
+          ...p,
+          elements: p.elements.map((e) => {
+            if (e.id !== elementId) return e;
+            const scenes = [...(e.scenes ?? [])];
+            while (scenes.length <= index) scenes.push(pictureScene(e, null));
+            scenes[index] = pictureScene(e, image);
+            return { ...e, scenes };
+          }),
+        }));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't add the picture");
+      } finally {
+        mark(key, false);
+      }
+    },
+    [motion, store],
+  );
+
+  /** Takes a picture out of a card stream. */
+  const removePicture = useCallback(
+    (elementId: string, index: number) =>
+      motion.update((p) => ({
+        ...p,
+        elements: p.elements.map((e) =>
+          e.id === elementId ? { ...e, scenes: (e.scenes ?? []).filter((_, i) => i !== index) } : e,
+        ),
+      })),
+    [motion],
+  );
+
+  /**
+   * Fills a card stream with 8 frames of the footage, or a profile's photo
+   * with a clear frame of the speaker and its grid with frames.
+   */
+  const fillFromFootage = useCallback(
+    async (elementId: string) => {
+      const el = latestPlan.current?.elements.find((e) => e.id === elementId);
+      if (!el) return;
+      const key = `${elementId}:pics`;
+      mark(key, true);
+      try {
+        if (el.type === "profile") {
+          const [best, frames] = await Promise.all([
+            footage.speaker(),
+            footage.frames(PROFILE_GRID),
+          ]);
+          if (!frames) throw new Error("Couldn't read the video here.");
+          if (best?.[0]) await setPicture(elementId, 0, best[0].photo, "footage");
+          for (let i = 0; i < Math.min(PROFILE_GRID, frames.length); i++) {
+            await setPicture(elementId, i + 1, frames[i], "footage");
+          }
+        } else {
+          const frames = await footage.frames(8);
+          if (!frames) throw new Error("Couldn't read the video here.");
+          await addPictures(elementId, frames, "footage");
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't use frames of the video");
+      } finally {
+        mark(key, false);
+      }
+    },
+    [addPictures, footage, setPicture],
+  );
+
+  // Right after the AI plans a card stream or profile: fill it from the
+  // footage (once per plan); the user can swap in their own pictures.
+  const filled = useRef(new Set<string>());
+  useEffect(() => {
+    const plan = motion.plan;
+    if (!plan || !motion.canEdit) return;
+    for (const el of plan.elements) {
+      if ((el.type !== "stream" && el.type !== "profile") || el.source !== "ai") continue;
+      if ((el.scenes ?? []).some((sc) => sc.image)) continue;
+      const key = `${plan.created_at}:${el.id}`;
+      if (filled.current.has(key)) continue;
+      filled.current.add(key);
+      void fillFromFootage(el.id);
+    }
+  }, [motion.plan, motion.canEdit, fillFromFootage]);
+
   return {
     urls,
     busy,
     make,
     makeMissing,
     upload,
+    addPictures,
+    setPicture,
+    removePicture,
+    fillFromFootage,
     hasCartoon,
     cartoon: {
       character,

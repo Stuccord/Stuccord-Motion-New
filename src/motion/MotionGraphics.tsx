@@ -13,7 +13,14 @@ import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig } from "re
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
 import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
 import { storyCamera } from "@/motion/camera";
-import { coinBeats, coinCount, loopBeats, stepStarts } from "@/motion/beats";
+import {
+  coinBeats,
+  coinCount,
+  loopBeats,
+  profileBeats,
+  stepStarts,
+  streamBeats,
+} from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 
 export type MotionGraphicsProps = {
@@ -21,10 +28,14 @@ export type MotionGraphicsProps = {
   theme: MotionTheme;
   /** Links to story pictures, by storage path. */
   images?: Record<string, string>;
+  /** A link to the brand kit's logo, which ends a card stream. */
+  logo?: string | null;
 };
 
-/** Story pictures' links, for the story graphic. */
+/** Pictures' links, for the graphics that show pictures. */
 const ImagesContext = React.createContext<Record<string, string>>({});
+/** The brand kit logo's link, if there's a logo. */
+const LogoContext = React.createContext<string | null>(null);
 
 // ---------- motion helpers ----------
 
@@ -921,6 +932,313 @@ function Coins({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   );
 }
 
+// ---------- templates (stage 9b): card stream, social profile ----------
+
+/** A steady pseudo-random number in 0-1 for a card and a property. */
+const rand = (i: number, k: number) => {
+  const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+/** A picture filling its box, or a soft gradient while there's none. */
+function Picture({
+  url,
+  theme,
+  fit = "cover",
+}: {
+  url: string | undefined;
+  theme: MotionTheme;
+  fit?: "cover" | "contain";
+}) {
+  return url ? (
+    <Img src={url} style={{ width: "100%", height: "100%", objectFit: fit, display: "block" }} />
+  ) : (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        background: `linear-gradient(150deg, ${theme.secondary}, ${theme.main})`,
+      }}
+    />
+  );
+}
+
+function Stream({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  const frame = useStepFrame();
+  const { unit, portrait, width, height } = useUnit();
+  const images = React.useContext(ImagesContext);
+  const logo = React.useContext(LogoContext);
+  const length = g.to - g.from;
+  const pics = (g.scenes ?? []).map((sc) => (sc.image ? images[sc.image] : undefined));
+  const beats = streamBeats(pics.length);
+  // The last card lands flat on top: the logo, or without one the last picture.
+  const pile = logo ? pics : pics.slice(0, -1);
+  const finale = logo ?? pics[pics.length - 1];
+  const cw = width * (portrait ? 0.56 : 0.2);
+  const ch = cw * 1.25;
+  // The camera pulls slowly back over the whole stream.
+  const pull = 1.12 - 0.2 * easeOut(frame / Math.max(1, length));
+
+  /** Where a card is in its jump: from below the camera, up and over into the pile. */
+  const jump = (start: number, i: number, flat: boolean) => {
+    const p = clamp01((frame - start) / beats.flight);
+    const e = easeOut(p);
+    const dir = [-1, 0, 1][i % 3];
+    const land = flat
+      ? { x: 0, y: 0, rz: 0 }
+      : {
+          x: (rand(i, 1) - 0.5) * width * (portrait ? 0.34 : 0.4),
+          y: (rand(i, 2) - 0.5) * height * 0.16,
+          rz: (rand(i, 3) - 0.5) * 34,
+        };
+    const spin = flat ? 0 : (rand(i, 4) - 0.5) * 300;
+    const x = dir * width * 0.18 + (land.x - dir * width * 0.18) * e;
+    const y = height * 0.75 + (land.y - height * 0.75) * e - Math.sin(p * Math.PI) * height * 0.12;
+    const z = width * 0.9 * (1 - e) + i * 2;
+    const rz = spin + (land.rz - spin) * e;
+    const rx = flat ? 0 : 65 * (1 - e);
+    return {
+      shown: frame >= start,
+      transform: `translate3d(${x}px, ${y}px, ${z}px) rotateX(${rx}deg) rotateZ(${rz}deg)`,
+    };
+  };
+  const card = (w: number, h: number): React.CSSProperties => ({
+    position: "absolute",
+    left: -w / 2,
+    top: -h / 2,
+    width: w,
+    height: h,
+    borderRadius: Math.min(w, h) * 0.08,
+    overflow: "hidden",
+    boxShadow: `0 ${unit * 2.5}px ${unit * 7}px rgba(0,0,0,0.55)`,
+    border: "1px solid rgba(255,255,255,0.14)",
+  });
+
+  const last = jump(beats.finaleAt, pile.length, true);
+  const fw = cw * (logo ? 0.85 : 1.08);
+  return (
+    <Backdrop theme={theme} opacity={Math.min(easeOut(frame / 6), exitOpacity(frame, length))}>
+      <AbsoluteFill style={{ perspective: width * 0.9 }}>
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: portrait ? "52%" : "56%",
+            transformStyle: "preserve-3d",
+            transform: `scale(${pull})`,
+          }}
+        >
+          {pile.map((url, i) => {
+            const j = jump(beats.cards[i], i, false);
+            return j.shown ? (
+              <div key={i} style={{ ...card(cw, ch), transform: j.transform }}>
+                <Picture url={url} theme={theme} />
+              </div>
+            ) : null;
+          })}
+          {finale && last.shown && (
+            <div
+              style={{
+                ...card(fw, logo ? fw : fw * 1.25),
+                transform: `${last.transform} translateZ(${unit * 4}px)`,
+                background: logo
+                  ? `linear-gradient(160deg, ${theme.secondary}, ${theme.main})`
+                  : undefined,
+                border: `${Math.max(1, unit * 0.2)}px solid ${theme.glow}`,
+                boxShadow: `0 0 ${unit * 6}px ${theme.glow}, 0 ${unit * 3}px ${unit * 9}px rgba(0,0,0,0.6)`,
+                padding: logo ? fw * 0.14 : 0,
+                boxSizing: "border-box",
+              }}
+            >
+              <Picture url={finale} theme={theme} fit={logo ? "contain" : "cover"} />
+            </div>
+          )}
+        </div>
+      </AbsoluteFill>
+      <SequenceTitle
+        text={g.text}
+        emphasis={g.emphasis}
+        frame={frame}
+        theme={theme}
+        unit={unit}
+        portrait={portrait}
+      />
+    </Backdrop>
+  );
+}
+
+function Profile({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  const frame = useStepFrame();
+  const { unit, portrait, width, height } = useUnit();
+  const images = React.useContext(ImagesContext);
+  const length = g.to - g.from;
+  const d = g.profile ?? {
+    handle: "",
+    name: "",
+    bio: "",
+    posts: "",
+    followers: "",
+    following: "",
+  };
+  const shots = (g.scenes ?? []).map((sc) => (sc.image ? images[sc.image] : undefined));
+  const avatar = shots[0];
+  const grid = shots.slice(1, 7);
+  // Always a full 3 x 2 grid; empty tiles stay soft gradients.
+  const tiles = Array.from({ length: 6 }, (_, i) => grid[i]);
+  const beats = profileBeats(grid.length, length);
+  const handle = d.handle ? `@${d.handle}` : "";
+
+  const cw = portrait ? width * 0.86 : Math.min(width * 0.4, height * 0.62);
+  // A sharp push in from 125% as it all arrives.
+  const push = 1 + 0.25 * (1 - easeOut(frame / 30));
+  // The big photos: one after another, the profile blurring away behind.
+  const flicking = beats.flicks.length > 0 && frame >= beats.flickFrom;
+  const current = beats.flicks.reduce((c, f, i) => (frame >= f ? i : c), -1);
+  const away = flicking ? easeOut((frame - beats.flickFrom) / 8) : 0;
+  const text = unit * (portrait ? 3.6 : 2.4);
+  const stat = (value: string, label: string) => (
+    <div style={{ textAlign: "center", flex: 1 }}>
+      <div style={{ fontWeight: 700, fontSize: text * 1.3 }}>{value || "-"}</div>
+      <div style={{ fontSize: text * 0.9, color: theme.muted }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <Backdrop theme={theme} opacity={Math.min(easeOut(frame / 6), exitOpacity(frame, length))}>
+      {/* Slowly drifting white dots. */}
+      {Array.from({ length: 36 }, (_, i) => (
+        <div
+          key={i}
+          style={{
+            position: "absolute",
+            left: `${rand(i, 7) * 100}%`,
+            top: `${(((rand(i, 8) * 100 - frame * (0.15 + rand(i, 9) * 0.25)) % 100) + 100) % 100}%`,
+            width: unit * (0.25 + rand(i, 10) * 0.4),
+            height: unit * (0.25 + rand(i, 10) * 0.4),
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.55)",
+            opacity: 0.25 + rand(i, 11) * 0.5,
+          }}
+        />
+      ))}
+      <AbsoluteFill
+        style={{
+          alignItems: "center",
+          justifyContent: "center",
+          transform: `scale(${push * (1 - away * 0.06)})`,
+          filter: away ? `blur(${away * unit * 3}px) brightness(${1 - away * 0.7})` : undefined,
+        }}
+      >
+        <div style={{ width: cw, color: theme.text, fontFamily: SANS }}>
+          {/* The header slides up as one piece. */}
+          <div style={pop(frame, 0, unit, 12)}>
+            <div
+              style={{
+                textAlign: "center",
+                fontWeight: 700,
+                fontSize: text * 1.15,
+                marginBottom: unit * 2.4,
+              }}
+            >
+              {handle || d.name}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: unit * 3 }}>
+              <div
+                style={{
+                  width: cw * 0.24,
+                  height: cw * 0.24,
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  flexShrink: 0,
+                  padding: unit * 0.5,
+                  background: `linear-gradient(45deg, ${theme.accent}, ${theme.glow})`,
+                  boxSizing: "border-box",
+                }}
+              >
+                <div
+                  style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden" }}
+                >
+                  <Picture url={avatar} theme={theme} />
+                </div>
+              </div>
+              <div style={{ display: "flex", flex: 1 }}>
+                {stat(d.posts, "posts")}
+                {stat(d.followers, "followers")}
+                {stat(d.following, "following")}
+              </div>
+            </div>
+            {(d.name || d.bio) && (
+              <div style={{ marginTop: unit * 1.8, fontSize: text, lineHeight: 1.3 }}>
+                {d.name && <div style={{ fontWeight: 700 }}>{d.name}</div>}
+                {d.bio && <div style={{ color: theme.muted }}>{d.bio}</div>}
+              </div>
+            )}
+          </div>
+          {/* The grid photos rise one by one. */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: Math.max(2, unit * 0.35),
+              marginTop: unit * 3,
+            }}
+          >
+            {tiles.map((url, i) => (
+              <div
+                key={i}
+                style={{
+                  aspectRatio: "1 / 1",
+                  overflow: "hidden",
+                  ...pop(frame, beats.grid[i] ?? 10 + i * 5, unit * 2, 10),
+                }}
+              >
+                <Picture url={url} theme={theme} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </AbsoluteFill>
+      {flicking && current >= 0 && (
+        <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
+          {(() => {
+            const t = easeOut((frame - beats.flicks[current]) / 4);
+            const size = Math.min(width, height) * (portrait ? 0.82 : 0.7);
+            return (
+              <div style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    width: size,
+                    height: size,
+                    borderRadius: unit * 2,
+                    overflow: "hidden",
+                    opacity: t,
+                    transform: `scale(${1.06 - 0.06 * t})`,
+                    boxShadow: `0 ${unit * 3}px ${unit * 10}px rgba(0,0,0,0.6)`,
+                  }}
+                >
+                  <Picture url={grid[current]} theme={theme} />
+                </div>
+                {handle && (
+                  <div
+                    style={{
+                      marginTop: unit * 3,
+                      fontWeight: 700,
+                      fontSize: text * 1.4,
+                      textShadow: `0 0 ${unit * 2}px ${theme.glow}`,
+                    }}
+                  >
+                    {handle}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </AbsoluteFill>
+      )}
+    </Backdrop>
+  );
+}
+
 function useUnit() {
   const { width, height } = useVideoConfig();
   return { unit: Math.min(width, height) / 100, portrait: height > width, width, height };
@@ -1524,33 +1842,40 @@ const DRAW: Record<
   steps: Steps,
   loop: Loop,
   coins: Coins,
+  stream: Stream,
+  profile: Profile,
   chapter: Chapter,
   label: Label,
   cta: Cta,
 };
 
 /** Every graphic, each in its own stretch of the timeline. */
-export function MotionGraphics({ graphics, theme, images }: MotionGraphicsProps) {
+export function MotionGraphics({ graphics, theme, images, logo }: MotionGraphicsProps) {
   // Graphics are placed in 30 fps frames; at a lower rate, scale them.
   const { fps } = useVideoConfig();
   const scale = fps / BASE_FPS;
   return (
     <ImagesContext.Provider value={images ?? {}}>
-      <AbsoluteFill>
-        {graphics.map((g) => {
-          const Draw = DRAW[g.type];
-          return (
-            <Sequence
-              key={g.id}
-              from={Math.round(g.from * scale)}
-              durationInFrames={Math.max(1, Math.round(g.to * scale) - Math.round(g.from * scale))}
-              layout="none"
-            >
-              <Draw g={g} theme={theme} />
-            </Sequence>
-          );
-        })}
-      </AbsoluteFill>
+      <LogoContext.Provider value={logo ?? null}>
+        <AbsoluteFill>
+          {graphics.map((g) => {
+            const Draw = DRAW[g.type];
+            return (
+              <Sequence
+                key={g.id}
+                from={Math.round(g.from * scale)}
+                durationInFrames={Math.max(
+                  1,
+                  Math.round(g.to * scale) - Math.round(g.from * scale),
+                )}
+                layout="none"
+              >
+                <Draw g={g} theme={theme} />
+              </Sequence>
+            );
+          })}
+        </AbsoluteFill>
+      </LogoContext.Provider>
     </ImagesContext.Provider>
   );
 }

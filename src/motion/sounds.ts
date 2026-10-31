@@ -7,7 +7,7 @@
 // live in public/sounds and render-worker/sounds.
 
 import { MOTION_FPS, type PlacedGraphic, type PlacedZoom } from "@/motion/timing";
-import { coinBeats, loopBeats, stepStarts } from "@/motion/beats";
+import { coinBeats, loopBeats, profileBeats, stepStarts, streamBeats } from "@/motion/beats";
 
 export const SOUND_KINDS = [
   "whoosh-light",
@@ -166,6 +166,27 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
         add(g, "enter", "whoosh-deep", at - WHOOSH_LEAD_MS);
         add(g, "fan", "whoosh-light", at + frameMs(b.fanAt) - WHOOSH_LEAD_MS);
         add(g, "blip", "ui-blip", at + frameMs(b.fanAt));
+        break;
+      }
+      case "stream": {
+        // A quick riffle of clicks as the pictures fly in, then a whoosh and a
+        // pop as the last card lands.
+        const b = streamBeats(g.scenes?.length ?? 0);
+        b.cards.forEach((f, i) => add(g, `card${i}`, "click", at + frameMs(f + b.flight - 4)));
+        add(g, "finale", "whoosh-light", at + frameMs(b.finaleAt) - WHOOSH_LEAD_MS);
+        add(g, "land", "pop", at + frameMs(b.finaleAt + b.flight - 4));
+        break;
+      }
+      case "profile": {
+        // The header slides up, a click per grid photo, then a whoosh into the
+        // big photos and a blip on each.
+        const photos = Math.max(0, (g.scenes?.length ?? 0) - 1);
+        const b = profileBeats(photos, len);
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        b.grid.forEach((f, i) => add(g, `photo${i}`, "click", at + frameMs(f)));
+        if (b.flicks.length)
+          add(g, "flick", "whoosh-light", at + frameMs(b.flickFrom) - WHOOSH_LEAD_MS);
+        b.flicks.forEach((f, i) => add(g, `flick${i}`, "ui-blip", at + frameMs(f)));
         break;
       }
       case "chapter":

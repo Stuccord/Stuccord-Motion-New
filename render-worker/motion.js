@@ -22,14 +22,13 @@ export const MOTION_FPS = 30;
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
-const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "chapter", "label", "cta"]);
+const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "chapter", "label", "cta"]);
 // Most items per type (src/lib/motion-plan.ts maxItems).
 const MAX_ITEMS = { compare: 2, card: 4, steps: 5, loop: 6 };
 // Graphics that fill the screen, so the captions make way (FULL_SCREEN_TYPES).
-const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins"]);
-// Types with pictured scenes (a cartoon has one).
-const SCENE_TYPES = new Set(["story", "cartoon"]);
-const MAX_SCENES = 6;
+const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile"]);
+// Types with pictures, and how many each holds (src/lib/motion-plan.ts maxScenes).
+const PICTURE_LIMIT = { story: 6, cartoon: 1, stream: 12, profile: 7 };
 // Types that can go behind the speaker (src/lib/motion-plan.ts BEHIND_TYPES).
 const BEHIND_TYPES = new Set(["keyline", "counter", "list", "card", "compare", "chapter"]);
 const msToFrame = (ms) => Math.round((ms / 1000) * MOTION_FPS);
@@ -87,7 +86,8 @@ export function placeGraphics(elements, words) {
         el.type === "loop" && Number.isInteger(el.swap?.item) && typeof el.swap?.text === "string" && el.swap.text
           ? { item: el.swap.item, text: el.swap.text.slice(0, 40) }
           : null,
-      scenes: SCENE_TYPES.has(el.type) ? placeScenes(el.type === "cartoon" ? (el.scenes ?? []).slice(0, 1) : el.scenes, from, to, byKey) : null,
+      profile: el.type === "profile" ? profileDetails(el.profile) : null,
+      scenes: PICTURE_LIMIT[el.type] ? placeScenes(el.scenes, PICTURE_LIMIT[el.type], from, to, byKey) : null,
     });
   }
   return { graphics, zooms };
@@ -104,9 +104,23 @@ export function sceneStarts(froms, from, to) {
   return froms.map((_, i) => Math.round(from + ((to - from) * i) / n));
 }
 
-function placeScenes(scenes, from, to, byKey) {
+/** A social profile's details, each a string within its limit. */
+function profileDetails(p) {
   const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
-  const list = (Array.isArray(scenes) ? scenes : []).filter((sc) => sc && typeof sc === "object").slice(0, MAX_SCENES);
+  const o = p && typeof p === "object" ? p : {};
+  return {
+    handle: str(o.handle, 40),
+    name: str(o.name, 60),
+    bio: str(o.bio, 150),
+    posts: str(o.posts, 12),
+    followers: str(o.followers, 12),
+    following: str(o.following, 12),
+  };
+}
+
+function placeScenes(scenes, limit, from, to, byKey) {
+  const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
+  const list = (Array.isArray(scenes) ? scenes : []).filter((sc) => sc && typeof sc === "object").slice(0, limit);
   const froms = list.map((sc) => {
     const w = byKey.get(`${sc.at?.clip_id}:${sc.at?.word_index}`);
     return w ? msToFrame(w.start_ms) : null;
@@ -138,6 +152,20 @@ export function loopBeats(count, length) {
 }
 export function coinBeats(length) {
   return { fanAt: Math.max(18, Math.round(length * 0.45)) };
+}
+export function streamBeats(count) {
+  return { cards: Array.from({ length: count }, (_, i) => 2 + i * 3), flight: 16, finaleAt: 2 + count * 3 + 5 };
+}
+export function profileBeats(photos, length) {
+  const grid = Array.from({ length: photos }, (_, i) => 10 + i * 5);
+  const gridEnd = grid.length ? grid[grid.length - 1] + 12 : 10;
+  const flickFrom = Math.max(gridEnd + 8, Math.round(length * 0.5));
+  const each = photos ? Math.min(18, Math.max(8, Math.floor((length - flickFrom - 6) / photos))) : 0;
+  return {
+    grid,
+    flickFrom,
+    flicks: Array.from({ length: photos }, (_, i) => flickFrom + i * each).filter((f) => f < length - 6),
+  };
 }
 
 /**
@@ -231,11 +259,12 @@ export async function renderGraphics({
   onProgress,
   name = "graphics",
   images = {},
+  logo = null,
 }) {
   const ranges = graphicRanges(graphics, totalFrames);
   if (!ranges.length) return [];
   const { renderMedia, selectComposition } = await import("@remotion/renderer");
-  const inputProps = { graphics, theme, images, width: w, height: h, durationInFrames: totalFrames };
+  const inputProps = { graphics, theme, images, logo, width: w, height: h, durationInFrames: totalFrames };
   const composition = await selectComposition({ serveUrl: GRAPHICS_BUNDLE, id: "graphics", inputProps });
   const totalToDraw = ranges.reduce((s, [a, b]) => s + Math.ceil(b / 2) - Math.floor(a / 2), 0);
   let drawn = 0;
@@ -397,6 +426,26 @@ export function baseSoundEvents(graphics, zooms) {
         add(g, "enter", "whoosh-deep", at - WHOOSH_LEAD_MS);
         add(g, "fan", "whoosh-light", at + frameMs(b.fanAt) - WHOOSH_LEAD_MS);
         add(g, "blip", "ui-blip", at + frameMs(b.fanAt));
+        break;
+      }
+      case "stream": {
+        // A quick riffle of clicks as the pictures fly in, then a whoosh and a
+        // pop as the last card lands.
+        const b = streamBeats(g.scenes?.length ?? 0);
+        b.cards.forEach((f, i) => add(g, `card${i}`, "click", at + frameMs(f + b.flight - 4)));
+        add(g, "finale", "whoosh-light", at + frameMs(b.finaleAt) - WHOOSH_LEAD_MS);
+        add(g, "land", "pop", at + frameMs(b.finaleAt + b.flight - 4));
+        break;
+      }
+      case "profile": {
+        // The header slides up, a click per grid photo, then a whoosh into the
+        // big photos and a blip on each.
+        const photos = Math.max(0, (g.scenes?.length ?? 0) - 1);
+        const b = profileBeats(photos, len);
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        b.grid.forEach((f, i) => add(g, `photo${i}`, "click", at + frameMs(f)));
+        if (b.flicks.length) add(g, "flick", "whoosh-light", at + frameMs(b.flickFrom) - WHOOSH_LEAD_MS);
+        b.flicks.forEach((f, i) => add(g, `flick${i}`, "ui-blip", at + frameMs(f)));
         break;
       }
       case "chapter":

@@ -54,7 +54,7 @@ import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
-import { pickSpeakerFrames } from "@/lib/speaker-frames";
+import { grabFrames, pickSpeakerFrames } from "@/lib/speaker-frames";
 import { useStoryImages } from "@/components/editor/useStoryImages";
 import {
   DEFAULT_SOUND_VOLUME,
@@ -1534,12 +1534,6 @@ function EditorPage() {
 
   // Story scenes' pictures: links to show them, and making and uploading
   // them (tinted toward the graphics' colour).
-  const storyImages = useStoryImages(
-    projectId,
-    motion,
-    motionAccent(motion.plan?.colour, brand.data?.kit?.highlightColor).hex,
-  );
-
   // Clear frames of the speaker for their cartoon: spread over the first
   // main video (up to its first two minutes).
   const findSpeakerFrames = useCallback(async () => {
@@ -1555,6 +1549,38 @@ function EditorPage() {
       return null;
     }
   }, [firstMainClip, signClip]);
+
+  // Frames spread over the first main video, for card streams' and
+  // profiles' pictures the user hasn't uploaded.
+  const footageFrames = useMemo(
+    () => ({
+      speaker: findSpeakerFrames,
+      frames: async (count: number) => {
+        if (!firstMainClip) return null;
+        const from = firstMainClip.trim_in_ms ?? 0;
+        const len = clipVisibleMs(firstMainClip);
+        const times = Array.from({ length: count }, (_, i) =>
+          Math.round(from + (len * (i + 0.5)) / count),
+        );
+        try {
+          const { url } = await signClip({ data: { path: firstMainClip.storage_path } });
+          return await grabFrames(url, times);
+        } catch (e) {
+          console.warn("[editor] Couldn't read frames of the video:", e);
+          return null;
+        }
+      },
+    }),
+    [findSpeakerFrames, firstMainClip, signClip],
+  );
+
+  const storyImages = useStoryImages(
+    projectId,
+    motion,
+    motionAccent(motion.plan?.colour, brand.data?.kit?.highlightColor).hex,
+    footageFrames,
+  );
+
 
   // The main player is the live timeline, the render, or the selected clip's
   // file (see PreviewCanvas). currentTime means a position in whichever one it
@@ -2511,6 +2537,7 @@ function EditorPage() {
                       aspect={project.aspect_ratio}
                       layer="behind"
                       images={storyImages.urls}
+                      logo={brand.data?.logoUrl ?? null}
                     />
                   </Suspense>
                 ),
@@ -2528,6 +2555,7 @@ function EditorPage() {
                         aspect={project.aspect_ratio}
                         layer="front"
                         images={storyImages.urls}
+                      logo={brand.data?.logoUrl ?? null}
                       />
                     </Suspense>
                   )}
@@ -2712,6 +2740,7 @@ function EditorPage() {
                   onSeek={seekToMs}
                   onClose={() => setSelectedGraphicId(null)}
                   story={storyImages}
+                  hasLogo={!!brand.data?.logoUrl}
                 />
               ) : selectedClip ? (
                 <ClipInspector

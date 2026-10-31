@@ -30,6 +30,8 @@ Graphic types (field "type"):
 - steps: a process or path said as steps ("first you show up, then you build, then you launch"). Full screen: numbered 3D platforms climbing away, each lit as the camera reaches it. "items" has the 2-5 steps in order, 1-3 words each; "text" is an optional title. Use it for real step-by-step moments, at most a few per video.
 - loop: a cycle or routine that repeats ("wake up, go to work, come home, sleep, repeat"). Full screen: a glowing sphere with an orbit drawing round it, a stop lighting up for each item. "items" has the 3-6 stops in order, 1-3 words each; "text" is an optional title. If the speaker then changes one part of the loop ("swap the job for building a system"), set "swap" {item: the stop's number from 0, text: the new words}; otherwise null.
 - coins: a choice, a gamble or chances ("every choice is a coin flip", "most will fail, one will change everything"). Full screen: a glossy coin spins up, then many fan out in a ring. "text" is the line (under 10 words), "emphasis" one word from it; "items" optional labels for the coins (2-8 short ones) or [].
+- stream: proof or a pile of results ("I've worked with hundreds of clients", "all these videos", "look at the results"). Full screen: a stream of pictures jumping into a pile, ending on the brand logo; the pictures come from the creator, not from you. "text" is an optional title (under 6 words). At most one or two per video.
+- profile: when the speaker talks about their own social media profile or account ("my Instagram", "my main page is just photo dumps"). Full screen: a social profile that builds itself, then its photos flick through. Set "profile" {handle, name, bio, posts, followers, following} with only what was actually said ("" for everything else - the creator fills it in); "text" is "". At most one per video.
 - chapter: a section divider when the speaker starts a new part, tip or step ("tip number one", "moving on to..."). "text" is the section title.
 - label: a small "you are here" label naming the current item or topic; it may stay up while other graphics come and go.
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
@@ -42,14 +44,14 @@ Behind the speaker (field "behind"):
 
 Timing:
 - "from_word" is the first word that triggers the graphic; "to_word" the last word it stays up for (usually the end of the phrase or sentence, 1.5-8 seconds of speech). A list stays until its last item is said.
-- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
+- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, stream, profile, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
 - Pace: the opening (hook) is the densest - a visual every 3-4 seconds. Later, a graphic or a zoom roughly every 5-10 seconds. Leave the speaker on screen for personal, emotional moments.
 
 Writing:
 - Use the speaker's own words and language. Keep on-screen text short: titles under 6 words, items under 5 words, key lines under 12 words.
 - Never invent facts, numbers, names or claims that weren't said. If the script differs from what was said, follow what was said.
 - "reason" is a few words on why this graphic fits here (e.g. "number said", "three benefits listed", "new tip starts").
-- "swap" is null on every type but loop (and on most loops).
+- "swap" is null on every type but loop (and on most loops); "profile" is null on every type but profile.
 - Use null for fields a type doesn't use, and [] for unused items and for "scenes" on every type but story and cartoon.
 - "language" is the transcript's language as a short code (e.g. "en").`;
 

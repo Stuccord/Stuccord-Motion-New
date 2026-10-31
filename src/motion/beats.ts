@@ -31,3 +31,36 @@ export function coinBeats(length: number) {
 
 /** How many coins fan out: one per label, or eight. */
 export const coinCount = (labels: number) => (labels >= 2 ? Math.min(8, labels) : 8);
+
+/**
+ * Card stream: the pictures jump in 3 frames apart, then the last card (the
+ * logo, or without one the last picture) lands flat on top.
+ */
+export function streamBeats(count: number) {
+  return {
+    /** When each picture starts its jump. */
+    cards: Array.from({ length: count }, (_, i) => 2 + i * 3),
+    /** Frames a jump takes, from below the camera to the pile. */
+    flight: 16,
+    /** When the last card starts its fall. */
+    finaleAt: 2 + count * 3 + 5,
+  };
+}
+
+/** Profile: the header rises, the grid photos one by one, then they flick through big. */
+export function profileBeats(photos: number, length: number) {
+  const grid = Array.from({ length: photos }, (_, i) => 10 + i * 5);
+  const gridEnd = grid.length ? grid[grid.length - 1] + 12 : 10;
+  const flickFrom = Math.max(gridEnd + 8, Math.round(length * 0.5));
+  const each = photos
+    ? Math.min(18, Math.max(8, Math.floor((length - flickFrom - 6) / photos)))
+    : 0;
+  return {
+    grid,
+    flickFrom,
+    /** When each photo flicks up big (none if there's no room left). */
+    flicks: Array.from({ length: photos }, (_, i) => flickFrom + i * each).filter(
+      (f) => f < length - 6,
+    ),
+  };
+}

@@ -34,6 +34,8 @@ export const ELEMENT_TYPES = [
   "steps",
   "loop",
   "coins",
+  "stream",
+  "profile",
   "chapter",
   "label",
   "cta",
@@ -52,6 +54,8 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   steps: "Steps",
   loop: "Loop",
   coins: "Coins",
+  stream: "Card stream",
+  profile: "Social profile",
   chapter: "Chapter",
   label: "Label",
   cta: "Call to action",
@@ -68,6 +72,54 @@ export const MAX_SCENES = 6;
  * acting a moment out (exactly one, always with the speaker).
  */
 export const SCENE_TYPES: ReadonlySet<ElementType> = new Set(["story", "cartoon"]);
+
+/**
+ * Types that show pictures (stored as scenes): the two above, plus a card
+ * stream's pile of pictures (uploads or frames of the footage; the brand
+ * logo lands last) and a social profile's photo and grid.
+ */
+export const PICTURE_TYPES: ReadonlySet<ElementType> = new Set([
+  "story",
+  "cartoon",
+  "stream",
+  "profile",
+]);
+
+/** Most pictures each type holds. */
+export function maxScenes(type: ElementType): number {
+  switch (type) {
+    case "cartoon":
+      return 1;
+    case "stream":
+      return MAX_STREAM;
+    case "profile":
+      return PROFILE_GRID + 1;
+    default:
+      return MAX_SCENES;
+  }
+}
+/** A card stream's pictures, and a profile's grid photos (after its own photo). */
+export const MAX_STREAM = 12;
+export const PROFILE_GRID = 6;
+
+/** A social profile's details, typed by the user (or what the speaker said). */
+const ProfileDetails = z.object({
+  handle: z.string().max(40),
+  name: z.string().max(60),
+  bio: z.string().max(150),
+  posts: z.string().max(12),
+  followers: z.string().max(12),
+  following: z.string().max(12),
+});
+export type ProfileDetails = z.infer<typeof ProfileDetails>;
+export const EMPTY_PROFILE: ProfileDetails = {
+  handle: "",
+  name: "",
+  bio: "",
+  posts: "",
+  followers: "",
+  following: "",
+};
 
 /** Most items each type shows (list items, steps, loop stops, coin labels...). */
 export function maxItems(type: ElementType): number {
@@ -152,6 +204,17 @@ export const DraftElement = z.object({
   behind: z.boolean(),
   /** A loop's stop (0-based) whose words change near the end, and to what; or null. */
   swap: z.object({ item: z.number().int(), text: z.string() }).nullable(),
+  /** A social profile's details, as far as they were said; null for other types. */
+  profile: z
+    .object({
+      handle: z.string(),
+      name: z.string(),
+      bio: z.string(),
+      posts: z.string(),
+      followers: z.string(),
+      following: z.string(),
+    })
+    .nullable(),
   /** A story's scenes in order, or a cartoon's one; [] for every other type. */
   scenes: z.array(DraftScene),
   /** Why this graphic, in a few words (shown to the user). */
@@ -178,10 +241,10 @@ export type Anchor = z.infer<typeof Anchor>;
 export const SCENE_BUCKET = "motion-images";
 export const sceneImageFolder = (ownerId: string, projectId: string) => `${ownerId}/${projectId}/`;
 
-/** A story scene's picture in storage (bucket motion-images), made by the AI or uploaded. */
+/** A scene's picture in storage (bucket motion-images): made by the AI, uploaded, or a frame of the footage. */
 const SceneImage = z.object({
   path: z.string().min(1).max(300),
-  source: z.enum(["ai", "upload"]),
+  source: z.enum(["ai", "upload", "footage"]),
 });
 export type SceneImage = z.infer<typeof SceneImage>;
 
@@ -241,11 +304,18 @@ export const MotionElement = z.object({
   swap: z
     .object({ item: z.number().int().min(0).max(7), text: z.string().min(1).max(MAX_SWAP) })
     .optional(),
-  /** A story's scenes in order, or a cartoon's one (SCENE_TYPES only). */
-  scenes: z.array(MotionScene).max(MAX_SCENES).optional(),
+  /** A story's scenes, a cartoon's one, or a card stream's or profile's pictures (PICTURE_TYPES only). */
+  scenes: z.array(MotionScene).max(MAX_STREAM).optional(),
+  /** A social profile's details (profiles only). */
+  profile: ProfileDetails.optional(),
   /** "ai" as planned; "user" once added or changed by hand. */
   source: z.enum(["ai", "user"]),
-});
+})
+  // Each type's own picture limit (a story 6, a card stream 12...).
+  .refine((el) => (el.scenes?.length ?? 0) <= maxScenes(el.type), {
+    message: "Too many pictures for this graphic",
+    path: ["scenes"],
+  });
 export type MotionElement = z.infer<typeof MotionElement>;
 
 /** The automatic sounds' settings and hand edits (src/motion/sounds.ts). */
@@ -352,6 +422,8 @@ const EXCLUSIVE: ReadonlySet<ElementType> = new Set([
   "steps",
   "loop",
   "coins",
+  "stream",
+  "profile",
   "chapter",
   "cta",
 ]);
@@ -368,9 +440,24 @@ export const FULL_SCREEN_TYPES: ReadonlySet<ElementType> = new Set([
   "steps",
   "loop",
   "coins",
+  "stream",
+  "profile",
 ]);
 
 const clean = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
+
+/** A profile's details, trimmed to their limits (empty where not given). */
+function cleanProfile(p: Partial<ProfileDetails> | null | undefined): ProfileDetails {
+  const f = (k: keyof ProfileDetails, max: number) => clean(String(p?.[k] ?? ""), max);
+  return {
+    handle: f("handle", 40).replace(/^@+/, ""),
+    name: f("name", 60),
+    bio: f("bio", 150),
+    posts: f("posts", 12),
+    followers: f("followers", 12),
+    following: f("following", 12),
+  };
+}
 
 /**
  * Turns the AI's draft into anchored graphics. Anything pointing outside the
@@ -453,6 +540,9 @@ export function draftsToElements(
           return d.items.length >= 2;
         case "loop":
           return d.items.length >= 3;
+        case "stream":
+        case "profile":
+          return true;
         default:
           return d.text !== "";
       }
@@ -497,6 +587,8 @@ export function draftsToElements(
       d.swap.item < Math.min(d.items.length, maxItems("loop"))
         ? { swap: { item: d.swap.item, text: clean(d.swap.text, MAX_SWAP) } }
         : {}),
+      ...(d.type === "stream" || d.type === "profile" ? { scenes: [] } : {}),
+      ...(d.type === "profile" ? { profile: cleanProfile(d.profile) } : {}),
       ...(SCENE_TYPES.has(d.type)
         ? {
             scenes: d.scenes.map((sc) => ({
@@ -555,6 +647,12 @@ export function elementSummary(el: MotionElement): string {
       return el.text || (el.scenes ?? []).map((sc) => sc.text).join(" → ");
     case "cartoon":
       return el.scenes?.[0]?.text || el.text || "Cartoon of the speaker";
+    case "stream": {
+      const n = el.scenes?.length ?? 0;
+      return el.text || `${n} picture${n === 1 ? "" : "s"}`;
+    }
+    case "profile":
+      return el.profile?.handle ? `@${el.profile.handle}` : el.text || "Social profile";
     case "steps":
     case "loop":
       return [el.text, el.items.join(" → ") + (el.type === "loop" ? " ↻" : "")]
@@ -687,13 +785,20 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
     behind: BEHIND_TYPES.has(type) ? el.behind : undefined,
     // A story starts with one scene from the graphic's own words; a cartoon
     // keeps just one scene, always with the speaker.
-    scenes: !SCENE_TYPES.has(type)
-      ? undefined
-      : type === "cartoon"
-        ? [{ ...firstScene(el), speaker: true }]
-        : el.scenes?.length
-          ? el.scenes
-          : [firstScene(el)],
+    // Pictures only carry over between the picture-set types.
+    scenes:
+      type === "stream" || type === "profile"
+        ? el.type === "stream" || el.type === "profile"
+          ? (el.scenes ?? []).slice(0, maxScenes(type))
+          : []
+        : !SCENE_TYPES.has(type)
+          ? undefined
+          : type === "cartoon"
+            ? [{ ...firstScene(el), speaker: true }]
+            : el.scenes?.length
+              ? el.scenes.slice(0, MAX_SCENES)
+              : [firstScene(el)],
+    profile: type === "profile" ? (el.profile ?? { ...EMPTY_PROFILE }) : undefined,
   });
 }
 
