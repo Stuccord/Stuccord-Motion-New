@@ -8,6 +8,7 @@ import { Thumbnail } from "@remotion/player";
 import { cn } from "@/lib/utils";
 import { MotionGraphics, type MotionGraphicsProps } from "@/motion/MotionGraphics";
 import { MOTION_FONTS, type MotionTheme } from "@/motion/theme";
+import type { MotionLookId } from "@/motion/looks";
 import { MOTION_FPS, frameSize, type PlacedGraphic } from "@/motion/timing";
 
 let fontsAdded = false;
@@ -51,8 +52,8 @@ export function MotionOverlay({
   images?: Record<string, string>;
   /** A link to the brand kit's logo (ends a card stream). */
   logo?: string | null;
-  /** The graphics' look (glass or paper). */
-  look?: "glass" | "paper";
+  /** The graphics' look (glass, paper or minimal). */
+  look?: MotionLookId;
 }) {
   useMotionFonts();
   const { width, height } = frameSize(aspect);

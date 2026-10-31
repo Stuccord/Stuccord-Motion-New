@@ -7,18 +7,19 @@
 // the export cut in the same places. No app imports: the worker bundles
 // src/motion on its own.
 
-/** How much tighter the close framing is. */
+/** How much tighter the close framing is (the standard looks; see looks.ts). */
 export const ANGLE_CLOSE = 1.3;
 /** Where the zoom centres when the speaker hasn't been found: the upper middle. */
 export const DEFAULT_ANGLE_CENTER = { x: 0.5, y: 0.4 };
 
 const FPS = 30;
-/** Shot lengths (s): in the first minute, and after it. */
+/** Shot lengths (s): in the first minute, and after it; "calm" looks cut less often. */
 const HOOK_S = 60;
-const HOOK_MIN = 3.5;
-const HOOK_MAX = 7;
-const MIN = 5;
-const MAX = 10;
+const PACES = {
+  normal: { hookMin: 3.5, hookMax: 7, min: 5, max: 10 },
+  calm: { hookMin: 5, hookMax: 9, min: 7, max: 12 },
+} as const;
+export type AnglePace = keyof typeof PACES;
 /** A pause this long (ms) is a good place to cut. */
 const PAUSE_MS = 350;
 /** Close shots shorter than this (frames) after the gaps are taken out are dropped. */
@@ -36,7 +37,12 @@ const frameOf = (ms: number) => Math.round((ms / 1000) * FPS);
  * zooms, which already push in, and Notes pages, where the speaker moves
  * aside).
  */
-export function closeShots(words: AngleWord[], blocked: [number, number][]): CloseShot[] {
+export function closeShots(
+  words: AngleWord[],
+  blocked: [number, number][],
+  pace: AnglePace = "normal",
+): CloseShot[] {
+  const { hookMin, hookMax, min: laterMin, max: laterMax } = PACES[pace] ?? PACES.normal;
   const list = [...words]
     .filter((w) => Number.isFinite(w.startMs))
     .sort((a, b) => a.startMs - b.startMs);
@@ -59,8 +65,8 @@ export function closeShots(words: AngleWord[], blocked: [number, number][]): Clo
   for (const c of cuts) {
     const len = (c.ms - last) / 1000;
     const hook = c.ms - startMs < HOOK_S * 1000;
-    const min = hook ? HOOK_MIN : MIN;
-    const max = hook ? HOOK_MAX : MAX;
+    const min = hook ? hookMin : laterMin;
+    const max = hook ? hookMax : laterMax;
     // A natural place once the shot is long enough; any word once it's too long.
     if ((c.natural && len >= min) || len >= max) {
       if (close) shots.push({ from: frameOf(last), to: frameOf(c.ms) });
@@ -90,7 +96,7 @@ function withoutBlocked(shots: CloseShot[], blocked: [number, number][]): CloseS
   return out.filter((s) => s.to - s.from >= MIN_SHOT);
 }
 
-/** How much the angle tightens the picture at a frame (1 wide, ANGLE_CLOSE close). */
-export function angleAt(shots: CloseShot[], frame: number): number {
-  return shots.some((s) => frame >= s.from && frame < s.to) ? ANGLE_CLOSE : 1;
+/** How much the angle tightens the picture at a frame (1 wide, `close` close). */
+export function angleAt(shots: CloseShot[], frame: number, close = ANGLE_CLOSE): number {
+  return shots.some((s) => frame >= s.from && frame < s.to) ? close : 1;
 }

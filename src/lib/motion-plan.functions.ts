@@ -33,6 +33,7 @@ import {
   type SpeakerCartoon,
 } from "@/lib/motion-plan";
 import { planFor, type Plan } from "@/lib/plans";
+import { defaultLook } from "@/motion/looks";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
 
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
@@ -281,6 +282,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
     const old = parseMotionPlan(project.motion_plan);
     const before = old?.sound;
     const colourBefore = old?.colour;
+    const look = old?.look ?? defaultLook(project.style_preset);
     const plan: MotionPlan = {
       version: 1,
       style: MOTION_STYLE,
@@ -291,6 +293,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
         ? { sound: { enabled: before.enabled, volume: before.volume } }
         : {}),
       ...(colourBefore ? { colour: colourBefore } : {}),
+      look,
       elements,
     };
 

@@ -7,13 +7,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { emptyPlan, type MotionPlan } from "@/lib/motion-plan";
+import { emptyPlan, type MotionLook, type MotionPlan } from "@/lib/motion-plan";
 import { getMotionPlan, saveMotionPlan, type MotionPlanState } from "@/lib/motion-plan.functions";
 
 /** Wait this long after the last change before saving (ms). */
 const SAVE_AFTER_MS = 700;
 
-export function useMotionPlan(projectId: string) {
+/** `newPlanLook`: the look a plan started by hand gets (the project's style). */
+export function useMotionPlan(projectId: string, newPlanLook?: MotionLook) {
   const qc = useQueryClient();
   const key = ["motion-plan", projectId];
   const fetchPlan = useServerFn(getMotionPlan);
@@ -66,11 +67,15 @@ export function useMotionPlan(projectId: string) {
   // The latest plan, so changes made in quick succession build on each other.
   const latest = useRef(plan);
   latest.current = plan;
+  const newLook = useRef(newPlanLook);
+  newLook.current = newPlanLook;
 
   /** Changes the plan (starting an empty one if there's none) and saves it soon. */
   const update = useCallback(
     (change: (p: MotionPlan) => MotionPlan) => {
-      const next = change(latest.current ?? emptyPlan());
+      const next = change(
+        latest.current ?? { ...emptyPlan(), ...(newLook.current ? { look: newLook.current } : {}) },
+      );
       latest.current = next;
       setDraft(next);
       pending.current = next;

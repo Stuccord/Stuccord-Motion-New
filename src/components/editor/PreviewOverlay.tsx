@@ -17,6 +17,10 @@ import {
 } from "@/lib/brand-kit";
 
 const HOOK_MS = 3000;
+// Clean captions: the export's CLEAN_CAPTION_SCALE, and its dimmed words
+// (ASS alpha &H60 is about 62% solid).
+const CLEAN_CAPTION_SCALE = 0.85;
+const CLEAN_DIM_OPACITY = 0.62;
 
 export function PreviewOverlay({
   timeMs,
@@ -24,6 +28,7 @@ export function PreviewOverlay({
   hook,
   kit = DEFAULT_KIT,
   logoUrl = null,
+  clean = false,
 }: {
   timeMs: number;
   /** Caption phrases on the timeline; empty when captions are off. */
@@ -34,6 +39,11 @@ export function PreviewOverlay({
   kit?: BrandKit;
   /** A link to the brand logo, when the kit has one. */
   logoUrl?: string | null;
+  /**
+   * Clean captions (the Minimal look): a little smaller, not bold, on a soft
+   * shadow, the spoken word bright and the others dimmed (the export the same).
+   */
+  clean?: boolean;
 }) {
   useBrandFonts();
   const caption = phrases.length ? captionAt(phrases, timeMs) : null;
@@ -93,19 +103,31 @@ export function PreviewOverlay({
           style={captionPlace}
         >
           <p
-            className="font-extrabold leading-tight"
+            className={clean ? "font-normal leading-tight" : "font-extrabold leading-tight"}
             style={{
-              fontSize: `${CAPTION_SIZE[kit.size] * 100}cqmin`,
+              fontSize: `${CAPTION_SIZE[kit.size] * (clean ? CLEAN_CAPTION_SCALE : 1) * 100}cqmin`,
               color: kit.textColor,
               fontFamily,
-              // The export's outline around each letter.
-              textShadow: `0 0 0.6cqmin ${o}, 0.15cqmin 0.15cqmin 0 ${o}, -0.15cqmin 0.15cqmin 0 ${o}, 0.15cqmin -0.15cqmin 0 ${o}, -0.15cqmin -0.15cqmin 0 ${o}`,
+              // The export's outline around each letter, or its soft shadow.
+              textShadow: clean
+                ? "0.25cqmin 0.25cqmin 0.5cqmin rgba(0,0,0,0.55)"
+                : `0 0 0.6cqmin ${o}, 0.15cqmin 0.15cqmin 0 ${o}, -0.15cqmin 0.15cqmin 0 ${o}, 0.15cqmin -0.15cqmin 0 ${o}, -0.15cqmin -0.15cqmin 0 ${o}`,
             }}
           >
             {caption.words.map((w, i) => (
               <React.Fragment key={w.key}>
                 {i > 0 && " "}
-                <span style={i === caption.active ? { color: kit.highlightColor } : undefined}>
+                <span
+                  style={
+                    clean
+                      ? i === caption.active
+                        ? undefined
+                        : { opacity: CLEAN_DIM_OPACITY }
+                      : i === caption.active
+                        ? { color: kit.highlightColor }
+                        : undefined
+                  }
+                >
                   {w.text}
                 </span>
               </React.Fragment>

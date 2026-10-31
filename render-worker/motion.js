@@ -282,11 +282,11 @@ export function zoomExpression(zooms) {
  * middle when unknown), like the preview's transform-origin: that point
  * stays put while the picture grows.
  */
-export function zoomFilter(zooms, w, h, { shots = [], center = null } = {}) {
+export function zoomFilter(zooms, w, h, { shots = [], center = null, closeScale = ANGLE_CLOSE } = {}) {
   if (!zooms.length && !shots.length) return null;
   const c = angleCenter(center);
   const close = shots.length
-    ? `*(1+${num(ANGLE_CLOSE - 1)}*(${shots.map((s) => `between(in,${s.from},${s.to - 1})`).join("+")}))`
+    ? `*(1+${num(closeScale - 1)}*(${shots.map((s) => `between(in,${s.from},${s.to - 1})`).join("+")}))`
     : "";
   return (
     `zoompan=z='(${zoomExpression(zooms)})${close}'` +
@@ -299,6 +299,26 @@ export function zoomFilter(zooms, w, h, { shots = [], center = null } = {}) {
 
 export const ANGLE_CLOSE = 1.3;
 const DEFAULT_ANGLE_CENTER = { x: 0.5, y: 0.4 };
+const ANGLE_PACES = {
+  normal: { hookMin: 3.5, hookMax: 7, min: 5, max: 10 },
+  calm: { hookMin: 5, hookMax: 9, min: 7, max: 12 },
+};
+
+// ---------- looks' finish (mirrors src/motion/looks.ts) ----------
+
+const STANDARD_FINISH = { grade: null, angleClose: ANGLE_CLOSE, pace: "normal", captions: "bold" };
+export const LOOK_FINISH = {
+  glass: STANDARD_FINISH,
+  paper: STANDARD_FINISH,
+  minimal: { grade: { saturation: 0.82, contrast: 1.06 }, angleClose: 1.15, pace: "calm", captions: "clean" },
+};
+export const lookFinish = (look) => (Object.hasOwn(LOOK_FINISH, look ?? "") ? LOOK_FINISH[look] : STANDARD_FINISH);
+
+/** The look's colour grade as an ffmpeg filter (the preview's CSS saturate/contrast); null: none. */
+export function gradeFilter(finish) {
+  const g = finish?.grade;
+  return g ? `eq=saturation=${num(g.saturation)}:contrast=${num(g.contrast)}` : null;
+}
 
 /** The plan's speaker point, if it's a valid one; else the upper middle. */
 export function angleCenter(center) {
@@ -311,8 +331,9 @@ export function angleCenter(center) {
  * (3.5-7 s in the first minute); `blocked` stretches (frames) stay wide.
  * `words` are the placed words ({ text, start_ms, end_ms }).
  */
-export function closeShots(words, blocked) {
+export function closeShots(words, blocked, pace = "normal") {
   const FPS = 30;
+  const p = ANGLE_PACES[pace] ?? ANGLE_PACES.normal;
   const frameOf = (ms) => Math.round((ms / 1000) * FPS);
   const list = (Array.isArray(words) ? words : [])
     .filter((w) => w && Number.isFinite(w.start_ms))
@@ -335,8 +356,8 @@ export function closeShots(words, blocked) {
   for (const c of cuts) {
     const len = (c.ms - last) / 1000;
     const hook = c.ms - startMs < 60_000;
-    const min = hook ? 3.5 : 5;
-    const max = hook ? 7 : 10;
+    const min = hook ? p.hookMin : p.min;
+    const max = hook ? p.hookMax : p.max;
     if ((c.natural && len >= min) || len >= max) {
       if (close) shots.push({ from: frameOf(last), to: frameOf(c.ms) });
       close = !close;
@@ -397,7 +418,7 @@ export async function renderGraphics({
     theme,
     images,
     logo,
-    look: look === "paper" ? "paper" : "glass",
+    look: Object.hasOwn(LOOK_FINISH, look ?? "") ? look : "glass",
     width: w,
     height: h,
     durationInFrames: totalFrames,
@@ -439,7 +460,7 @@ export async function renderGraphics({
  * text filters (captions, hook). Audio is copied. `textFilters` is a list of
  * filters (or empty).
  */
-export function composeArgs({ input, pieces, zoom, textFilters, output, behind = null, split = null }) {
+export function composeArgs({ input, pieces, zoom, textFilters, output, behind = null, split = null, grade = null }) {
   const args = ["-y", "-i", input];
   for (const p of pieces) {
     args.push("-itsoffset", p.startS.toFixed(4), "-i", p.file);
@@ -449,6 +470,11 @@ export function composeArgs({ input, pieces, zoom, textFilters, output, behind =
   if (zoom) {
     graph.push(`[${last}]${zoom},setsar=1[zm]`);
     last = "zm";
+  }
+  // The look's colour, on the footage only (before the graphics and captions).
+  if (grade) {
+    graph.push(`[${last}]${grade}[gd]`);
+    last = "gd";
   }
   // A Notes page: the speaker moves aside (the page is drawn over the other side).
   const sp = split ? splitFilters(last, split.ranges, split.portrait, "sp") : null;

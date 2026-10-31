@@ -21,6 +21,7 @@ import {
 import { UploadCloud, X, Loader2, Film, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TEMPLATES } from "@/lib/templates.data";
+import { NEW_PROJECT_STYLES } from "@/lib/presets";
 import { z } from "zod";
 
 const searchSchema = z.object({
@@ -62,8 +63,10 @@ function NewProject() {
   const [title, setTitle] = useState(template ? template.title : "");
   const [script, setScript] = useState("");
   const [brief, setBrief] = useState(template?.brief ?? "");
-  // Motion Explainer is the one style today (templates set the brief and shape).
-  const [preset, setPreset] = useState("gadzhi");
+  // The style: Motion Explainer unless the template is one of the others.
+  const [preset, setPreset] = useState<string>(
+    NEW_PROJECT_STYLES.find((s) => s.id === template?.preset)?.id ?? "gadzhi",
+  );
   const [ratio, setRatio] = useState<"9:16" | "16:9" | "1:1">(template?.ratio ?? "9:16");
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -262,7 +265,11 @@ function NewProject() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gadzhi">Motion Explainer — premium motion graphics</SelectItem>
+                    {NEW_PROJECT_STYLES.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

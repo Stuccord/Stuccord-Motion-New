@@ -29,6 +29,7 @@ interface PreviewCanvasProps {
     pictureScale?: (timeMs: number) => number;
     pictureShift?: (timeMs: number) => { x: number; y: number } | null;
     pictureOrigin?: { x: number; y: number };
+    pictureFilter?: string;
     /** Graphics behind the speaker: how far in a time is (0-1), and what's drawn there. */
     behindAt?: (timeMs: number) => number;
     renderBehind?: (timeMs: number) => React.ReactNode;
@@ -472,6 +473,7 @@ export function PreviewCanvas({
               pictureScale={timeline!.pictureScale}
               pictureShift={timeline!.pictureShift}
               pictureOrigin={timeline!.pictureOrigin}
+              pictureFilter={timeline!.pictureFilter}
               behindAt={timeline!.behindAt}
               renderBehind={timeline!.renderBehind}
               onStall={timeline!.onStall}

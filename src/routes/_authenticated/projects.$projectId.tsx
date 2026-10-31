@@ -52,6 +52,7 @@ import {
 } from "@/lib/motion-plan";
 import { MOTION_FPS, placeGraphics, splitShift, zoomAt } from "@/motion/timing";
 import { DEFAULT_ANGLE_CENTER, angleAt, closeShots } from "@/motion/angles";
+import { defaultLook, gradeCss, lookFinish } from "@/motion/looks";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
@@ -383,7 +384,7 @@ function EditorPage() {
   // The Motion Explainer sounds and music beds for the preview's audio,
   // worked out further down on every render.
   const autoAudio = useRef<AutoAudio>({ sfx: [], music: [] });
-  const motion = useMotionPlan(projectId);
+  const motion = useMotionPlan(projectId, defaultLook(data?.project.style_preset));
   const [muted, setMuted] = useState(false);
   const [playing, setPlaying] = useState(false);
   // Play speed set with L (1×, 2×, 4×); K or a new file resets it.
@@ -1814,14 +1815,20 @@ function EditorPage() {
   // graphics behind the speaker, whose words must show around the head), and
   // the point the picture zooms around.
   const anglesOn = !!motionPlan && motionPlan.angles?.enabled !== false;
+  // The look's finish: its colour grade, camera pace and captions (looks.ts).
+  const finish = lookFinish(motionPlan?.look);
   // (Not a hook: this runs after the loading return above. One pass over the words.)
   const angleShots = anglesOn
-    ? closeShots(captionWords, [
-        ...placedMotion.zooms.map((z): [number, number] => [z.from, z.to]),
-        ...placedMotion.graphics
-          .filter((g) => g.type === "notes" || g.behind)
-          .map((g): [number, number] => [g.from, g.to]),
-      ])
+    ? closeShots(
+        captionWords,
+        [
+          ...placedMotion.zooms.map((z): [number, number] => [z.from, z.to]),
+          ...placedMotion.graphics
+            .filter((g) => g.type === "notes" || g.behind)
+            .map((g): [number, number] => [g.from, g.to]),
+        ],
+        finish.pace,
+      )
     : [];
   const angleCenter = motionPlan?.angles?.center ?? DEFAULT_ANGLE_CENTER;
   // The user's pick, the brand kit's colour, or the video's (motionAccent).
@@ -2633,15 +2640,17 @@ function EditorPage() {
                       captionsEnabled && !captionsHiddenAt(timeMs) ? captionWordPhrases : []
                     }
                     hook={renderHook}
+                    clean={graphicsOn && finish.captions === "clean"}
                   />
                 </>
               ),
               pictureScale: graphicsOn
                 ? (timeMs) =>
                     zoomAt(placedMotion.zooms, frameAtMs(timeMs)) *
-                    angleAt(angleShots, frameAtMs(timeMs))
+                    angleAt(angleShots, frameAtMs(timeMs), finish.angleClose)
                 : undefined,
               pictureOrigin: graphicsOn ? angleCenter : undefined,
+              pictureFilter: graphicsOn ? gradeCss(finish) : undefined,
               // A Notes page beside the speaker moves them aside.
               pictureShift: graphicsOn
                 ? (timeMs) =>

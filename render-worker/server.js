@@ -44,6 +44,8 @@ import {
   splitRanges,
   closeShots,
   angleBlocked,
+  gradeFilter,
+  lookFinish,
   placeGraphics,
   renderGraphics,
   sfxTrackArgs,
@@ -616,6 +618,10 @@ const BRAND_FONTS = {
   luckiest: { file: "LuckiestGuy-Regular.ttf", family: "Luckiest Guy", bold: false },
 };
 const CAPTION_SIZE = { s: 0.06, m: 0.075, l: 0.09 };
+// Clean captions (the Minimal look): this much smaller, the words not being
+// spoken this see-through (ASS alpha, 00 solid to FF clear).
+const CLEAN_CAPTION_SCALE = 0.85;
+const CLEAN_DIM_ALPHA = "60";
 
 function brandKitFromJob(job) {
   const v = job?.brand_kit && typeof job.brand_kit === "object" ? job.brand_kit : {};
@@ -1025,12 +1031,16 @@ function fontFamily(fontPath) {
  * with the word being spoken highlighted yellow. Returns null when the
  * transcript has no words.
  */
-function buildCaptionsAss(words, { w, h, fontName, kit = brandKitFromJob({}), bold = true }) {
+function buildCaptionsAss(words, { w, h, fontName, kit = brandKitFromJob({}), bold = true, clean = false }) {
   const groups = groupCaptionWords(words);
   if (!groups.length) return null;
 
-  const fontSize = Math.round(Math.min(w, h) * CAPTION_SIZE[kit.size]);
-  const outline = Math.max(2, Math.round(fontSize * 0.08));
+  // Clean (the Minimal look): a little smaller, not bold, no outline, on a
+  // soft shadow; the spoken word bright and the others dimmed instead of a
+  // highlight colour (the preview's PreviewOverlay the same).
+  const fontSize = Math.round(Math.min(w, h) * CAPTION_SIZE[kit.size] * (clean ? CLEAN_CAPTION_SCALE : 1));
+  const outline = clean ? 0 : Math.max(2, Math.round(fontSize * 0.08));
+  const shadow = clean ? Math.max(1, Math.round(fontSize * 0.04)) : 0;
   const marginX = Math.round(w * 0.08);
   // 20% of the height from the bottom; at the top 24%, to clear the hook.
   const marginV = Math.round(h * (kit.position === "top" ? 0.24 : 0.2));
@@ -1055,6 +1065,7 @@ function buildCaptionsAss(words, { w, h, fontName, kit = brandKitFromJob({}), bo
       const text = group
         .map((g, j) => {
           const t = assText(g.text);
+          if (clean) return j === i ? t : `{\\1a&H${CLEAN_DIM_ALPHA}&}${t}{\\1a&H00&}`;
           return j === i ? `{\\c${HIGHLIGHT}&}${t}{\\c${WHITE}&}` : t;
         })
         .join(" ");
@@ -1072,7 +1083,7 @@ function buildCaptionsAss(words, { w, h, fontName, kit = brandKitFromJob({}), bo
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Caption,${fontName},${fontSize},${WHITE},${WHITE},${OUTLINE},&H80000000,${bold ? -1 : 0},0,0,0,100,100,0,0,1,${outline},0,${alignment},${marginX},${marginX},${marginV},1`,
+    `Style: Caption,${fontName},${fontSize},${WHITE},${WHITE},${OUTLINE},${clean ? "&H70000000" : "&H80000000"},${bold && !clean ? -1 : 0},0,0,0,100,100,0,0,1,${outline},${shadow},${alignment},${marginX},${marginX},${marginV},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -1645,6 +1656,9 @@ async function runRender(job) {
     //     laid over the picture with the zooms in the text encode below.
     let graphicPieces = [];
     let zoom = null;
+    // The look's finish: its colour grade, camera pace and captions.
+    const finish = lookFinish(motionJob?.look);
+    const grade = motionJob ? gradeFilter(finish) : null;
     // Notes pages: when the speaker moves aside for them.
     let split = null;
     // Graphics behind the speaker: their clips and the speaker's masks
@@ -1658,8 +1672,11 @@ async function runRender(job) {
         // Camera angles: on unless the plan turns them off.
         const anglesOn = motionJob.angles?.enabled !== false;
         zoom = zoomFilter(placed.zooms, w, h, {
-          shots: anglesOn ? closeShots(placedWords, angleBlocked(placed.zooms, placed.graphics)) : [],
+          shots: anglesOn
+            ? closeShots(placedWords, angleBlocked(placed.zooms, placed.graphics), finish.pace)
+            : [],
           center: motionJob.angles?.center ?? null,
+          closeScale: finish.angleClose,
         });
         const ranges = splitRanges(placed.graphics);
         split = ranges.length ? { ranges, portrait: h > w } : null;
@@ -1758,6 +1775,7 @@ async function runRender(job) {
         fontName: brandFont ? BRAND_FONTS[kit.font].family : fontFamily(font),
         kit,
         bold: brandFont ? BRAND_FONTS[kit.font].bold : true,
+        clean: finish.captions === "clean",
       });
       if (ass) {
         const assPath = path.join(workdir, "captions.ass");
@@ -1790,14 +1808,14 @@ async function runRender(job) {
 
     const textFilters = [captionsFilter, hookFilter].filter(Boolean);
     let graphicsDone = false;
-    if (graphicPieces.length || behind || zoom || split) {
+    if (graphicPieces.length || behind || zoom || split || grade) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 85,
         stage_message: "Adding graphics and captions",
       });
       const out = path.join(workdir, "final-graphics.mp4");
       const compose = (pieces, withBehind) =>
-        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind, split }));
+        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind, split, grade }));
       try {
         try {
           await compose(graphicPieces, behind);

@@ -522,6 +522,7 @@ function AnglesRow({ angles }: { angles: AngleControls }) {
 const LOOKS: { id: MotionLook; label: string; hint: string }[] = [
   { id: "glass", label: "Glass", hint: "Dark glass cards with a glow" },
   { id: "paper", label: "Paper", hint: "Paper on a desk, a pen pointing" },
+  { id: "minimal", label: "Minimal", hint: "Clean type, thin lines, calm cuts" },
 ];
 
 function LookRow({ look }: { look: LookControls }) {
@@ -531,7 +532,7 @@ function LookRow({ look }: { look: LookControls }) {
         <Layers className="w-3 h-3 text-violet-300" />
         <span className="text-[11px] text-neutral-300 flex-1">Look</span>
       </div>
-      <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Graphics look">
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Graphics look">
         {LOOKS.map((l) => (
           <button
             key={l.id}

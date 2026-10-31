@@ -14,6 +14,7 @@
 
 import { z } from "zod/v4";
 import { SKETCH_PATHS, type SketchId } from "@/motion/sketches";
+import { MOTION_LOOK_IDS } from "@/motion/looks";
 import { layoutTrack } from "@/lib/timeline-layout";
 import {
   placeTranscripts,
@@ -31,7 +32,7 @@ export const MAX_NOTE_LINES = 8;
 const MAX_NOTE_TEXT = 60;
 
 /** The graphics' looks (stage 10): every graphic restyled at once. */
-export const MOTION_LOOKS = ["glass", "paper"] as const;
+export const MOTION_LOOKS = MOTION_LOOK_IDS;
 export type MotionLook = (typeof MOTION_LOOKS)[number];
 
 export const ELEMENT_TYPES = [
@@ -384,7 +385,7 @@ export const MotionPlan = z.object({
   sound: SoundSettings.optional(),
   /** The colour: picked by hand, or from the brand kit or the video. */
   colour: MotionColour.optional(),
-  /** The graphics' look, one per video: dark glass (the default) or paper on a desk. */
+  /** The graphics' look, one per video: dark glass (the default), paper on a desk, or minimal. */
   look: z.enum(MOTION_LOOKS).optional(),
   /**
    * Camera angles: switching between the full shot and a close crop on the

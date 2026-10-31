@@ -1,6 +1,6 @@
 import {
   Zap, Radio, Rocket, PlayCircle, Mic, Camera, Sparkles, MessageCircle,
-  BookOpen, Newspaper, ShoppingBag, GraduationCap,
+  BookOpen, Newspaper, ShoppingBag, GraduationCap, Type,
 } from "lucide-react";
 
 export type TemplateDef = {
@@ -58,6 +58,13 @@ export const TEMPLATES: TemplateDef[] = [
     icon: Sparkles, gradient: "from-amber-500 to-orange-500",
     ratio: "9:16", duration: "0:20", preset: "cinematic",
     brief: "Word-by-word typographic reveal centered on screen. Blurred slow-motion b-roll behind. Ambient piano.",
+  },
+  {
+    id: "minimal", cat: "Education", title: "Minimal explainer",
+    desc: "Clean type and thin lines over your talk, with calm cuts.",
+    icon: Type, gradient: "from-neutral-500 to-neutral-800",
+    ratio: "9:16", duration: "0:60", preset: "minimal",
+    brief: "Calm and clear. Few graphics, each with lots of space: one key line, a number or a short list at a time. No hype.",
   },
   {
     id: "story", cat: "Storytime", title: "Storytime narration",

@@ -67,6 +67,8 @@ type Props = {
   pictureShift?: (timeMs: number) => { x: number; y: number } | null;
   /** The point (0-1) the picture zooms around: the speaker, or the upper middle. */
   pictureOrigin?: { x: number; y: number };
+  /** The look's colour grade on the footage (a CSS filter), if it has one. */
+  pictureFilter?: string;
   /**
    * Graphics behind the speaker: how far in a time is (0 none, 1 full: the
    * room darkened and blurred, the speaker cut out in front), and what's
@@ -105,6 +107,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     pictureScale,
     pictureShift,
     pictureOrigin,
+    pictureFilter,
     behindAt,
     renderBehind,
     onStall,
@@ -436,9 +439,14 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
           style={{
             ...zoomStyle,
             filter:
-              behind > 0
-                ? `blur(${(behind * BEHIND_BLUR * frameH).toFixed(2)}px) brightness(${(1 - behind * BEHIND_DARKEN).toFixed(3)})`
-                : undefined,
+              [
+                pictureFilter,
+                behind > 0
+                  ? `blur(${(behind * BEHIND_BLUR * frameH).toFixed(2)}px) brightness(${(1 - behind * BEHIND_DARKEN).toFixed(3)})`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined,
           }}
         >
           {layers.map((p) => {
@@ -482,7 +490,10 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
         {/* The speaker, cut out of each video showing, in front of what's
             behind them (the same places and zoom as the picture). */}
         {behind > 0 && (
-          <div className="absolute inset-0 z-[8] pointer-events-none" style={zoomStyle}>
+          <div
+            className="absolute inset-0 z-[8] pointer-events-none"
+            style={{ ...zoomStyle, filter: pictureFilter }}
+          >
             {layers.map((p) => {
               if (isImage(p.clip) || t < p.start || t >= p.end) return null;
               const look = layerLook(
