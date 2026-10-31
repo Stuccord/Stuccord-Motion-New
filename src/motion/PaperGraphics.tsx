@@ -19,9 +19,11 @@ import {
   streamBeats,
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
+import { NotesGraphic } from "@/motion/NotesGraphic";
 import {
   ImagesContext,
   LogoContext,
+  inkAccent,
   behindBand,
   clamp01,
   easeOut,
@@ -39,12 +41,6 @@ const INK = "#1D1B1A";
 const INK_SOFT = "#6A645B";
 
 type Draw = (p: { g: PlacedGraphic; theme: MotionTheme }) => React.ReactElement;
-
-/** The accent made dark enough to read on white paper (ink, ticks, numbers). */
-function inkAccent(theme: MotionTheme): string {
-  const m = /hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%/i.exec(theme.accent);
-  return m ? `hsl(${m[1]}, ${Math.min(80, Number(m[2]))}%, 40%)` : "#B3261E";
-}
 
 const easeInOut = (t: number) => {
   const x = clamp01(t);
@@ -1537,6 +1533,7 @@ const PAPER_DRAW: Record<PlacedGraphic["type"], Draw> = {
   coins: PaperCoins,
   stream: PaperStream,
   profile: PaperProfile,
+  notes: NotesGraphic,
   chapter: PaperChapter,
   label: PaperLabel,
   cta: PaperCta,

@@ -92,3 +92,9 @@ export const rand = (i: number, k: number) => {
   const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
   return x - Math.floor(x);
 };
+
+/** The accent made dark enough to read on white paper (ink, ticks, numbers). */
+export function inkAccent(theme: { accent: string }): string {
+  const m = /hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%/i.exec(theme.accent);
+  return m ? `hsl(${m[1]}, ${Math.min(80, Number(m[2]))}%, 40%)` : "#B3261E";
+}

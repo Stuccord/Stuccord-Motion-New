@@ -65,6 +65,7 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   coins: "text-yellow-300 border-yellow-400/30",
   stream: "text-indigo-300 border-indigo-400/30",
   profile: "text-rose-300 border-rose-400/30",
+  notes: "text-slate-200 border-slate-300/30",
   chapter: "text-emerald-300 border-emerald-400/30",
   label: "text-neutral-300 border-white/15",
   cta: "text-red-300 border-red-400/30",

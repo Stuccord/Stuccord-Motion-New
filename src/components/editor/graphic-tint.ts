@@ -15,6 +15,7 @@ export const GRAPHIC_TINT: Record<ElementType, string> = {
   coins: "bg-yellow-500/20 border-yellow-400/50 text-yellow-100",
   stream: "bg-indigo-500/20 border-indigo-400/50 text-indigo-100",
   profile: "bg-rose-500/20 border-rose-400/50 text-rose-100",
+  notes: "bg-slate-200/20 border-slate-300/50 text-slate-100",
   chapter: "bg-emerald-500/20 border-emerald-400/50 text-emerald-100",
   label: "bg-white/10 border-white/25 text-neutral-200",
   cta: "bg-red-500/20 border-red-400/50 text-red-100",

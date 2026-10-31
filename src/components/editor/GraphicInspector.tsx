@@ -23,6 +23,7 @@ import {
 import { GRAPHIC_TINT } from "./graphic-tint";
 import { StoryScenesEditor, type StoryTools } from "./StoryScenesEditor";
 import { PictureSetEditor, type PictureTools } from "./PictureSetEditor";
+import { NotesLinesEditor } from "./NotesLinesEditor";
 
 const CTA_LABEL: Record<(typeof CTA_KINDS)[number], string> = {
   like: "Like",
@@ -44,6 +45,7 @@ const HINT: Record<ElementType, string> = {
   coins: "A glossy coin spins up, then many fan out in a ring.",
   stream: "A pile of your pictures jumping in, ending on your logo.",
   profile: "A social profile that builds itself, then its photos flick through.",
+  notes: "You on one side, a note page on the other filling up with notes and sketches.",
   chapter: "A full-screen divider for a new part, with progress.",
   label: "A small label naming the current topic.",
   cta: "A button the pointer clicks (like, subscribe…).",
@@ -180,7 +182,8 @@ export function GraphicInspector({
                     el.type === "story" ||
                     el.type === "steps" ||
                     el.type === "loop" ||
-                    el.type === "stream"
+                    el.type === "stream" ||
+                    el.type === "notes"
                   ? "Title (optional)"
                   : el.type === "coins"
                     ? "Line"
@@ -195,6 +198,18 @@ export function GraphicInspector({
               className={cn(inputCls, "min-h-[64px] resize-none")}
             />
           </Field>
+        )}
+
+        {el.type === "notes" && (
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase tracking-wide text-neutral-500">Lines</span>
+            <NotesLinesEditor
+              element={el}
+              readOnly={readOnly}
+              onLines={(lines) => set({ lines })}
+              inputCls={inputCls}
+            />
+          </div>
         )}
 
         {(el.type === "stream" || el.type === "profile") && story && (

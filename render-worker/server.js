@@ -39,6 +39,7 @@ import {
   captionGaps,
   chapterStretches,
   composeArgs,
+  splitRanges,
   placeGraphics,
   renderGraphics,
   sfxTrackArgs,
@@ -1671,6 +1672,8 @@ async function runRender(job) {
     //     laid over the picture with the zooms in the text encode below.
     let graphicPieces = [];
     let zoom = null;
+    // Notes pages: when the speaker moves aside for them.
+    let split = null;
     // Graphics behind the speaker: their clips and the speaker's masks
     // (none: they're drawn in front with the others).
     let behind = null;
@@ -1680,6 +1683,8 @@ async function runRender(job) {
         const totalMs = await probeDurationMs(composedOut);
         const totalFrames = Math.ceil(((totalMs ?? 0) / 1000) * MOTION_FPS);
         zoom = zoomFilter(placed.zooms, w, h);
+        const ranges = splitRanges(placed.graphics);
+        split = ranges.length ? { ranges, portrait: h > w } : null;
         // Behind the speaker only when the cut-out model is in the image.
         const cutout = personModelReady();
         const front = placed.graphics.filter((g) => !(cutout && g.behind));
@@ -1807,14 +1812,14 @@ async function runRender(job) {
 
     const textFilters = [captionsFilter, hookFilter].filter(Boolean);
     let graphicsDone = false;
-    if (graphicPieces.length || behind || zoom) {
+    if (graphicPieces.length || behind || zoom || split) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 85,
         stage_message: "Adding graphics and captions",
       });
       const out = path.join(workdir, "final-graphics.mp4");
       const compose = (pieces, withBehind) =>
-        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind }));
+        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind, split }));
       try {
         try {
           await compose(graphicPieces, behind);

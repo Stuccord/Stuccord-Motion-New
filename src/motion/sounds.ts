@@ -189,6 +189,15 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
         b.flicks.forEach((f, i) => add(g, `flick${i}`, "ui-blip", at + frameMs(f)));
         break;
       }
+      case "notes":
+        // The page slides in; a click as each line is written, a blip when
+        // its sketch draws on.
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        (g.lines ?? []).forEach((l, i) => {
+          add(g, `line${i}`, "click", frameMs(l.from));
+          if (l.sketch) add(g, `sketch${i}`, "ui-blip", frameMs(l.from + 6));
+        });
+        break;
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
         add(g, "hit", "hit", at);

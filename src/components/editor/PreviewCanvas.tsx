@@ -27,6 +27,7 @@ interface PreviewCanvasProps {
     renderOverlay?: (timeMs: number) => React.ReactNode;
     /** How much the picture is zoomed in at a time (Motion Explainer zooms). */
     pictureScale?: (timeMs: number) => number;
+    pictureShift?: (timeMs: number) => { x: number; y: number } | null;
     /** Graphics behind the speaker: how far in a time is (0-1), and what's drawn there. */
     behindAt?: (timeMs: number) => number;
     renderBehind?: (timeMs: number) => React.ReactNode;
@@ -363,7 +364,9 @@ export function PreviewCanvas({
               type="button"
               onClick={() => onViewModeChange("clip")}
               disabled={!sourceUrl}
-              title={sourceUrl ? "The selected clip on its own" : "Select a clip to see it on its own"}
+              title={
+                sourceUrl ? "The selected clip on its own" : "Select a clip to see it on its own"
+              }
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
                 viewMode === "clip"
@@ -466,6 +469,7 @@ export function PreviewCanvas({
               onTick={timeline!.onTick}
               renderOverlay={timeline!.renderOverlay}
               pictureScale={timeline!.pictureScale}
+              pictureShift={timeline!.pictureShift}
               behindAt={timeline!.behindAt}
               renderBehind={timeline!.renderBehind}
               onStall={timeline!.onStall}
@@ -587,9 +591,7 @@ export function PreviewCanvas({
             {isRendering ? (
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
-                <h3 className="text-sm font-semibold text-neutral-200">
-                  Rendering Video
-                </h3>
+                <h3 className="text-sm font-semibold text-neutral-200">Rendering Video</h3>
                 <p className="text-xs text-neutral-400 max-w-[220px]">
                   {renderStageMessage || "Assembling motion graphics and timeline cuts..."}
                 </p>
@@ -599,9 +601,7 @@ export function PreviewCanvas({
                     style={{ width: `${Math.max(5, renderProgress)}%` }}
                   />
                 </div>
-                <span className="text-[11px] font-mono text-violet-400">
-                  {renderProgress}%
-                </span>
+                <span className="text-[11px] font-mono text-violet-400">{renderProgress}%</span>
               </div>
             ) : hasClips ? (
               <div className="flex flex-col items-center gap-2.5">
@@ -618,9 +618,7 @@ export function PreviewCanvas({
                 <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-neutral-500">
                   <Film className="w-5 h-5" />
                 </div>
-                <h3 className="text-xs font-semibold text-neutral-200">
-                  No Clips Added
-                </h3>
+                <h3 className="text-xs font-semibold text-neutral-200">No Clips Added</h3>
                 <p className="text-[11px] text-neutral-500 max-w-[240px]">
                   Add videos, images or music from the Media panel on the left, or drop them on the
                   timeline.

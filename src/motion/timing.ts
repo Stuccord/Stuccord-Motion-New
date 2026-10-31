@@ -13,6 +13,7 @@ import {
   type MotionElement,
   type ProfileDetails,
 } from "@/lib/motion-plan";
+import type { SketchId } from "@/motion/sketches";
 
 export const MOTION_FPS = 30;
 
@@ -43,6 +44,8 @@ export type PlacedGraphic = {
   swap: { item: number; text: string } | null;
   /** A social profile's details; null for other graphics. */
   profile: ProfileDetails | null;
+  /** A Notes page's lines: from which frame each is written, and its sketch; null for other graphics. */
+  lines: PlacedNoteLine[] | null;
   /** The pictures (a story's scenes, a cartoon's one, a card stream's or profile's); null for other graphics. */
   scenes: PlacedScene[] | null;
 };
@@ -87,6 +90,44 @@ function placeScenes(
     image: sc.image?.path ?? null,
   }));
 }
+
+/** A Notes line as drawn. */
+export type PlacedNoteLine = { from: number; text: string; sketch: SketchId | null };
+
+function placeLines(
+  el: MotionElement,
+  from: number,
+  to: number,
+  wordsByKey: Map<string, TimelineWord>,
+): PlacedNoteLine[] {
+  const lines = (el.lines ?? []).slice(0, 8);
+  const froms = lines.map((l) => {
+    const w = wordsByKey.get(`${l.at.clip_id}:${l.at.word_index}`);
+    return w ? msToFrame(w.startMs) : null;
+  });
+  // Written from a little after the page arrives.
+  const starts = sceneStarts(froms, from + 8, to);
+  return lines.map((l, i) => ({ from: starts[i], text: l.text, sketch: l.sketch }));
+}
+
+/**
+ * While a Notes page is up, the speaker moves aside: the middle half of the
+ * picture to the left half (wide videos), or a band from the upper part to
+ * the top half (tall ones). Returns the picture's shift as fractions of the
+ * frame, or null.
+ */
+export function splitShift(
+  graphics: PlacedGraphic[],
+  frame: number,
+  portrait: boolean,
+): { x: number; y: number } | null {
+  const on = graphics.some((g) => g.type === "notes" && frame >= g.from && frame < g.to);
+  if (!on) return null;
+  return portrait ? { x: 0, y: -SPLIT_TALL } : { x: -SPLIT_WIDE, y: 0 };
+}
+/** How far the picture shifts for a Notes page (render-worker/motion.js the same). */
+export const SPLIT_WIDE = 0.25;
+export const SPLIT_TALL = 0.15;
 
 export type PlacedZoom = { id: string; from: number; to: number; zoom: "in" | "out" };
 
@@ -134,6 +175,7 @@ export function placeGraphics(
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
       swap: el.type === "loop" && el.swap ? el.swap : null,
       profile: el.type === "profile" && el.profile ? el.profile : null,
+      lines: el.type === "notes" ? placeLines(el, from, to, wordsByKey) : null,
       scenes: PICTURE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
     });
   }

@@ -13,6 +13,7 @@
 // Anthropic SDK builds its structured-output format from zod v4.
 
 import { z } from "zod/v4";
+import { SKETCH_PATHS, type SketchId } from "@/motion/sketches";
 import { layoutTrack } from "@/lib/timeline-layout";
 import {
   placeTranscripts,
@@ -22,6 +23,12 @@ import {
 } from "@/lib/captions";
 
 export const MOTION_STYLE = "motion-explainer";
+
+/** The Notes page's built-in sketches (src/motion/sketches.ts). */
+export const SKETCH_IDS = Object.keys(SKETCH_PATHS) as [SketchId, ...SketchId[]];
+/** A Notes page's lines: at least two, at most this many; and their length. */
+export const MAX_NOTE_LINES = 8;
+const MAX_NOTE_TEXT = 60;
 
 /** The graphics' looks (stage 10): every graphic restyled at once. */
 export const MOTION_LOOKS = ["glass", "paper"] as const;
@@ -40,6 +47,7 @@ export const ELEMENT_TYPES = [
   "coins",
   "stream",
   "profile",
+  "notes",
   "chapter",
   "label",
   "cta",
@@ -60,6 +68,7 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   coins: "Coins",
   stream: "Card stream",
   profile: "Social profile",
+  notes: "Notes",
   chapter: "Chapter",
   label: "Label",
   cta: "Call to action",
@@ -208,6 +217,17 @@ export const DraftElement = z.object({
   behind: z.boolean(),
   /** A loop's stop (0-based) whose words change near the end, and to what; or null. */
   swap: z.object({ item: z.number().int(), text: z.string() }).nullable(),
+  /** A Notes page's lines in order, each with an optional sketch; [] for other types. */
+  lines: z.array(
+    z.object({
+      /** Number of the word the line is written on. */
+      from_word: z.number().int(),
+      /** The note (a few words). */
+      text: z.string(),
+      /** A sketch drawn beside it, or null. */
+      sketch: z.enum(SKETCH_IDS).nullable(),
+    }),
+  ),
   /** A social profile's details, as far as they were said; null for other types. */
   profile: z
     .object({
@@ -276,6 +296,14 @@ export function parseSpeakerCartoon(raw: unknown): SpeakerCartoon | null {
   return r.success ? r.data : null;
 }
 
+/** One line of a Notes page: written on a word, with an optional sketch. */
+export const NoteLine = z.object({
+  at: Anchor,
+  text: z.string().max(MAX_NOTE_TEXT),
+  sketch: z.enum(SKETCH_IDS).nullable(),
+});
+export type NoteLine = z.infer<typeof NoteLine>;
+
 export const MotionScene = z.object({
   /** The word the scene starts on. */
   at: Anchor,
@@ -313,6 +341,8 @@ export const MotionElement = z
     scenes: z.array(MotionScene).max(MAX_STREAM).optional(),
     /** A social profile's details (profiles only). */
     profile: ProfileDetails.optional(),
+    /** A Notes page's lines, each written on its word (notes only). */
+    lines: z.array(NoteLine).max(MAX_NOTE_LINES).optional(),
     /** "ai" as planned; "user" once added or changed by hand. */
     source: z.enum(["ai", "user"]),
   })
@@ -431,6 +461,7 @@ const EXCLUSIVE: ReadonlySet<ElementType> = new Set([
   "coins",
   "stream",
   "profile",
+  "notes",
   "chapter",
   "cta",
 ]);
@@ -449,9 +480,27 @@ export const FULL_SCREEN_TYPES: ReadonlySet<ElementType> = new Set([
   "coins",
   "stream",
   "profile",
+  "notes",
 ]);
 
 const clean = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
+
+/** A Notes draft's lines: inside its words, in order, one per word, tidied. */
+function noteLines(d: DraftElement) {
+  const out: { from_word: number; text: string; sketch: SketchId | null }[] = [];
+  for (const l of [...(d.lines ?? [])].sort((a, b) => a.from_word - b.from_word)) {
+    const text = clean(l.text, MAX_NOTE_TEXT);
+    if (!Number.isInteger(l.from_word) || l.from_word < d.from_word || l.from_word > d.to_word)
+      continue;
+    if (!text || (out.length && out[out.length - 1].from_word === l.from_word)) continue;
+    out.push({
+      from_word: l.from_word,
+      text,
+      sketch: l.sketch && SKETCH_IDS.includes(l.sketch) ? l.sketch : null,
+    });
+  }
+  return out.slice(0, MAX_NOTE_LINES);
+}
 
 /** A profile's details, trimmed to their limits (empty where not given). */
 function cleanProfile(p: Partial<ProfileDetails> | null | undefined): ProfileDetails {
@@ -550,6 +599,8 @@ export function draftsToElements(
         case "stream":
         case "profile":
           return true;
+        case "notes":
+          return noteLines(d).length >= 2;
         default:
           return d.text !== "";
       }
@@ -596,6 +647,15 @@ export function draftsToElements(
         : {}),
       ...(d.type === "stream" || d.type === "profile" ? { scenes: [] } : {}),
       ...(d.type === "profile" ? { profile: cleanProfile(d.profile) } : {}),
+      ...(d.type === "notes"
+        ? {
+            lines: noteLines(d).map((l) => ({
+              at: anchorOf(words[l.from_word]),
+              text: l.text,
+              sketch: l.sketch,
+            })),
+          }
+        : {}),
       ...(SCENE_TYPES.has(d.type)
         ? {
             scenes: d.scenes.map((sc) => ({
@@ -660,6 +720,8 @@ export function elementSummary(el: MotionElement): string {
     }
     case "profile":
       return el.profile?.handle ? `@${el.profile.handle}` : el.text || "Social profile";
+    case "notes":
+      return el.text || (el.lines ?? []).map((l) => l.text).join(" · ");
     case "steps":
     case "loop":
       return [el.text, el.items.join(" → ") + (el.type === "loop" ? " ↻" : "")]
@@ -806,6 +868,15 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
               ? el.scenes.slice(0, MAX_SCENES)
               : [firstScene(el)],
     profile: type === "profile" ? (el.profile ?? { ...EMPTY_PROFILE }) : undefined,
+    // A Notes page starts from the graphic's items (or two blank lines).
+    lines:
+      type === "notes"
+        ? el.lines?.length
+          ? el.lines
+          : (el.items.length >= 2 ? el.items : ["First note", "Second note"])
+              .slice(0, MAX_NOTE_LINES)
+              .map((text) => ({ at: el.start, text: text.slice(0, MAX_NOTE_TEXT), sketch: null }))
+        : undefined,
   });
 }
 

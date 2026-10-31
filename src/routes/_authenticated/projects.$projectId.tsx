@@ -50,7 +50,7 @@ import {
   wordsByKey,
   type MotionElement,
 } from "@/lib/motion-plan";
-import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
+import { MOTION_FPS, placeGraphics, splitShift, zoomAt } from "@/motion/timing";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
@@ -2574,6 +2574,15 @@ function EditorPage() {
               ),
               pictureScale: graphicsOn
                 ? (timeMs) => zoomAt(placedMotion.zooms, frameAtMs(timeMs))
+                : undefined,
+              // A Notes page beside the speaker moves them aside.
+              pictureShift: graphicsOn
+                ? (timeMs) =>
+                    splitShift(
+                      placedMotion.graphics,
+                      frameAtMs(timeMs),
+                      project.aspect_ratio === "9:16",
+                    )
                 : undefined,
               selectedClipId,
               onSelectClip: (id) => setSelectedClipId(id),

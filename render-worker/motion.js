@@ -22,11 +22,14 @@ export const MOTION_FPS = 30;
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
-const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "chapter", "label", "cta"]);
+const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "chapter", "label", "cta"]);
 // Most items per type (src/lib/motion-plan.ts maxItems).
 const MAX_ITEMS = { compare: 2, card: 4, steps: 5, loop: 6 };
 // Graphics that fill the screen, so the captions make way (FULL_SCREEN_TYPES).
-const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile"]);
+const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes"]);
+// How far the picture shifts while a Notes page is up (src/motion/timing.ts).
+const SPLIT_WIDE = 0.25;
+const SPLIT_TALL = 0.15;
 // Types with pictures, and how many each holds (src/lib/motion-plan.ts maxScenes).
 const PICTURE_LIMIT = { story: 6, cartoon: 1, stream: 12, profile: 7 };
 // Types that can go behind the speaker (src/lib/motion-plan.ts BEHIND_TYPES).
@@ -87,6 +90,7 @@ export function placeGraphics(elements, words) {
           ? { item: el.swap.item, text: el.swap.text.slice(0, 40) }
           : null,
       profile: el.type === "profile" ? profileDetails(el.profile) : null,
+      lines: el.type === "notes" ? placeLines(el.lines, from, to, byKey) : null,
       scenes: PICTURE_LIMIT[el.type] ? placeScenes(el.scenes, PICTURE_LIMIT[el.type], from, to, byKey) : null,
     });
   }
@@ -102,6 +106,46 @@ export function sceneStarts(froms, from, to) {
   const ok = froms.every((f, i) => f != null && f >= from && f < to && (i === 0 || f > froms[i - 1]));
   if (ok) return froms.map((f, i) => (i === 0 ? from : f));
   return froms.map((_, i) => Math.round(from + ((to - from) * i) / n));
+}
+
+/** A Notes page's lines: when each is written, its words and its sketch's name. */
+function placeLines(lines, from, to, byKey) {
+  const list = (Array.isArray(lines) ? lines : []).filter((l) => l && typeof l === "object").slice(0, 8);
+  const froms = list.map((l) => {
+    const w = byKey.get(`${l.at?.clip_id}:${l.at?.word_index}`);
+    return w ? msToFrame(w.start_ms) : null;
+  });
+  const starts = sceneStarts(froms, from + 8, to);
+  return list.map((l, i) => ({
+    from: starts[i],
+    text: typeof l.text === "string" ? l.text.slice(0, 60) : "",
+    sketch: typeof l.sketch === "string" && /^[a-z]{2,20}$/.test(l.sketch) ? l.sketch : null,
+  }));
+}
+
+/**
+ * Time ranges (s) with a Notes page up: the speaker moves aside then (the
+ * middle half of the picture to the left half, or a band of the upper part
+ * to the top half), and the page covers the other side.
+ */
+export function splitRanges(graphics) {
+  return graphics
+    .filter((g) => g.type === "notes")
+    .map((g) => [g.from / MOTION_FPS, g.to / MOTION_FPS]);
+}
+
+/** The ffmpeg filters that move the speaker aside during those ranges. */
+export function splitFilters(input, ranges, portrait, out) {
+  if (!ranges.length) return null;
+  const when = ranges.map(([a, b]) => `between(t,${a.toFixed(3)},${b.toFixed(3)})`).join("+");
+  const crop = portrait
+    ? `crop=iw:ih/2:0:ih*${SPLIT_TALL}`
+    : `crop=iw/2:ih:iw*${SPLIT_WIDE}:0`;
+  return [
+    `[${input}]split[${out}a][${out}b]`,
+    `[${out}b]${crop}[${out}c]`,
+    `[${out}a][${out}c]overlay=0:0:enable='${when}'[${out}]`,
+  ];
 }
 
 /** A social profile's details, each a string within its limit. */
@@ -312,7 +356,7 @@ export async function renderGraphics({
  * text filters (captions, hook). Audio is copied. `textFilters` is a list of
  * filters (or empty).
  */
-export function composeArgs({ input, pieces, zoom, textFilters, output, behind = null }) {
+export function composeArgs({ input, pieces, zoom, textFilters, output, behind = null, split = null }) {
   const args = ["-y", "-i", input];
   for (const p of pieces) {
     args.push("-itsoffset", p.startS.toFixed(4), "-i", p.file);
@@ -322,6 +366,12 @@ export function composeArgs({ input, pieces, zoom, textFilters, output, behind =
   if (zoom) {
     graph.push(`[${last}]${zoom},setsar=1[zm]`);
     last = "zm";
+  }
+  // A Notes page: the speaker moves aside (the page is drawn over the other side).
+  const sp = split ? splitFilters(last, split.ranges, split.portrait, "sp") : null;
+  if (sp) {
+    graph.push(...sp);
+    last = "sp";
   }
   if (behind?.masks?.length) {
     const b = behindFilters({
@@ -458,6 +508,15 @@ export function baseSoundEvents(graphics, zooms) {
         b.flicks.forEach((f, i) => add(g, `flick${i}`, "ui-blip", at + frameMs(f)));
         break;
       }
+      case "notes":
+        // The page slides in; a click as each line is written, a blip when
+        // its sketch draws on.
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        (g.lines ?? []).forEach((l, i) => {
+          add(g, `line${i}`, "click", frameMs(l.from));
+          if (l.sketch) add(g, `sketch${i}`, "ui-blip", frameMs(l.from + 6));
+        });
+        break;
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
         add(g, "hit", "hit", at);

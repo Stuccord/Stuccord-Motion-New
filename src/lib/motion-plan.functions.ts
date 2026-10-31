@@ -377,6 +377,10 @@ export const saveMotionPlan = createServerFn({ method: "POST" })
         throw new Error("A scene picture isn't one of this project's.");
       }
     }
+    // Notes lines: on this project's clips.
+    if (plan.elements.some((e) => (e.lines ?? []).some((l) => !clipIds.has(l.at.clip_id)))) {
+      throw new Error("A note line points at a clip that isn't in this project.");
+    }
     const ids = new Set(plan.elements.map((e) => e.id));
     if (ids.size !== plan.elements.length) throw new Error("Two graphics have the same id.");
 

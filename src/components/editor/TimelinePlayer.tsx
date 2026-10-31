@@ -61,6 +61,11 @@ type Props = {
   /** How much the picture (not the overlay) is zoomed in at a time; 1 or none: not zoomed. */
   pictureScale?: (timeMs: number) => number;
   /**
+   * How far the picture moves aside at a time (fractions of the frame), for
+   * a Notes page beside the speaker; null or none: not moved.
+   */
+  pictureShift?: (timeMs: number) => { x: number; y: number } | null;
+  /**
    * Graphics behind the speaker: how far in a time is (0 none, 1 full: the
    * room darkened and blurred, the speaker cut out in front), and what's
    * drawn between the room and the speaker.
@@ -96,6 +101,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     onTick,
     renderOverlay,
     pictureScale,
+    pictureShift,
     behindAt,
     renderBehind,
     onStall,
@@ -385,8 +391,15 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
 
   // The picture's zoom, and how far into a behind graphic this time is.
   const scale = pictureScale?.(t) ?? 1;
+  const shift = pictureShift?.(t) ?? null;
+  // Zoomed first, then moved aside (the export does the same, in that order).
   const zoomStyle: React.CSSProperties | undefined =
-    scale !== 1 ? { transform: `scale(${scale})`, transformOrigin: "50% 40%" } : undefined;
+    scale !== 1 || shift
+      ? {
+          transform: `${shift ? `translate(${shift.x * 100}%, ${shift.y * 100}%) ` : ""}scale(${scale})`,
+          transformOrigin: "50% 40%",
+        }
+      : undefined;
   const behind = behindAt?.(t) ?? 0;
 
   // What the box can grab: the clips showing now, top-most first.

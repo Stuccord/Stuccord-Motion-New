@@ -23,6 +23,7 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { PaperGraphic } from "@/motion/PaperGraphics";
+import { NotesGraphic } from "@/motion/NotesGraphic";
 import {
   BASE_FPS,
   ImagesContext,
@@ -1774,6 +1775,7 @@ const DRAW: Record<
   coins: Coins,
   stream: Stream,
   profile: Profile,
+  notes: NotesGraphic,
   chapter: Chapter,
   label: Label,
   cta: Cta,

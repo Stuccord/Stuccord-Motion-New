@@ -8,7 +8,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { DraftPlan } from "@/lib/motion-plan";
+import { DraftPlan, SKETCH_IDS } from "@/lib/motion-plan";
+
+const SKETCHES = SKETCH_IDS.join(", ");
 
 export const PLAN_MODEL = "claude-sonnet-5-5";
 
@@ -32,6 +34,7 @@ Graphic types (field "type"):
 - coins: a choice, a gamble or chances ("every choice is a coin flip", "most will fail, one will change everything"). Full screen: a glossy coin spins up, then many fan out in a ring. "text" is the line (under 10 words), "emphasis" one word from it; "items" optional labels for the coins (2-8 short ones) or [].
 - stream: proof or a pile of results ("I've worked with hundreds of clients", "all these videos", "look at the results"). Full screen: a stream of pictures jumping into a pile, ending on the brand logo; the pictures come from the creator, not from you. "text" is an optional title (under 6 words). At most one or two per video.
 - profile: when the speaker talks about their own social media profile or account ("my Instagram", "my main page is just photo dumps"). Full screen: a social profile that builds itself, then its photos flick through. Set "profile" {handle, name, bio, posts, followers, following} with only what was actually said ("" for everything else - the creator fills it in); "text" is "". At most one per video.
+- notes: a long teaching stretch where the speaker explains something step by step without other big moments (20-90 seconds). Split screen: the speaker moves to one side and a note page on the other fills up as they talk. "text" is the page title (under 7 words); set "lines": 3-8 notes in spoken order, each with "from_word" (the word it's written on), "text" (2-6 words, the speaker's point) and "sketch" (one of: ${SKETCHES}; or null when none fits). At most two or three per video; nothing else overlaps it.
 - chapter: a section divider when the speaker starts a new part, tip or step ("tip number one", "moving on to..."). "text" is the section title.
 - label: a small "you are here" label naming the current item or topic; it may stay up while other graphics come and go.
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
@@ -44,14 +47,14 @@ Behind the speaker (field "behind"):
 
 Timing:
 - "from_word" is the first word that triggers the graphic; "to_word" the last word it stays up for (usually the end of the phrase or sentence, 1.5-8 seconds of speech). A list stays until its last item is said.
-- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, stream, profile, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
+- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, stream, profile, notes, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
 - Pace: the opening (hook) is the densest - a visual every 3-4 seconds. Later, a graphic or a zoom roughly every 5-10 seconds. Leave the speaker on screen for personal, emotional moments.
 
 Writing:
 - Use the speaker's own words and language. Keep on-screen text short: titles under 6 words, items under 5 words, key lines under 12 words.
 - Never invent facts, numbers, names or claims that weren't said. If the script differs from what was said, follow what was said.
 - "reason" is a few words on why this graphic fits here (e.g. "number said", "three benefits listed", "new tip starts").
-- "swap" is null on every type but loop (and on most loops); "profile" is null on every type but profile.
+- "swap" is null on every type but loop (and on most loops); "profile" is null on every type but profile; "lines" is [] on every type but notes.
 - Use null for fields a type doesn't use, and [] for unused items and for "scenes" on every type but story and cartoon.
 - "language" is the transcript's language as a short code (e.g. "en").`;
 
