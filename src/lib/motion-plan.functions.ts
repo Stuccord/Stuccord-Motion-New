@@ -26,9 +26,11 @@ import {
   mainSegments,
   numberedTranscript,
   parseMotionPlan,
+  parseSpeakerCartoon,
   spokenWords,
   type MotionPlan,
   type PlanClip,
+  type SpeakerCartoon,
 } from "@/lib/motion-plan";
 import { planFor, type Plan } from "@/lib/plans";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
@@ -159,6 +161,8 @@ export type MotionPlanState = {
   allowance: PlanAllowance;
   /** AI story pictures this month. */
   images: PlanAllowance;
+  /** The project's cartoon of its speaker (stage 8), if made. */
+  character: SpeakerCartoon | null;
 };
 
 export const getMotionPlan = createServerFn({ method: "POST" })
@@ -191,8 +195,21 @@ export const getMotionPlan = createServerFn({ method: "POST" })
       untranscribed: missing.length,
       allowance: await planAllowance(context.userId, project.team_id),
       images: await imageAllowance(context.userId, project.team_id),
+      character: projectCartoon(project),
     };
   });
+
+/** The project's cartoon, if it's stored and in the project's own folder. */
+export function projectCartoon(project: {
+  id: string;
+  user_id: string;
+  motion_character: Json | null;
+}): SpeakerCartoon | null {
+  const c = parseSpeakerCartoon(project.motion_character);
+  const folder = sceneImageFolder(project.user_id, project.id);
+  const ok = (p: string) => p.startsWith(folder) && !p.includes("..");
+  return c && ok(c.image) && ok(c.photo) ? c : null;
+}
 
 // ---------- planning ----------
 
@@ -354,10 +371,10 @@ export const saveMotionPlan = createServerFn({ method: "POST" })
     const folder = sceneImageFolder(project.user_id, project.id);
     for (const sc of plan.elements.flatMap((e) => e.scenes ?? [])) {
       if (!clipIds.has(sc.at.clip_id)) {
-        throw new Error("A story scene points at a clip that isn't in this project.");
+        throw new Error("A scene points at a clip that isn't in this project.");
       }
       if (sc.image && (!sc.image.path.startsWith(folder) || sc.image.path.includes(".."))) {
-        throw new Error("A story picture isn't one of this project's.");
+        throw new Error("A scene picture isn't one of this project's.");
       }
     }
     const ids = new Set(plan.elements.map((e) => e.id));

@@ -30,6 +30,7 @@ export const ELEMENT_TYPES = [
   "card",
   "compare",
   "story",
+  "cartoon",
   "chapter",
   "label",
   "cta",
@@ -44,6 +45,7 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   card: "Card",
   compare: "A vs B",
   story: "Story",
+  cartoon: "Cartoon",
   chapter: "Chapter",
   label: "Label",
   cta: "Call to action",
@@ -55,6 +57,11 @@ const MAX_TEXT = 200;
 const MAX_ELEMENTS = 300;
 /** A story's scenes: at least two, at most this many. */
 export const MAX_SCENES = 6;
+/**
+ * Types with pictured scenes: a story (2-6) and a cartoon of the speaker
+ * acting a moment out (exactly one, always with the speaker).
+ */
+export const SCENE_TYPES: ReadonlySet<ElementType> = new Set(["story", "cartoon"]);
 /** Longest scene text on screen, and longest image description. */
 const MAX_SCENE_TEXT = 80;
 export const MAX_SCENE_PROMPT = 600;
@@ -96,6 +103,8 @@ export const DraftScene = z.object({
   emphasis: z.string().nullable(),
   /** What the image shows (no text in it). */
   prompt: z.string(),
+  /** The speaker is in the picture (drawn as their cartoon). */
+  speaker: z.boolean(),
 });
 export type DraftScene = z.infer<typeof DraftScene>;
 
@@ -116,7 +125,7 @@ export const DraftElement = z.object({
   zoom: z.enum(ZOOM_KINDS).nullable(),
   /** Drawn behind the speaker (cut out in front of it). */
   behind: z.boolean(),
-  /** A story's scenes, in order; [] for every other type. */
+  /** A story's scenes in order, or a cartoon's one; [] for every other type. */
   scenes: z.array(DraftScene),
   /** Why this graphic, in a few words (shown to the user). */
   reason: z.string(),
@@ -149,6 +158,30 @@ const SceneImage = z.object({
 });
 export type SceneImage = z.infer<typeof SceneImage>;
 
+/**
+ * The project's cartoon of its speaker (projects.motion_character, written
+ * only by the server): made by the AI from a photo of them, with consent.
+ */
+export const SpeakerCartoon = z.object({
+  /** The cartoon, in the project's folder of motion-images. */
+  image: z.string().min(1).max(300),
+  /** The photo it was made from, in the same folder. */
+  photo: z.string().min(1).max(300),
+  /** Whether the photo is a frame of the footage or an upload. */
+  from: z.enum(["footage", "upload"]),
+  /** Who confirmed they are the speaker or have their permission, and when. */
+  consent_by: z.string().uuid(),
+  consent_at: z.string(),
+  made_at: z.string(),
+});
+export type SpeakerCartoon = z.infer<typeof SpeakerCartoon>;
+
+/** The stored cartoon, or null when there's none (or it doesn't parse). */
+export function parseSpeakerCartoon(raw: unknown): SpeakerCartoon | null {
+  const r = SpeakerCartoon.safeParse(raw);
+  return r.success ? r.data : null;
+}
+
 export const MotionScene = z.object({
   /** The word the scene starts on. */
   at: Anchor,
@@ -158,6 +191,8 @@ export const MotionScene = z.object({
   prompt: z.string().max(MAX_SCENE_PROMPT),
   /** The picture; null until it's made. */
   image: SceneImage.nullable(),
+  /** The speaker is in the picture, drawn as the project's cartoon of them. */
+  speaker: z.boolean().optional(),
 });
 export type MotionScene = z.infer<typeof MotionScene>;
 
@@ -175,7 +210,7 @@ export const MotionElement = z.object({
   reason: z.string().max(300),
   /** Drawn behind the speaker, who is cut out in front of it (BEHIND_TYPES only). */
   behind: z.boolean().optional(),
-  /** A story's scenes, in order (stories only). */
+  /** A story's scenes in order, or a cartoon's one (SCENE_TYPES only). */
   scenes: z.array(MotionScene).max(MAX_SCENES).optional(),
   /** "ai" as planned; "user" once added or changed by hand. */
   source: z.enum(["ai", "user"]),
@@ -282,6 +317,7 @@ const EXCLUSIVE: ReadonlySet<ElementType> = new Set([
   "card",
   "compare",
   "story",
+  "cartoon",
   "chapter",
   "cta",
 ]);
@@ -315,8 +351,22 @@ export function draftsToElements(
         emphasisRaw && text.toLowerCase().includes(emphasisRaw.toLowerCase()) ? emphasisRaw : null;
       const items = d.items.map((i) => clean(i, 80)).filter(Boolean);
       // A story's scenes: inside its words, in order, one per starting word.
+      // A cartoon's one scene: from its first word, always with the speaker.
       const scenes: DraftScene[] = [];
-      if (d.type === "story") {
+      if (d.type === "cartoon") {
+        const sc = d.scenes.find((s) => clean(s.prompt, MAX_SCENE_PROMPT));
+        if (sc) {
+          const sceneText = clean(sc.text, MAX_SCENE_TEXT);
+          const em = sc.emphasis ? clean(sc.emphasis, 60) : "";
+          scenes.push({
+            from_word: d.from_word,
+            text: sceneText,
+            emphasis: em && sceneText.toLowerCase().includes(em.toLowerCase()) ? em : null,
+            prompt: clean(sc.prompt, MAX_SCENE_PROMPT),
+            speaker: true,
+          });
+        }
+      } else if (d.type === "story") {
         for (const sc of [...d.scenes].sort((a, b) => a.from_word - b.from_word)) {
           const sceneText = clean(sc.text, MAX_SCENE_TEXT);
           const prompt = clean(sc.prompt, MAX_SCENE_PROMPT);
@@ -329,6 +379,7 @@ export function draftsToElements(
             text: sceneText,
             emphasis: em && sceneText.toLowerCase().includes(em.toLowerCase()) ? em : null,
             prompt,
+            speaker: sc.speaker === true,
           });
         }
       }
@@ -348,6 +399,8 @@ export function draftsToElements(
           return d.zoom != null;
         case "story":
           return d.scenes.length >= 2;
+        case "cartoon":
+          return d.scenes.length === 1;
         default:
           return d.text !== "";
       }
@@ -385,7 +438,7 @@ export function draftsToElements(
       zoom: d.type === "zoom" ? d.zoom : null,
       reason: clean(d.reason, 300),
       ...(d.behind === true && BEHIND_TYPES.has(d.type) ? { behind: true } : {}),
-      ...(d.type === "story"
+      ...(SCENE_TYPES.has(d.type)
         ? {
             scenes: d.scenes.map((sc) => ({
               at: anchorOf(words[sc.from_word]),
@@ -393,6 +446,7 @@ export function draftsToElements(
               emphasis: sc.emphasis,
               prompt: sc.prompt,
               image: null,
+              ...(sc.speaker ? { speaker: true } : {}),
             })),
           }
         : {}),
@@ -440,6 +494,8 @@ export function elementSummary(el: MotionElement): string {
       return el.zoom === "in" ? "Punch in" : "Ease out";
     case "story":
       return el.text || (el.scenes ?? []).map((sc) => sc.text).join(" → ");
+    case "cartoon":
+      return el.scenes?.[0]?.text || el.text || "Cartoon of the speaker";
     default:
       return el.text;
   }
@@ -562,22 +618,28 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
     cta: type === "cta" ? (el.cta ?? "like") : null,
     zoom: type === "zoom" ? (el.zoom ?? "in") : null,
     behind: BEHIND_TYPES.has(type) ? el.behind : undefined,
-    // A story starts with one scene from the graphic's own words.
-    scenes:
-      type === "story"
-        ? el.scenes?.length
+    // A story starts with one scene from the graphic's own words; a cartoon
+    // keeps just one scene, always with the speaker.
+    scenes: !SCENE_TYPES.has(type)
+      ? undefined
+      : type === "cartoon"
+        ? [{ ...firstScene(el), speaker: true }]
+        : el.scenes?.length
           ? el.scenes
-          : [
-              {
-                at: el.start,
-                text: el.text.slice(0, MAX_SCENE_TEXT),
-                emphasis: null,
-                prompt: "",
-                image: null,
-              },
-            ]
-        : undefined,
+          : [firstScene(el)],
   });
+}
+
+function firstScene(el: MotionElement): MotionScene {
+  return (
+    el.scenes?.[0] ?? {
+      at: el.start,
+      text: el.text.slice(0, MAX_SCENE_TEXT),
+      emphasis: null,
+      prompt: "",
+      image: null,
+    }
+  );
 }
 
 /** An empty plan, for adding graphics by hand before (or without) the AI. */

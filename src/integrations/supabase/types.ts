@@ -120,6 +120,7 @@ export type Database = {
           id: string
           music_enabled: boolean
           motion_plan: Json | null
+          motion_character: Json | null
           motion_plan_previous: Json | null
           music_volume: number
           output_path: string | null
@@ -144,6 +145,7 @@ export type Database = {
           id?: string
           music_enabled?: boolean
           motion_plan?: Json | null
+          motion_character?: Json | null
           motion_plan_previous?: Json | null
           music_volume?: number
           output_path?: string | null
@@ -168,6 +170,7 @@ export type Database = {
           id?: string
           music_enabled?: boolean
           motion_plan?: Json | null
+          motion_character?: Json | null
           motion_plan_previous?: Json | null
           music_volume?: number
           output_path?: string | null

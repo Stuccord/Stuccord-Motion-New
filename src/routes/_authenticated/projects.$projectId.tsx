@@ -53,6 +53,7 @@ import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
+import { pickSpeakerFrames } from "@/lib/speaker-frames";
 import { useStoryImages } from "@/components/editor/useStoryImages";
 import {
   DEFAULT_SOUND_VOLUME,
@@ -1538,6 +1539,22 @@ function EditorPage() {
     motionAccent(motion.plan?.colour, brand.data?.kit?.highlightColor).hex,
   );
 
+  // Clear frames of the speaker for their cartoon: spread over the first
+  // main video (up to its first two minutes).
+  const findSpeakerFrames = useCallback(async () => {
+    if (!firstMainClip) return null;
+    const from = firstMainClip.trim_in_ms ?? 0;
+    const len = Math.min(120_000, clipVisibleMs(firstMainClip));
+    const times = Array.from({ length: 10 }, (_, i) => Math.round(from + (len * (i + 0.5)) / 10));
+    try {
+      const { url } = await signClip({ data: { path: firstMainClip.storage_path } });
+      return await pickSpeakerFrames(url, times);
+    } catch (e) {
+      console.warn("[editor] Couldn't read frames of the speaker:", e);
+      return null;
+    }
+  }, [firstMainClip, signClip]);
+
   // The main player is the live timeline, the render, or the selected clip's
   // file (see PreviewCanvas). currentTime means a position in whichever one it
   // is showing, so every time conversion has to check this first. Render
@@ -1728,7 +1745,10 @@ function EditorPage() {
     const f = frameAtMs(ms);
     return placedMotion.graphics.some(
       (g) =>
-        (g.type === "keyline" || g.type === "chapter" || g.type === "story") &&
+        (g.type === "keyline" ||
+          g.type === "chapter" ||
+          g.type === "story" ||
+          g.type === "cartoon") &&
         f >= g.from &&
         f < g.to,
     );
@@ -2774,6 +2794,25 @@ function EditorPage() {
                                   ...p,
                                   colour: { ...p.colour, choice: hex },
                                 })),
+                            }
+                          : undefined
+                      }
+                      cartoon={
+                        motionPlan
+                          ? {
+                              ...storyImages.cartoon,
+                              canEdit: canEditGraphics,
+                              waiting: motionPlan.elements.reduce(
+                                (n, e) =>
+                                  n +
+                                  (e.scenes ?? []).filter(
+                                    (sc, i) =>
+                                      !sc.image &&
+                                      (e.type === "cartoon" ? i === 0 : sc.speaker === true),
+                                  ).length,
+                                0,
+                              ),
+                              findFrames: findSpeakerFrames,
                             }
                           : undefined
                       }

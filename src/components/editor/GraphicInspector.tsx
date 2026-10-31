@@ -36,6 +36,7 @@ const HINT: Record<ElementType, string> = {
   card: "A glass card with a title and a few lines.",
   compare: "Two sides, A vs B.",
   story: "A short story: one AI picture per scene, joined by one camera move.",
+  cartoon: "The speaker's cartoon acting a moment out, full screen.",
   chapter: "A full-screen divider for a new part, with progress.",
   label: "A small label naming the current topic.",
   cta: "A button the pointer clicks (like, subscribe…).",
@@ -84,7 +85,8 @@ export function GraphicInspector({
 }) {
   const el = element;
   const set = (patch: Partial<MotionElement>) => onChange(markEdited({ ...el, ...patch }));
-  const showText = el.type !== "zoom";
+  // A cartoon's words are its scene's caption.
+  const showText = el.type !== "zoom" && el.type !== "cartoon";
   const showEmphasis = el.type === "keyline" || el.type === "card";
   const showItems = el.type === "list" || el.type === "compare" || el.type === "card";
 
@@ -167,9 +169,11 @@ export function GraphicInspector({
           </Field>
         )}
 
-        {el.type === "story" && story && (
+        {(el.type === "story" || el.type === "cartoon") && story && (
           <div className="space-y-1">
-            <span className="text-[10px] uppercase tracking-wide text-neutral-500">Scenes</span>
+            <span className="text-[10px] uppercase tracking-wide text-neutral-500">
+              {el.type === "cartoon" ? "Picture" : "Scenes"}
+            </span>
             <StoryScenesEditor
               element={el}
               tools={story}

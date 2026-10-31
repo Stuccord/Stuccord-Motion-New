@@ -22,7 +22,9 @@ export const MOTION_FPS = 30;
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
-const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "chapter", "label", "cta"]);
+const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "chapter", "label", "cta"]);
+// Types with pictured scenes (a cartoon has one).
+const SCENE_TYPES = new Set(["story", "cartoon"]);
 const MAX_SCENES = 6;
 // Types that can go behind the speaker (src/lib/motion-plan.ts BEHIND_TYPES).
 const BEHIND_TYPES = new Set(["keyline", "counter", "list", "card", "compare", "chapter"]);
@@ -77,7 +79,7 @@ export function placeGraphics(elements, words) {
       cta: ["like", "subscribe", "comment", "link"].includes(el.cta) ? el.cta : null,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
-      scenes: el.type === "story" ? placeScenes(el.scenes, from, to, byKey) : null,
+      scenes: SCENE_TYPES.has(el.type) ? placeScenes(el.type === "cartoon" ? (el.scenes ?? []).slice(0, 1) : el.scenes, from, to, byKey) : null,
     });
   }
   return { graphics, zooms };
@@ -117,7 +119,7 @@ function placeScenes(scenes, from, to, byKey) {
 export function storyImages(images) {
   const out = {};
   if (!images || typeof images !== "object") return out;
-  for (const [k, v] of Object.entries(images).slice(0, 60)) {
+  for (const [k, v] of Object.entries(images).slice(0, 120)) {
     if (typeof k === "string" && k.length <= 300 && typeof v === "string" && /^https:\/\//.test(v)) out[k] = v;
   }
   return out;
@@ -138,10 +140,10 @@ export function graphicRanges(graphics, totalFrames, joinGap = 15) {
   return out;
 }
 
-/** Time ranges (ms) where a key line, chapter or story fills the captions' space. */
+/** Time ranges (ms) where a key line, chapter, story or cartoon fills the captions' space. */
 export function captionGaps(graphics) {
   return graphics
-    .filter((g) => g.type === "keyline" || g.type === "chapter" || g.type === "story")
+    .filter((g) => g.type === "keyline" || g.type === "chapter" || g.type === "story" || g.type === "cartoon")
     .map((g) => [(g.from / MOTION_FPS) * 1000, (g.to / MOTION_FPS) * 1000]);
 }
 
@@ -340,6 +342,10 @@ export function baseSoundEvents(graphics, zooms) {
         (g.scenes ?? []).forEach((sc, i) =>
           add(g, `scene${i}`, i === 0 ? "whoosh-deep" : "whoosh-light", frameMs(sc.from) - WHOOSH_LEAD_MS),
         );
+        break;
+      case "cartoon":
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        add(g, "pop", "pop", at);
         break;
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);

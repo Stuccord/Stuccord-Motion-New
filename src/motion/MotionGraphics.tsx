@@ -262,6 +262,84 @@ function SceneWords({
   );
 }
 
+// ---------- cartoon: the speaker's cartoon acting a moment out ----------
+
+function Cartoon({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  const frame = useStepFrame();
+  const { unit, portrait } = useUnit();
+  const images = React.useContext(ImagesContext);
+  const scene = g.scenes?.[0];
+  const url = scene?.image ? images[scene.image] : undefined;
+  const length = g.to - g.from;
+  // Springs in with a little overshoot and a tilt that settles, then drifts
+  // slowly closer; on the way out it grows a touch as it fades.
+  const t = clamp01(frame / 10);
+  const settle = 1 + Math.sin(t * Math.PI) * 0.04;
+  const enter = 0.86 + 0.14 * easeOut(t);
+  const out = 1 - exitOpacity(frame, length);
+  const scale = enter * settle + out * 0.05;
+  const tilt = (1 - easeOut(frame / 12)) * -4;
+  const drift = 1.04 + (frame / Math.max(1, length)) * 0.06;
+
+  return (
+    <AbsoluteFill
+      style={{
+        opacity: Math.min(easeOut(frame / 6), exitOpacity(frame, length)),
+        background: `radial-gradient(ellipse at 50% 40%, ${theme.secondary} 0%, ${theme.main} 75%)`,
+        fontFamily: SANS,
+        color: theme.text,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: portrait ? `${unit * 10}px ${unit * 5}px` : `${unit * 5}px ${unit * 10}px`,
+          borderRadius: unit * 4,
+          overflow: "hidden",
+          transform: `scale(${scale}) rotate(${tilt}deg)`,
+          background: `linear-gradient(160deg, ${theme.secondary}, ${theme.main})`,
+          boxShadow: `0 ${unit * 3}px ${unit * 10}px rgba(0,0,0,0.55), 0 0 ${unit * 5}px ${theme.glow}`,
+          border: `${Math.max(1, unit * 0.18)}px solid ${theme.glow}`,
+        }}
+      >
+        {url && (
+          <Img
+            src={url}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+              transform: `scale(${drift})`,
+            }}
+          />
+        )}
+        {scene?.text && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.2) 35%, transparent 55%)",
+            }}
+          />
+        )}
+      </div>
+      {scene?.text && (
+        <SceneWords
+          text={scene.text}
+          emphasis={scene.emphasis}
+          frame={frame}
+          theme={theme}
+          unit={unit}
+          portrait={portrait}
+        />
+      )}
+    </AbsoluteFill>
+  );
+}
+
 function useUnit() {
   const { width, height } = useVideoConfig();
   return { unit: Math.min(width, height) / 100, portrait: height > width, width, height };
@@ -861,6 +939,7 @@ const DRAW: Record<
   card: Card,
   compare: Compare,
   story: Story,
+  cartoon: Cartoon,
   chapter: Chapter,
   label: Label,
   cta: Cta,

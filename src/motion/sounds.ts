@@ -134,6 +134,10 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
           ),
         );
         break;
+      case "cartoon":
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        add(g, "pop", "pop", at);
+        break;
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
         add(g, "hit", "hit", at);

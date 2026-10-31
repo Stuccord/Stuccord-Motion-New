@@ -35,6 +35,7 @@ import {
   transcribeForPlan,
   undoMotionPlan,
 } from "@/lib/motion-plan.functions";
+import { SpeakerCartoonRow, type CartoonControls } from "./SpeakerCartoonRow";
 
 const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000);
@@ -48,6 +49,7 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   card: "text-sky-300 border-sky-400/30",
   compare: "text-pink-300 border-pink-400/30",
   story: "text-orange-300 border-orange-400/30",
+  cartoon: "text-fuchsia-300 border-fuchsia-400/30",
   chapter: "text-emerald-300 border-emerald-400/30",
   label: "text-neutral-300 border-white/15",
   cta: "text-red-300 border-red-400/30",
@@ -87,6 +89,7 @@ export function MotionPlanSection({
   onSeekWord,
   sound,
   colour,
+  cartoon,
 }: {
   projectId: string;
   /** The project's words where they are on the timeline now. */
@@ -96,6 +99,8 @@ export function MotionPlanSection({
   sound?: SoundControls;
   /** Shown once there are graphics. */
   colour?: ColourControls;
+  /** Shown once there are graphics. */
+  cartoon?: CartoonControls;
 }) {
   const qc = useQueryClient();
   const fetchPlan = useServerFn(getMotionPlan);
@@ -247,6 +252,7 @@ export function MotionPlanSection({
 
       {colour && current && <ColourRow colour={colour} />}
       {sound && current && <SoundRow sound={sound} />}
+      {cartoon && current && <SpeakerCartoonRow cartoon={cartoon} />}
 
       {current ? (
         <PlanList plan={current} byKey={byKey} onSeekWord={onSeekWord} />

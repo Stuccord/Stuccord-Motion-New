@@ -4,7 +4,13 @@
 // export, so both place everything the same way.
 
 import type { TimelineWord } from "@/lib/captions";
-import { BEHIND_TYPES, elementSpan, type ElementType, type MotionElement } from "@/lib/motion-plan";
+import {
+  BEHIND_TYPES,
+  elementSpan,
+  SCENE_TYPES,
+  type ElementType,
+  type MotionElement,
+} from "@/lib/motion-plan";
 
 export const MOTION_FPS = 30;
 
@@ -31,7 +37,7 @@ export type PlacedGraphic = {
   chapter: { index: number; count: number } | null;
   /** Drawn behind the speaker (cut out in front of it). */
   behind: boolean;
-  /** A story's scenes, in order; null for other graphics. */
+  /** A story's scenes in order, or a cartoon's one; null for other graphics. */
   scenes: PlacedScene[] | null;
 };
 
@@ -62,7 +68,8 @@ function placeScenes(
   to: number,
   wordsByKey: Map<string, TimelineWord>,
 ): PlacedScene[] {
-  const scenes = el.scenes ?? [];
+  // A cartoon has one scene.
+  const scenes = (el.scenes ?? []).slice(0, el.type === "cartoon" ? 1 : undefined);
   const froms = scenes.map((sc) => {
     const w = wordsByKey.get(`${sc.at.clip_id}:${sc.at.word_index}`);
     return w ? msToFrame(w.startMs) : null;
@@ -120,12 +127,7 @@ export function placeGraphics(
       cta: el.cta,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
-      scenes:
-        el.type === "story" && el.scenes?.length
-          ? placeScenes(el, from, to, wordsByKey)
-          : el.type === "story"
-            ? []
-            : null,
+      scenes: SCENE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
     });
   }
   return { graphics, zooms };

@@ -2,14 +2,27 @@
 // remaking and uploading them. Pictures are made one at a time, the story's
 // first one first, so later scenes can match it (story-images.functions).
 // Right after the AI plans a story, its pictures are made automatically.
+// Stage 8: the speaker's cartoon (made here from a photo, with consent);
+// scenes with the speaker and cartoon graphics wait for it, then get made.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { SCENE_BUCKET, type MotionPlan, type SceneImage } from "@/lib/motion-plan";
-import { makeSceneImage, sceneUploadSlot, signSceneImages } from "@/lib/story-images.functions";
+import {
+  SCENE_BUCKET,
+  SCENE_TYPES,
+  type MotionElement,
+  type MotionPlan,
+  type SceneImage,
+} from "@/lib/motion-plan";
+import {
+  makeSceneImage,
+  makeSpeakerCartoon,
+  sceneUploadSlot,
+  signSceneImages,
+} from "@/lib/story-images.functions";
 import type { MotionPlanState } from "@/lib/motion-plan.functions";
 
 /** Uploaded pictures: these types, up to the bucket's 10 MB. */
@@ -18,9 +31,14 @@ const SCENE_UPLOAD_MAX = 10 * 1024 * 1024;
 
 type Motion = {
   plan: MotionPlan | null;
+  state: MotionPlanState | undefined;
   canEdit: boolean;
   update: (change: (p: MotionPlan) => MotionPlan) => void;
 };
+
+/** The speaker is in this scene's picture (always, in a cartoon graphic). */
+const withSpeaker = (el: MotionElement, index: number) =>
+  el.type === "cartoon" || el.scenes?.[index]?.speaker === true;
 
 /** Sets one scene's picture, if the scene still asks for what was made. */
 function withSceneImage(
@@ -50,19 +68,24 @@ export function useStoryImages(projectId: string, motion: Motion, accent: string
   const makeFn = useServerFn(makeSceneImage);
   const slotFn = useServerFn(sceneUploadSlot);
   const signFn = useServerFn(signSceneImages);
+  const cartoonFn = useServerFn(makeSpeakerCartoon);
+  const character = motion.state?.character ?? null;
 
-  // Links for every picture in the plan (refreshed before they run out).
+  // Links for every picture in the plan and the speaker's cartoon
+  // (refreshed before they run out).
   const paths = useMemo(
     () =>
       [
         ...new Set(
-          (motion.plan?.elements ?? [])
-            .flatMap((e) => e.scenes ?? [])
-            .map((sc) => sc.image?.path)
-            .filter((x): x is string => !!x),
+          [
+            ...(motion.plan?.elements ?? [])
+              .flatMap((e) => e.scenes ?? [])
+              .map((sc) => sc.image?.path),
+            character?.image,
+          ].filter((x): x is string => !!x),
         ),
       ].sort(),
-    [motion.plan],
+    [motion.plan, character?.image],
   );
   const signed = useQuery({
     queryKey: ["scene-images", projectId, paths],
@@ -87,6 +110,9 @@ export function useStoryImages(projectId: string, motion: Motion, accent: string
 
   const latestPlan = useRef(motion.plan);
   latestPlan.current = motion.plan;
+  const hasCartoon = !!character;
+  const latestHasCartoon = useRef(hasCartoon);
+  latestHasCartoon.current = hasCartoon;
 
   /** Makes one scene's picture (matching the story's first picture, if it has one). */
   const make = useCallback(
@@ -98,6 +124,11 @@ export function useStoryImages(projectId: string, motion: Motion, accent: string
         toast.error("Describe the picture first.");
         return null;
       }
+      const speaker = withSpeaker(el, index);
+      if (speaker && !latestHasCartoon.current) {
+        toast.error("Make the speaker's cartoon first (Cartoon of the speaker).");
+        return null;
+      }
       // The story's first picture (just made, or already in the plan).
       const first = reference !== undefined ? reference : (el.scenes?.[0]?.image?.path ?? null);
       const key = `${elementId}:${index}`;
@@ -107,8 +138,10 @@ export function useStoryImages(projectId: string, motion: Motion, accent: string
           data: {
             project_id: projectId,
             prompt: scene.prompt,
-            reference_path: index > 0 ? first : null,
+            reference_path: el.type === "story" && index > 0 ? first : null,
             accent,
+            style: el.type === "cartoon" ? "cartoon" : "cinematic",
+            with_speaker: speaker,
           },
         });
         if (r.url) setFresh((f) => ({ ...f, [r.path]: r.url as string }));
@@ -129,13 +162,22 @@ export function useStoryImages(projectId: string, motion: Motion, accent: string
     [accent, makeFn, motion, projectId, qc],
   );
 
-  /** Makes every scene of a story still without a picture, first scene first. */
+  /**
+   * Makes every scene of a story still without a picture, first scene first
+   * (and a cartoon's one). Scenes with the speaker wait for their cartoon.
+   */
   const makeMissing = useCallback(
     async (elementId: string) => {
-      const scenes = latestPlan.current?.elements.find((e) => e.id === elementId)?.scenes ?? [];
+      const el = latestPlan.current?.elements.find((e) => e.id === elementId);
+      const scenes = el?.scenes ?? [];
       let first = scenes[0]?.image?.path ?? null;
       for (let i = 0; i < scenes.length; i++) {
         if (scenes[i].image) continue;
+        if (el && withSpeaker(el, i) && !latestHasCartoon.current) {
+          // Later scenes can't match a first picture that isn't made yet.
+          if (i === 0) break;
+          continue;
+        }
         const made = await make(elementId, i, i === 0 ? null : first);
         if (!made) break;
         if (i === 0) first = made;
@@ -181,20 +223,92 @@ export function useStoryImages(projectId: string, motion: Motion, accent: string
     [motion, projectId, slotFn],
   );
 
-  // Right after the AI plans a story: make its pictures (once per plan).
+  // Right after the AI plans a story or cartoon: make its pictures (once per
+  // plan, and again once the speaker's cartoon is there for the ones that
+  // waited for it).
   const started = useRef(new Set<string>());
   useEffect(() => {
     const plan = motion.plan;
     if (!plan || !motion.canEdit) return;
     for (const el of plan.elements) {
-      if (el.type !== "story" || el.source !== "ai") continue;
-      const key = `${plan.created_at}:${el.id}`;
+      if (!SCENE_TYPES.has(el.type) || el.source !== "ai") continue;
+      const waiting = (el.scenes ?? []).some((sc, i) => !sc.image && withSpeaker(el, i));
+      const key = `${plan.created_at}:${el.id}:${waiting ? (character?.image ?? "-") : ""}`;
       if (started.current.has(key)) continue;
-      if (!(el.scenes ?? []).some((sc) => !sc.image)) continue;
+      const ready = (el.scenes ?? []).some(
+        (sc, i) => !sc.image && (hasCartoon || !withSpeaker(el, i)),
+      );
+      if (!ready) continue;
       started.current.add(key);
       void makeMissing(el.id);
     }
-  }, [motion.plan, motion.canEdit, makeMissing]);
+  }, [motion.plan, motion.canEdit, makeMissing, hasCartoon, character?.image]);
 
-  return { urls, busy, make, makeMissing, upload };
+  // ---------- the speaker's cartoon ----------
+
+  const [cartoonBusy, setCartoonBusy] = useState(false);
+
+  /** Puts a picture in the project's folder; returns its path. */
+  const store = useCallback(
+    async (file: Blob, type: (typeof SCENE_UPLOAD_TYPES)[number]) => {
+      const slot = await slotFn({ data: { project_id: projectId, content_type: type } });
+      const { error } = await supabase.storage
+        .from(SCENE_BUCKET)
+        .uploadToSignedUrl(slot.path, slot.token, file, { contentType: type });
+      if (error) throw new Error(error.message);
+      return slot.path;
+    },
+    [projectId, slotFn],
+  );
+
+  /**
+   * Makes the speaker's cartoon from a photo of them (a frame of the footage
+   * or the user's own), after the user has confirmed consent.
+   */
+  const makeCartoon = useCallback(
+    async (photo: Blob, from: "footage" | "upload"): Promise<boolean> => {
+      const type = photo.type as (typeof SCENE_UPLOAD_TYPES)[number];
+      if (!SCENE_UPLOAD_TYPES.includes(type)) {
+        toast.error("Use a JPG, PNG or WebP photo.");
+        return false;
+      }
+      if (photo.size > SCENE_UPLOAD_MAX) {
+        toast.error("That photo is over 10 MB.");
+        return false;
+      }
+      setCartoonBusy(true);
+      try {
+        const photoPath = await store(photo, type);
+        const r = await cartoonFn({
+          data: { project_id: projectId, photo_path: photoPath, from, consent: true },
+        });
+        if (r.url) setFresh((f) => ({ ...f, [r.character.image]: r.url as string }));
+        qc.setQueryData<MotionPlanState>(["motion-plan", projectId], (old) =>
+          old ? { ...old, images: r.images, character: r.character } : old,
+        );
+        return true;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't make the cartoon");
+        return false;
+      } finally {
+        setCartoonBusy(false);
+      }
+    },
+    [cartoonFn, projectId, qc, store],
+  );
+
+  return {
+    urls,
+    busy,
+    make,
+    makeMissing,
+    upload,
+    hasCartoon,
+    cartoon: {
+      character,
+      url: character ? urls[character.image] : undefined,
+      busy: cartoonBusy,
+      make: makeCartoon,
+    },
+  };
 }
