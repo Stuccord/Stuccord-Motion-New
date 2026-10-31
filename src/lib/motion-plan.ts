@@ -23,6 +23,10 @@ import {
 
 export const MOTION_STYLE = "motion-explainer";
 
+/** The graphics' looks (stage 10): every graphic restyled at once. */
+export const MOTION_LOOKS = ["glass", "paper"] as const;
+export type MotionLook = (typeof MOTION_LOOKS)[number];
+
 export const ELEMENT_TYPES = [
   "keyline",
   "counter",
@@ -286,31 +290,32 @@ export const MotionScene = z.object({
 });
 export type MotionScene = z.infer<typeof MotionScene>;
 
-export const MotionElement = z.object({
-  id: z.string().min(1).max(64),
-  type: z.enum(ELEMENT_TYPES),
-  start: Anchor,
-  end: Anchor,
-  text: z.string().max(MAX_TEXT),
-  emphasis: z.string().max(60).nullable(),
-  items: z.array(z.string().max(80)).max(8),
-  number: NumberValue.nullable(),
-  cta: z.enum(CTA_KINDS).nullable(),
-  zoom: z.enum(ZOOM_KINDS).nullable(),
-  reason: z.string().max(300),
-  /** Drawn behind the speaker, who is cut out in front of it (BEHIND_TYPES only). */
-  behind: z.boolean().optional(),
-  /** A loop's stop whose words change near the end (loops only). */
-  swap: z
-    .object({ item: z.number().int().min(0).max(7), text: z.string().min(1).max(MAX_SWAP) })
-    .optional(),
-  /** A story's scenes, a cartoon's one, or a card stream's or profile's pictures (PICTURE_TYPES only). */
-  scenes: z.array(MotionScene).max(MAX_STREAM).optional(),
-  /** A social profile's details (profiles only). */
-  profile: ProfileDetails.optional(),
-  /** "ai" as planned; "user" once added or changed by hand. */
-  source: z.enum(["ai", "user"]),
-})
+export const MotionElement = z
+  .object({
+    id: z.string().min(1).max(64),
+    type: z.enum(ELEMENT_TYPES),
+    start: Anchor,
+    end: Anchor,
+    text: z.string().max(MAX_TEXT),
+    emphasis: z.string().max(60).nullable(),
+    items: z.array(z.string().max(80)).max(8),
+    number: NumberValue.nullable(),
+    cta: z.enum(CTA_KINDS).nullable(),
+    zoom: z.enum(ZOOM_KINDS).nullable(),
+    reason: z.string().max(300),
+    /** Drawn behind the speaker, who is cut out in front of it (BEHIND_TYPES only). */
+    behind: z.boolean().optional(),
+    /** A loop's stop whose words change near the end (loops only). */
+    swap: z
+      .object({ item: z.number().int().min(0).max(7), text: z.string().min(1).max(MAX_SWAP) })
+      .optional(),
+    /** A story's scenes, a cartoon's one, or a card stream's or profile's pictures (PICTURE_TYPES only). */
+    scenes: z.array(MotionScene).max(MAX_STREAM).optional(),
+    /** A social profile's details (profiles only). */
+    profile: ProfileDetails.optional(),
+    /** "ai" as planned; "user" once added or changed by hand. */
+    source: z.enum(["ai", "user"]),
+  })
   // Each type's own picture limit (a story 6, a card stream 12...).
   .refine((el) => (el.scenes?.length ?? 0) <= maxScenes(el.type), {
     message: "Too many pictures for this graphic",
@@ -349,6 +354,8 @@ export const MotionPlan = z.object({
   sound: SoundSettings.optional(),
   /** The colour: picked by hand, or from the brand kit or the video. */
   colour: MotionColour.optional(),
+  /** The graphics' look, one per video: dark glass (the default) or paper on a desk. */
+  look: z.enum(MOTION_LOOKS).optional(),
   elements: z.array(MotionElement).max(MAX_ELEMENTS),
 });
 export type MotionPlan = z.infer<typeof MotionPlan>;

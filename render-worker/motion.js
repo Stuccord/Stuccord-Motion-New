@@ -260,11 +260,21 @@ export async function renderGraphics({
   name = "graphics",
   images = {},
   logo = null,
+  look = "glass",
 }) {
   const ranges = graphicRanges(graphics, totalFrames);
   if (!ranges.length) return [];
   const { renderMedia, selectComposition } = await import("@remotion/renderer");
-  const inputProps = { graphics, theme, images, logo, width: w, height: h, durationInFrames: totalFrames };
+  const inputProps = {
+    graphics,
+    theme,
+    images,
+    logo,
+    look: look === "paper" ? "paper" : "glass",
+    width: w,
+    height: h,
+    durationInFrames: totalFrames,
+  };
   const composition = await selectComposition({ serveUrl: GRAPHICS_BUNDLE, id: "graphics", inputProps });
   const totalToDraw = ranges.reduce((s, [a, b]) => s + Math.ceil(b / 2) - Math.floor(a / 2), 0);
   let drawn = 0;

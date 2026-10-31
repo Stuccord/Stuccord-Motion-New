@@ -30,6 +30,7 @@ function WithFonts(props: Props) {
       theme={props.theme}
       images={props.images}
       logo={props.logo}
+      look={props.look}
     />
   );
 }

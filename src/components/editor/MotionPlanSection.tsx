@@ -6,7 +6,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AudioLines, Loader2, Palette, RotateCcw, Undo2, Volume2, Wand2 } from "lucide-react";
+import {
+  AudioLines,
+  Layers,
+  Loader2,
+  Palette,
+  RotateCcw,
+  Undo2,
+  Volume2,
+  Wand2,
+} from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -27,6 +36,7 @@ import {
   elementSummary,
   wordsByKey,
   type MotionElement,
+  type MotionLook,
   type MotionPlan,
 } from "@/lib/motion-plan";
 import {
@@ -59,6 +69,13 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   label: "text-neutral-300 border-white/15",
   cta: "text-red-300 border-red-400/30",
   zoom: "text-neutral-400 border-white/10",
+};
+
+/** The graphics' look (the editor keeps the plan and saves it). */
+export type LookControls = {
+  look: MotionLook;
+  canEdit: boolean;
+  onPick: (look: MotionLook) => void;
 };
 
 /** The automatic sounds' controls (the editor keeps the plan and saves it). */
@@ -94,6 +111,7 @@ export function MotionPlanSection({
   onSeekWord,
   sound,
   colour,
+  look,
   cartoon,
 }: {
   projectId: string;
@@ -104,6 +122,8 @@ export function MotionPlanSection({
   sound?: SoundControls;
   /** Shown once there are graphics. */
   colour?: ColourControls;
+  /** Shown once there are graphics. */
+  look?: LookControls;
   /** Shown once there are graphics. */
   cartoon?: CartoonControls;
 }) {
@@ -255,6 +275,7 @@ export function MotionPlanSection({
         <p className="text-[10px] text-amber-300">No AI plans left this month.</p>
       )}
 
+      {look && current && <LookRow look={look} />}
       {colour && current && <ColourRow colour={colour} />}
       {sound && current && <SoundRow sound={sound} />}
       {cartoon && current && <SpeakerCartoonRow cartoon={cartoon} />}
@@ -449,6 +470,42 @@ function ColourRow({ colour }: { colour: ColourControls }) {
           </label>
         </div>
       )}
+    </div>
+  );
+}
+
+const LOOKS: { id: MotionLook; label: string; hint: string }[] = [
+  { id: "glass", label: "Glass", hint: "Dark glass cards with a glow" },
+  { id: "paper", label: "Paper", hint: "Paper on a desk, a pen pointing" },
+];
+
+function LookRow({ look }: { look: LookControls }) {
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5 space-y-2">
+      <div className="flex items-center gap-2">
+        <Layers className="w-3 h-3 text-violet-300" />
+        <span className="text-[11px] text-neutral-300 flex-1">Look</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Graphics look">
+        {LOOKS.map((l) => (
+          <button
+            key={l.id}
+            role="radio"
+            aria-checked={look.look === l.id}
+            disabled={!look.canEdit}
+            onClick={() => look.onPick(l.id)}
+            className={cn(
+              "rounded-md border px-2 py-1.5 text-left disabled:opacity-60",
+              look.look === l.id
+                ? "border-violet-400/60 bg-violet-500/15"
+                : "border-white/10 hover:border-white/25",
+            )}
+          >
+            <div className="text-[11px] font-medium text-neutral-100">{l.label}</div>
+            <div className="text-[9px] text-neutral-500 leading-tight">{l.hint}</div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

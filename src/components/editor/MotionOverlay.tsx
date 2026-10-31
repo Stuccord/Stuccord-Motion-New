@@ -39,6 +39,7 @@ export function MotionOverlay({
   layer,
   images,
   logo,
+  look,
 }: {
   timeMs: number;
   graphics: PlacedGraphic[];
@@ -50,6 +51,8 @@ export function MotionOverlay({
   images?: Record<string, string>;
   /** A link to the brand kit's logo (ends a card stream). */
   logo?: string | null;
+  /** The graphics' look (glass or paper). */
+  look?: "glass" | "paper";
 }) {
   useMotionFonts();
   const { width, height } = frameSize(aspect);
@@ -61,9 +64,9 @@ export function MotionOverlay({
   // the same graphics are showing.
   const activeKey = active.map((g) => g.id).join(",");
   const inputProps = useMemo<MotionGraphicsProps>(
-    () => ({ graphics: active, theme, images, logo }),
+    () => ({ graphics: active, theme, images, logo, look }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeKey, graphics, theme, images, logo],
+    [activeKey, graphics, theme, images, logo, look],
   );
   if (active.length === 0) return null;
   const durationInFrames = Math.max(frame + 1, ...active.map((g) => g.to));

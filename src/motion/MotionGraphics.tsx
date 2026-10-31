@@ -9,7 +9,7 @@
 // and graphics stepped at 15 fps for a hand-made feel.
 
 import React from "react";
-import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Img, Sequence, useVideoConfig } from "remotion";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
 import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
 import { storyCamera } from "@/motion/camera";
@@ -22,6 +22,21 @@ import {
   streamBeats,
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
+import { PaperGraphic } from "@/motion/PaperGraphics";
+import {
+  BASE_FPS,
+  ImagesContext,
+  LogoContext,
+  behindBand,
+  clamp01,
+  easeOut,
+  exitOpacity,
+  pop,
+  rand,
+  splitWords,
+  useStepFrame,
+  useUnit,
+} from "@/motion/kit";
 
 export type MotionGraphicsProps = {
   graphics: PlacedGraphic[];
@@ -30,66 +45,9 @@ export type MotionGraphicsProps = {
   images?: Record<string, string>;
   /** A link to the brand kit's logo, which ends a card stream. */
   logo?: string | null;
+  /** The graphics' look: dark glass (the default) or paper on a desk. */
+  look?: "glass" | "paper";
 };
-
-/** Pictures' links, for the graphics that show pictures. */
-const ImagesContext = React.createContext<Record<string, string>>({});
-/** The brand kit logo's link, if there's a logo. */
-const LogoContext = React.createContext<string | null>(null);
-
-// ---------- motion helpers ----------
-
-const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
-const easeOut = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
-
-/** Timings below are in frames at 30 fps. */
-const BASE_FPS = 30;
-
-/**
- * Graphics move at 15 fps (every other frame at 30), like the studied edits.
- * Returns the frame in 30 fps terms, whatever rate the composition runs at:
- * the export draws at 15 fps, since every other frame would be the same.
- */
-function useStepFrame() {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  if (fps >= BASE_FPS) return Math.floor(frame / 2) * 2;
-  return Math.floor((frame * BASE_FPS) / fps / 2) * 2;
-}
-
-/** A pop-in that starts `delay` frames in: rise, unblur, fade in. */
-function pop(frame: number, delay: number, unit: number, frames = 14): React.CSSProperties {
-  const p = easeOut((frame - delay) / frames);
-  return {
-    opacity: p,
-    transform: `translateY(${(1 - p) * unit * 2.4}px)`,
-    filter: p < 1 ? `blur(${(1 - p) * unit * 0.9}px)` : undefined,
-  };
-}
-
-/** Fades the whole graphic out over its last frames. */
-function exitOpacity(frame: number, length: number, frames = 8) {
-  return clamp01((length - frame) / frames);
-}
-
-/**
- * Graphics behind the speaker sit big, at head height, so the words show
- * either side of the head (the cut-out covers the middle).
- */
-function behindBand(portrait: boolean): React.CSSProperties {
-  return {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: portrait ? "20%" : "14%",
-    height: portrait ? "30%" : "46%",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    textAlign: "center",
-  };
-}
 
 // ---------- story: pictures in 3D space, one moving camera ----------
 
@@ -934,12 +892,6 @@ function Coins({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
 
 // ---------- templates (stage 9b): card stream, social profile ----------
 
-/** A steady pseudo-random number in 0-1 for a card and a property. */
-const rand = (i: number, k: number) => {
-  const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
-  return x - Math.floor(x);
-};
-
 /** A picture filling its box, or a soft gradient while there's none. */
 function Picture({
   url,
@@ -1239,11 +1191,6 @@ function Profile({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   );
 }
 
-function useUnit() {
-  const { width, height } = useVideoConfig();
-  return { unit: Math.min(width, height) / 100, portrait: height > width, width, height };
-}
-
 // ---------- shared pieces ----------
 
 function Glass({
@@ -1286,23 +1233,6 @@ function cardPlace(portrait: boolean, unit: number): React.CSSProperties {
         width: "38%",
         transform: "translateY(-50%)",
       };
-}
-
-/** Splits a line into words, marking the ones that are the special word. */
-function splitWords(text: string, emphasis: string | null) {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (!emphasis) return words.map((w) => ({ w, special: false }));
-  const em = emphasis.toLowerCase().split(/\s+/).filter(Boolean);
-  const lower = words.map((w) => w.toLowerCase().replace(/[^\p{L}\p{N}%$]/gu, ""));
-  const target = em.map((e) => e.replace(/[^\p{L}\p{N}%$]/gu, ""));
-  let at = -1;
-  for (let i = 0; i + target.length <= lower.length; i++) {
-    if (target.every((t, j) => lower[i + j] === t)) {
-      at = i;
-      break;
-    }
-  }
-  return words.map((w, i) => ({ w, special: at >= 0 && i >= at && i < at + target.length }));
 }
 
 // ---------- the graphics ----------
@@ -1850,7 +1780,7 @@ const DRAW: Record<
 };
 
 /** Every graphic, each in its own stretch of the timeline. */
-export function MotionGraphics({ graphics, theme, images, logo }: MotionGraphicsProps) {
+export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGraphicsProps) {
   // Graphics are placed in 30 fps frames; at a lower rate, scale them.
   const { fps } = useVideoConfig();
   const scale = fps / BASE_FPS;
@@ -1859,7 +1789,7 @@ export function MotionGraphics({ graphics, theme, images, logo }: MotionGraphics
       <LogoContext.Provider value={logo ?? null}>
         <AbsoluteFill>
           {graphics.map((g) => {
-            const Draw = DRAW[g.type];
+            const Draw = look === "paper" ? PaperGraphic : DRAW[g.type];
             return (
               <Sequence
                 key={g.id}

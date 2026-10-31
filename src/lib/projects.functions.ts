@@ -1700,6 +1700,8 @@ export async function startCloudRender(
             sound: motionPlan.sound ?? null,
             // Story pictures: a link for each storage path in the scenes.
             images: sceneImages,
+            // The graphics' look: glass or paper.
+            look: motionPlan.look ?? "glass",
           }
         : null,
       // Voiceovers go apart from the clips, so a worker from before

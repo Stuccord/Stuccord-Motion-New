@@ -1697,6 +1697,7 @@ async function runRender(job) {
               images: storyImages(motionJob.images),
               // A card stream ends on the brand kit's logo.
               logo: brandKitFromJob(job).logo?.url ?? null,
+              look: motionJob.look,
               w,
               h,
               totalFrames,

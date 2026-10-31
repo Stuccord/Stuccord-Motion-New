@@ -2538,6 +2538,7 @@ function EditorPage() {
                       layer="behind"
                       images={storyImages.urls}
                       logo={brand.data?.logoUrl ?? null}
+                      look={motion.plan?.look}
                     />
                   </Suspense>
                 ),
@@ -2556,6 +2557,7 @@ function EditorPage() {
                         layer="front"
                         images={storyImages.urls}
                       logo={brand.data?.logoUrl ?? null}
+                      look={motion.plan?.look}
                       />
                     </Suspense>
                   )}
@@ -2818,6 +2820,15 @@ function EditorPage() {
                                   ...p,
                                   colour: { ...p.colour, choice: hex },
                                 })),
+                            }
+                          : undefined
+                      }
+                      look={
+                        motionPlan
+                          ? {
+                              look: motionPlan.look ?? "glass",
+                              canEdit: canEditGraphics,
+                              onPick: (next) => motion.update((p) => ({ ...p, look: next })),
                             }
                           : undefined
                       }
