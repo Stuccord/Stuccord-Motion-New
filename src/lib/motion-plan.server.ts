@@ -30,6 +30,11 @@ Graphic types (field "type"):
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
 - zoom: a punch-in ("in") on an emphatic beat, or an ease back out ("out"). Use zooms to keep stretches without graphics moving.
 
+Behind the speaker (field "behind"):
+- true draws the graphic behind the speaker: the person is cut out and stays in front, and the room behind them darkens and softly blurs, so the words sit between the room and the person. It is the style's strongest emphasis.
+- Use it for the biggest moments only: the hook's key line, chapter titles, a headline number - roughly one graphic in five, never two in a row.
+- Only keyline, counter, list, card, compare and chapter can go behind; false for every other type.
+
 Timing:
 - "from_word" is the first word that triggers the graphic; "to_word" the last word it stays up for (usually the end of the phrase or sentence, 1.5-8 seconds of speech). A list stays until its last item is said.
 - One main graphic at a time: keyline, counter, list, card, compare, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.

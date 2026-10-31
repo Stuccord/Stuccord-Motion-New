@@ -13,6 +13,7 @@
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import { behindFilters } from "./cutout.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const GRAPHICS_BUNDLE = path.join(here, "graphics-bundle");
@@ -22,6 +23,8 @@ const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
 const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "chapter", "label", "cta"]);
+// Types that can go behind the speaker (src/lib/motion-plan.ts BEHIND_TYPES).
+const BEHIND_TYPES = new Set(["keyline", "counter", "list", "card", "compare", "chapter"]);
 const msToFrame = (ms) => Math.round((ms / 1000) * MOTION_FPS);
 
 /**
@@ -72,6 +75,7 @@ export function placeGraphics(elements, words) {
           : null,
       cta: ["like", "subscribe", "comment", "link"].includes(el.cta) ? el.cta : null,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
+      behind: el.behind === true && BEHIND_TYPES.has(el.type),
     });
   }
   return { graphics, zooms };
@@ -145,7 +149,16 @@ export const DRAW_FPS = MOTION_FPS / 2;
  * stretch with graphics on screen, at 15 fps. Returns [{ file, startS }]:
  * each clip and where it starts in the video (seconds).
  */
-export async function renderGraphics({ graphics, theme, w, h, totalFrames, workdir, onProgress }) {
+export async function renderGraphics({
+  graphics,
+  theme,
+  w,
+  h,
+  totalFrames,
+  workdir,
+  onProgress,
+  name = "graphics",
+}) {
   const ranges = graphicRanges(graphics, totalFrames);
   if (!ranges.length) return [];
   const { renderMedia, selectComposition } = await import("@remotion/renderer");
@@ -158,7 +171,7 @@ export async function renderGraphics({ graphics, theme, w, h, totalFrames, workd
     // The stretch in drawn (15 fps) frames.
     const a = Math.floor(ranges[i][0] / 2);
     const b = Math.ceil(ranges[i][1] / 2);
-    const file = path.join(workdir, `graphics_${i}.mov`);
+    const file = path.join(workdir, `${name}_${i}.mov`);
     await renderMedia({
       composition,
       serveUrl: GRAPHICS_BUNDLE,
@@ -181,11 +194,13 @@ export async function renderGraphics({ graphics, theme, w, h, totalFrames, workd
 }
 
 /**
- * ffmpeg arguments for the final picture: the zooms, the graphics clips laid
- * over at their times, then the text filters (captions, hook). Audio is
- * copied. `textFilters` is a list of filters (or empty).
+ * ffmpeg arguments for the final picture: the zooms, the graphics behind the
+ * speaker (when `behind` has their clips and the speaker's masks, see
+ * cutout.js), the other graphics clips laid over at their times, then the
+ * text filters (captions, hook). Audio is copied. `textFilters` is a list of
+ * filters (or empty).
  */
-export function composeArgs({ input, pieces, zoom, textFilters, output }) {
+export function composeArgs({ input, pieces, zoom, textFilters, output, behind = null }) {
   const args = ["-y", "-i", input];
   for (const p of pieces) {
     args.push("-itsoffset", p.startS.toFixed(4), "-i", p.file);
@@ -195,6 +210,19 @@ export function composeArgs({ input, pieces, zoom, textFilters, output }) {
   if (zoom) {
     graph.push(`[${last}]${zoom},setsar=1[zm]`);
     last = "zm";
+  }
+  if (behind?.masks?.length) {
+    const b = behindFilters({
+      picture: last,
+      pieces: behind.pieces,
+      masks: behind.masks,
+      w: behind.w,
+      h: behind.h,
+      firstInput: 1 + pieces.length,
+    });
+    args.push(...b.inputs);
+    graph.push(...b.graph);
+    last = b.last;
   }
   pieces.forEach((_, i) => {
     graph.push(`[${last}][${i + 1}:v]overlay=0:0:eof_action=pass:format=auto[g${i}]`);

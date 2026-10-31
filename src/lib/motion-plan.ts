@@ -52,6 +52,20 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
 const MAX_TEXT = 200;
 const MAX_ELEMENTS = 300;
 
+/**
+ * Types that can go behind the speaker (the person cut out in front of
+ * them, the room darkened and blurred). Not the call to action (it sits
+ * low, over the speaker's body), labels (small) or zooms.
+ */
+export const BEHIND_TYPES: ReadonlySet<ElementType> = new Set([
+  "keyline",
+  "counter",
+  "list",
+  "card",
+  "compare",
+  "chapter",
+]);
+
 export const CTA_KINDS = ["like", "subscribe", "comment", "link"] as const;
 export const ZOOM_KINDS = ["in", "out"] as const;
 
@@ -80,6 +94,8 @@ export const DraftElement = z.object({
   number: NumberValue.nullable(),
   cta: z.enum(CTA_KINDS).nullable(),
   zoom: z.enum(ZOOM_KINDS).nullable(),
+  /** Drawn behind the speaker (cut out in front of it). */
+  behind: z.boolean(),
   /** Why this graphic, in a few words (shown to the user). */
   reason: z.string(),
 });
@@ -112,6 +128,8 @@ export const MotionElement = z.object({
   cta: z.enum(CTA_KINDS).nullable(),
   zoom: z.enum(ZOOM_KINDS).nullable(),
   reason: z.string().max(300),
+  /** Drawn behind the speaker, who is cut out in front of it (BEHIND_TYPES only). */
+  behind: z.boolean().optional(),
   /** "ai" as planned; "user" once added or changed by hand. */
   source: z.enum(["ai", "user"]),
 });
@@ -298,6 +316,7 @@ export function draftsToElements(
       cta: d.type === "cta" ? d.cta : null,
       zoom: d.type === "zoom" ? d.zoom : null,
       reason: clean(d.reason, 300),
+      ...(d.behind === true && BEHIND_TYPES.has(d.type) ? { behind: true } : {}),
       source: "ai",
     });
   }
@@ -461,6 +480,7 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
     number: type === "counter" ? (el.number ?? { value: 100, prefix: "", suffix: "%" }) : null,
     cta: type === "cta" ? (el.cta ?? "like") : null,
     zoom: type === "zoom" ? (el.zoom ?? "in") : null,
+    behind: BEHIND_TYPES.has(type) ? el.behind : undefined,
   });
 }
 

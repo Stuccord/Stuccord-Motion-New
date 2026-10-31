@@ -37,6 +37,12 @@ The image installs the libraries, a system font for captions, and (at build,
 `node build-graphics.mjs`) bundles the graphics and downloads the headless
 Chrome. `ffmpeg-static` still provides ffmpeg.
 
+Graphics behind the speaker cut the speaker out with an AI person mask
+(`cutout.js`): Google's MediaPipe selfie segmenter in `models/` (see
+`models/README.md`), run by `onnxruntime-node` on the CPU only over the
+frames that need it. The image skips onnxruntime's NVIDIA (CUDA) download.
+Without the model file, those graphics are drawn in front instead.
+
 ## Endpoints
 
 - `GET /health` → `{ ok: true, ffmpeg: true }`

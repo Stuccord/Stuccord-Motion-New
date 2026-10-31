@@ -4,7 +4,7 @@
 // export, so both place everything the same way.
 
 import type { TimelineWord } from "@/lib/captions";
-import { elementSpan, type ElementType, type MotionElement } from "@/lib/motion-plan";
+import { BEHIND_TYPES, elementSpan, type ElementType, type MotionElement } from "@/lib/motion-plan";
 
 export const MOTION_FPS = 30;
 
@@ -29,6 +29,8 @@ export type PlacedGraphic = {
   cta: MotionElement["cta"];
   /** For a chapter: which one (1-based) and how many there are. */
   chapter: { index: number; count: number } | null;
+  /** Drawn behind the speaker (cut out in front of it). */
+  behind: boolean;
 };
 
 export type PlacedZoom = { id: string; from: number; to: number; zoom: "in" | "out" };
@@ -74,6 +76,7 @@ export function placeGraphics(
       number: el.number,
       cta: el.cta,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
+      behind: el.behind === true && BEHIND_TYPES.has(el.type),
     });
   }
   return { graphics, zooms };

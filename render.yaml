@@ -2,7 +2,9 @@ services:
   - type: web
     name: stuccord-motion-studio
     runtime: node
-    buildCommand: npm install && npm run build
+    # --include=dev: the build tools (vite and its plugins) are dev
+    # dependencies, which npm skips when NODE_ENV is production.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     envVars:
       - key: NITRO_PRESET

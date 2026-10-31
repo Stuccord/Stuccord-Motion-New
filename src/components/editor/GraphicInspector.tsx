@@ -1,12 +1,15 @@
 // The right-hand panel for a selected Motion Explainer graphic: change its
-// type and what it says, jump to it, or delete it. Changes show at once in
+// type and what it says, put it behind the speaker, jump to it, or delete
+// it. Changes show at once in
 // the preview and are saved shortly after.
 
 import { Crosshair, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  BEHIND_TYPES,
   CTA_KINDS,
   ELEMENT_LABEL,
   ELEMENT_TYPES,
@@ -120,6 +123,24 @@ export function GraphicInspector({
             ))}
           </select>
         </Field>
+
+        {BEHIND_TYPES.has(el.type) && (
+          <div className="flex items-start gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] p-2">
+            <div className="flex-1">
+              <p className="text-[11px] text-neutral-200">Behind me</p>
+              <p className="text-[10px] text-neutral-500 leading-snug">
+                You stay in front of it; the room behind you darkens and blurs.
+              </p>
+            </div>
+            <Switch
+              checked={el.behind === true}
+              disabled={readOnly}
+              onCheckedChange={(on) => set({ behind: on })}
+              aria-label="Behind me"
+              className="data-[state=checked]:bg-violet-600"
+            />
+          </div>
+        )}
 
         {showText && (
           <Field

@@ -1,9 +1,11 @@
 // The Motion Explainer graphics drawn over the live preview: the same
 // Remotion composition the export renders (stage 3), shown at the frame
-// under the playhead with @remotion/player's Thumbnail.
+// under the playhead with @remotion/player's Thumbnail. Drawn twice: the
+// graphics behind the speaker (under their cut-out) and the rest in front.
 
 import { useEffect, useMemo } from "react";
 import { Thumbnail } from "@remotion/player";
+import { cn } from "@/lib/utils";
 import { MotionGraphics, type MotionGraphicsProps } from "@/motion/MotionGraphics";
 import { MOTION_FONTS, type MotionTheme } from "@/motion/theme";
 import { MOTION_FPS, frameSize, type PlacedGraphic } from "@/motion/timing";
@@ -34,16 +36,21 @@ export function MotionOverlay({
   graphics,
   theme,
   aspect,
+  layer,
 }: {
   timeMs: number;
   graphics: PlacedGraphic[];
   theme: MotionTheme;
   aspect: string;
+  /** Only the graphics behind the speaker, or only the others. */
+  layer: "behind" | "front";
 }) {
   useMotionFonts();
   const { width, height } = frameSize(aspect);
   const frame = Math.max(0, Math.round((timeMs / 1000) * MOTION_FPS));
-  const active = graphics.filter((g) => frame >= g.from && frame < g.to);
+  const active = graphics.filter(
+    (g) => frame >= g.from && frame < g.to && g.behind === (layer === "behind"),
+  );
   // Only what's on screen is drawn; the props stay the same object while
   // the same graphics are showing.
   const activeKey = active.map((g) => g.id).join(",");
@@ -55,7 +62,14 @@ export function MotionOverlay({
   if (active.length === 0) return null;
   const durationInFrames = Math.max(frame + 1, ...active.map((g) => g.to));
   return (
-    <div className="absolute inset-0 z-[9] pointer-events-none" data-motion-overlay>
+    <div
+      className={cn(
+        "absolute inset-0 pointer-events-none",
+        // Behind graphics share a level with the cut-out, which comes after them.
+        layer === "behind" ? "z-[8]" : "z-[9]",
+      )}
+      data-motion-overlay={layer}
+    >
       <Thumbnail
         component={MotionGraphics}
         inputProps={inputProps}

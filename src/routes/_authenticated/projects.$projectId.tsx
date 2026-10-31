@@ -51,6 +51,7 @@ import {
 } from "@/lib/motion-plan";
 import { MOTION_FPS, placeGraphics, zoomAt } from "@/motion/timing";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
+import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
 import {
   DEFAULT_SOUND_VOLUME,
@@ -2472,6 +2473,22 @@ function EditorPage() {
               lengthMs: clipVisibleMs,
               onTick: previewAudioTick,
               // Captions (when on) and the last render's AI hook, like the export.
+              // Graphics behind the speaker go under their cut-out.
+              renderBehind: (timeMs) =>
+                graphicsOn && (
+                  <Suspense fallback={null}>
+                    <MotionOverlay
+                      timeMs={timeMs}
+                      graphics={placedMotion.graphics}
+                      theme={motionTheme}
+                      aspect={project.aspect_ratio}
+                      layer="behind"
+                    />
+                  </Suspense>
+                ),
+              behindAt: graphicsOn
+                ? (timeMs) => behindStrength(placedMotion.graphics, frameAtMs(timeMs))
+                : undefined,
               renderOverlay: (timeMs) => (
                 <>
                   {graphicsOn && (
@@ -2481,6 +2498,7 @@ function EditorPage() {
                         graphics={placedMotion.graphics}
                         theme={motionTheme}
                         aspect={project.aspect_ratio}
+                        layer="front"
                       />
                     </Suspense>
                   )}

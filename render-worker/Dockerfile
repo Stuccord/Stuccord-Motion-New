@@ -20,6 +20,9 @@ RUN apt-get update \
 WORKDIR /app/render-worker
 
 COPY render-worker/package.json render-worker/package-lock.json ./
+# The speaker cut-out runs on the processor: skip onnxruntime-node's
+# download of the NVIDIA (CUDA) libraries.
+ENV ONNXRUNTIME_NODE_INSTALL=skip
 RUN npm ci --omit=dev
 
 COPY render-worker/ ./

@@ -54,6 +54,25 @@ function exitOpacity(frame: number, length: number, frames = 8) {
   return clamp01((length - frame) / frames);
 }
 
+/**
+ * Graphics behind the speaker sit big, at head height, so the words show
+ * either side of the head (the cut-out covers the middle).
+ */
+function behindBand(portrait: boolean): React.CSSProperties {
+  return {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: portrait ? "20%" : "14%",
+    height: portrait ? "30%" : "46%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+  };
+}
+
 function useUnit() {
   const { width, height } = useVideoConfig();
   return { unit: Math.min(width, height) / 100, portrait: height > width, width, height };
@@ -126,30 +145,34 @@ function KeyLine({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   const frame = useStepFrame();
   const { unit, portrait } = useUnit();
   const words = splitWords(g.text, g.emphasis);
-  const size = unit * (portrait ? 6.4 : 5.2);
+  // Behind the speaker: twice the size, at head height.
+  const size = unit * (portrait ? 6.4 : 5.2) * (g.behind ? 2 : 1);
   return (
     <AbsoluteFill style={{ opacity: exitOpacity(frame, g.to - g.from) }}>
-      {/* Darker, softer bottom so the words read over any footage. */}
-      <AbsoluteFill
-        style={{
-          background:
-            "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.35) 32%, transparent 58%)",
-          opacity: easeOut(frame / 10),
-        }}
-      />
+      {/* Darker, softer bottom so the words read over any footage (behind
+          the speaker, the room is darkened instead). */}
+      {!g.behind && (
+        <AbsoluteFill
+          style={{
+            background:
+              "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.35) 32%, transparent 58%)",
+            opacity: easeOut(frame / 10),
+          }}
+        />
+      )}
       <div
         style={{
           position: "absolute",
-          left: unit * 7,
-          right: unit * 7,
-          bottom: portrait ? "24%" : "13%",
+          ...(g.behind
+            ? { left: unit * 3, right: unit * 3, top: portrait ? "22%" : "14%" }
+            : { left: unit * 7, right: unit * 7, bottom: portrait ? "24%" : "13%" }),
           textAlign: "center",
           fontFamily: SANS,
-          fontWeight: 600,
+          fontWeight: g.behind ? 800 : 600,
           fontSize: size,
-          lineHeight: 1.18,
+          lineHeight: g.behind ? 1.02 : 1.18,
           color: theme.text,
-          letterSpacing: "-0.01em",
+          letterSpacing: g.behind ? "-0.03em" : "-0.01em",
         }}
       >
         {words.map(({ w, special }, i) => (
@@ -187,6 +210,46 @@ function Counter({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
     ? 0
     : Math.min(2, String(n.value).split(".")[1]?.length ?? 0);
   const shown = n.value * easeOut((frame - 4) / 26);
+  const value = `${n.prefix}${shown.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}${n.suffix}`;
+  if (g.behind) {
+    // Behind the speaker: the caption, then a huge number at head height.
+    return (
+      <AbsoluteFill style={{ opacity: exitOpacity(frame, g.to - g.from), fontFamily: SANS }}>
+        <div style={behindBand(portrait)}>
+          {g.text && (
+            <div
+              style={{
+                fontSize: unit * (portrait ? 4.4 : 3.6),
+                fontWeight: 600,
+                color: theme.text,
+                textShadow: "0 2px 12px rgba(0,0,0,0.5)",
+                ...pop(frame, 8, unit),
+              }}
+            >
+              {g.text}
+            </div>
+          )}
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: unit * (portrait ? 30 : 24),
+              lineHeight: 1,
+              color: theme.accent,
+              textShadow: `0 0 ${unit * 4}px ${theme.glow}`,
+              fontVariantNumeric: "tabular-nums",
+              letterSpacing: "-0.04em",
+              ...pop(frame, 0, unit),
+            }}
+          >
+            {value}
+          </div>
+        </div>
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill style={{ opacity: exitOpacity(frame, g.to - g.from) }}>
       <div style={{ ...cardPlace(portrait, unit) }}>
@@ -202,12 +265,7 @@ function Counter({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
               letterSpacing: "-0.03em",
             }}
           >
-            {n.prefix}
-            {shown.toLocaleString("en-US", {
-              minimumFractionDigits: decimals,
-              maximumFractionDigits: decimals,
-            })}
-            {n.suffix}
+            {value}
           </div>
           {g.text && (
             <div
@@ -428,7 +486,7 @@ function Compare({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
 
 function Chapter({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   const frame = useStepFrame();
-  const { unit } = useUnit();
+  const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   const ch = g.chapter ?? { index: 1, count: 1 };
   const fill = (ch.index - 1 + easeOut((frame - 6) / 20)) / ch.count;
@@ -452,7 +510,14 @@ function Chapter({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
           backgroundSize: `${unit * 8}px ${unit * 8}px`,
         }}
       />
-      <div style={{ position: "relative", width: "72%", textAlign: "center" }}>
+      {/* Behind the speaker: a bigger title at head height. */}
+      <div
+        style={
+          g.behind
+            ? { ...behindBand(portrait), left: "4%", right: "4%" }
+            : { position: "relative", width: "72%", textAlign: "center" }
+        }
+      >
         <div
           style={{
             fontSize: unit * 2.8,
@@ -467,7 +532,7 @@ function Chapter({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
         <div
           style={{
             marginTop: unit * 2,
-            fontSize: unit * 7.5,
+            fontSize: unit * (g.behind ? 12 : 7.5),
             fontWeight: 700,
             letterSpacing: "-0.02em",
             lineHeight: 1.1,

@@ -22,6 +22,8 @@ import { IMAGE_ZOOM, isImageFilename } from "@/lib/media-kind";
 import { layoutTrack } from "@/lib/timeline-layout";
 import { parseTransform, transformedBox, type ClipTransform } from "@/lib/clip-transform";
 import { TransformBox, type BoxTarget } from "./TransformBox";
+import { loadPersonSegmenter, type PersonSegmenter } from "@/lib/person-segmenter";
+import { BEHIND_BLUR, BEHIND_DARKEN } from "@/motion/cutout";
 import type { ClipRow } from "./types";
 
 /** What the editor can do with the player (a subset of HTMLVideoElement). */
@@ -58,6 +60,13 @@ type Props = {
   renderOverlay?: (timeMs: number) => React.ReactNode;
   /** How much the picture (not the overlay) is zoomed in at a time; 1 or none: not zoomed. */
   pictureScale?: (timeMs: number) => number;
+  /**
+   * Graphics behind the speaker: how far in a time is (0 none, 1 full: the
+   * room darkened and blurred, the speaker cut out in front), and what's
+   * drawn between the room and the speaker.
+   */
+  behindAt?: (timeMs: number) => number;
+  renderBehind?: (timeMs: number) => React.ReactNode;
   /** A clip's file stopped downloading: get a fresh link for it (by storage path). */
   onStall?: (storagePath: string) => void;
   /** The selected clip: gets a box with handles when it's on screen. */
@@ -87,6 +96,8 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     onTick,
     renderOverlay,
     pictureScale,
+    behindAt,
+    renderBehind,
     onStall,
     selectedClipId = null,
     onSelectClip,
@@ -338,6 +349,17 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
 
   // Each file's own size, for its box in the frame.
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
+  // The frame's height on screen (px), for the size of the room's blur.
+  const frameEl = useRef<HTMLDivElement>(null);
+  const [frameH, setFrameH] = useState(0);
+  useEffect(() => {
+    const el = frameEl.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setFrameH(el.clientHeight));
+    ro.observe(el);
+    setFrameH(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
   // A transform being dragged (shown, not saved yet), or just saved and not
   // back from the server yet.
   const [draft, setDraft] = useState<{ id: string; t: ClipTransform | null } | null>(null);
@@ -361,6 +383,12 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedKey]);
 
+  // The picture's zoom, and how far into a behind graphic this time is.
+  const scale = pictureScale?.(t) ?? 1;
+  const zoomStyle: React.CSSProperties | undefined =
+    scale !== 1 ? { transform: `scale(${scale})`, transformOrigin: "50% 40%" } : undefined;
+  const behind = behindAt?.(t) ?? 0;
+
   // What the box can grab: the clips showing now, top-most first.
   const targets: BoxTarget[] = [activeAt(placed.over, t), mainActive]
     .filter((p): p is Placed => p != null && Boolean(urls[p.clip.storage_path]))
@@ -383,16 +411,19 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     // The picture is clipped to the frame (with its rounded corners); the
     // handles aren't.
     <div className="absolute inset-0 rounded-[inherit]">
-      <div className="absolute inset-0 bg-black overflow-hidden rounded-[inherit]">
+      <div ref={frameEl} className="absolute inset-0 bg-black overflow-hidden rounded-[inherit]">
         {/* The picture, zoomed when a Motion Explainer zoom is on (around the
-            upper middle, where a face usually is). */}
+            upper middle, where a face usually is), and darkened and blurred
+            while a graphic is behind the speaker. */}
         <div
           className="absolute inset-0"
-          style={
-            (pictureScale?.(t) ?? 1) !== 1
-              ? { transform: `scale(${pictureScale!(t)})`, transformOrigin: "50% 40%" }
-              : undefined
-          }
+          style={{
+            ...zoomStyle,
+            filter:
+              behind > 0
+                ? `blur(${(behind * BEHIND_BLUR * frameH).toFixed(2)}px) brightness(${(1 - behind * BEHIND_DARKEN).toFixed(3)})`
+                : undefined,
+          }}
         >
           {layers.map((p) => {
             const active = t >= p.start && t < p.end;
@@ -429,6 +460,31 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
             <span className="flex items-center gap-1.5">
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
             </span>
+          </div>
+        )}
+        {renderBehind?.(t)}
+        {/* The speaker, cut out of each video showing, in front of what's
+            behind them (the same places and zoom as the picture). */}
+        {behind > 0 && (
+          <div className="absolute inset-0 z-[8] pointer-events-none" style={zoomStyle}>
+            {layers.map((p) => {
+              if (isImage(p.clip) || t < p.start || t >= p.end) return null;
+              const look = layerLook(
+                p,
+                sizes[p.clip.storage_path] ?? null,
+                transformOf(p.clip),
+                frameRatio,
+              );
+              return (
+                <CutoutLayer
+                  key={`${p.track}:${p.clip.id}`}
+                  getVideo={() => videos.current.get(p.clip.id) ?? null}
+                  style={look.style}
+                  box={look.box}
+                  fit={look.fit}
+                />
+              );
+            })}
           </div>
         )}
         {renderOverlay?.(t)}
@@ -478,6 +534,111 @@ function boxStyle(
   };
 }
 
+/**
+ * Where a clip goes in the frame: its stacking, its box, how it fits the box,
+ * and whether its blurred copy fills the frame behind it.
+ */
+function layerLook(
+  p: Placed,
+  size: { w: number; h: number } | null,
+  transform: ClipTransform | null,
+  frameRatio: number,
+) {
+  const mismatched =
+    size != null &&
+    size.w > 0 &&
+    size.h > 0 &&
+    Math.abs(Math.log(size.w / size.h / frameRatio)) >= 0.03;
+  const style: React.CSSProperties = { zIndex: p.track === "over" ? 2 : 1 };
+  // Behind the picture: its blurred copy, filling the frame. A main clip
+  // keeps it when moved or resized; a B-roll clip that's been moved or
+  // resized shows the main video around it instead.
+  const blurBehind = transform ? p.track === "main" : mismatched;
+  const box = boxStyle(transform, size, frameRatio);
+  // In its own box the picture fills it (the box has the right shape).
+  const fit = transform || !mismatched ? "object-cover" : "object-contain";
+  return { style, blurBehind, box, fit };
+}
+
+// The cut-out is drawn at most this wide (px); the mask itself is smaller.
+const CUTOUT_MAX_WIDTH = 960;
+
+/**
+ * A video's speaker, cut out of its current frame by the person segmenter,
+ * in the same place as the video. Redrawn whenever the video's frame changes.
+ */
+function CutoutLayer({
+  getVideo,
+  style,
+  box,
+  fit,
+}: {
+  getVideo: () => HTMLVideoElement | null;
+  style: React.CSSProperties;
+  box: React.CSSProperties;
+  fit: string;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [segmenter, setSegmenter] = useState<PersonSegmenter | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadPersonSegmenter().then((s) => alive && setSegmenter(s));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const getVideoRef = useRef(getVideo);
+  getVideoRef.current = getVideo;
+  useEffect(() => {
+    const out = canvas.current;
+    if (!segmenter || !out) return;
+    const mask = document.createElement("canvas");
+    let shown: { video: HTMLVideoElement; time: number } | null = null;
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const video = getVideoRef.current();
+      if (!video || video.readyState < 2 || !video.videoWidth) return;
+      // Only when the frame changed (playing, or a seek).
+      if (shown && shown.video === video && shown.time === video.currentTime) return;
+      const g = out.getContext("2d");
+      try {
+        if (!g || !segmenter.maskInto(video, mask)) return;
+      } catch (e) {
+        // A frame that can't be read (or a failing segmenter): stop trying;
+        // the graphics stay behind the room, without the cut-out.
+        console.warn("[preview] The speaker cut-out stopped:", e);
+        cancelAnimationFrame(raf);
+        return;
+      }
+      shown = { video, time: video.currentTime };
+      const k = Math.min(1, CUTOUT_MAX_WIDTH / video.videoWidth);
+      const w = Math.round(video.videoWidth * k);
+      const h = Math.round(video.videoHeight * k);
+      if (out.width !== w || out.height !== h) {
+        out.width = w;
+        out.height = h;
+      }
+      g.globalCompositeOperation = "copy";
+      g.drawImage(video, 0, 0, w, h);
+      // Keep only the person (the mask is smaller; scaled up, its edge stays soft).
+      g.globalCompositeOperation = "destination-in";
+      g.imageSmoothingQuality = "high";
+      g.drawImage(mask, 0, 0, w, h);
+      g.globalCompositeOperation = "source-over";
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [segmenter]);
+  return (
+    <div className="absolute inset-0" style={style}>
+      <div className="absolute" style={box}>
+        <canvas ref={canvas} className={cn("absolute inset-0 w-full h-full", fit)} />
+      </div>
+    </div>
+  );
+}
+
 /** One clip in the player: a video or an image, fitted to the frame. */
 function Layer({
   placed: p,
@@ -508,20 +669,12 @@ function Layer({
     setSizeState(next);
     onSize(next.w, next.h);
   };
-  const mismatched =
-    size != null &&
-    size.w > 0 &&
-    size.h > 0 &&
-    Math.abs(Math.log(size.w / size.h / frameRatio)) >= 0.03;
-  const zIndex = p.track === "over" ? 2 : 1;
-  const style: React.CSSProperties = { zIndex, visibility: active ? "visible" : "hidden" };
-  // Behind the picture: its blurred copy, filling the frame. A main clip
-  // keeps it when moved or resized; a B-roll clip that's been moved or
-  // resized shows the main video around it instead.
-  const blurBehind = transform ? p.track === "main" : mismatched;
-  const box = boxStyle(transform, size, frameRatio);
-  // In its own box the picture fills it (the box has the right shape).
-  const fit = transform || !mismatched ? "object-cover" : "object-contain";
+  const look = layerLook(p, size, transform, frameRatio);
+  const style: React.CSSProperties = {
+    ...look.style,
+    visibility: active ? "visible" : "hidden",
+  };
+  const { blurBehind, box, fit } = look;
 
   if (isImage(p.clip)) {
     // The slow push-in, by where the playhead is in the clip.
@@ -742,6 +895,9 @@ function VideoLayer({
             videoRef(v);
           }}
           src={url}
+          // Read with CORS (storage allows it), so the speaker cut-out can
+          // read its frames; without it they're locked to other code.
+          crossOrigin="anonymous"
           preload="auto"
           playsInline
           muted

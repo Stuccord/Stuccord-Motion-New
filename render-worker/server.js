@@ -46,6 +46,7 @@ import {
   soundGain,
   zoomFilter,
 } from "./motion.js";
+import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -1669,39 +1670,73 @@ async function runRender(job) {
     //     laid over the picture with the zooms in the text encode below.
     let graphicPieces = [];
     let zoom = null;
+    // Graphics behind the speaker: their clips and the speaker's masks
+    // (none: they're drawn in front with the others).
+    let behind = null;
     if (motionJob) {
       try {
         const placed = placedMotion;
         const totalMs = await probeDurationMs(composedOut);
         const totalFrames = Math.ceil(((totalMs ?? 0) / 1000) * MOTION_FPS);
+        zoom = zoomFilter(placed.zooms, w, h);
+        // Behind the speaker only when the cut-out model is in the image.
+        const cutout = personModelReady();
+        const front = placed.graphics.filter((g) => !(cutout && g.behind));
+        const back = placed.graphics.filter((g) => cutout && g.behind);
         if (totalFrames > 0 && placed.graphics.length) {
           await callback(job.callback_url, {
             job_id: job.job_id, status: "rendering", progress: 80,
             stage_message: "Drawing graphics",
           });
           let lastPct = -1;
-          graphicPieces = await renderGraphics({
-            graphics: placed.graphics,
-            theme: motionJob.theme,
-            w,
-            h,
-            totalFrames,
-            workdir,
-            onProgress: (share) => {
-              const pct = Math.round(share * 100);
-              if (pct >= lastPct + 20) {
-                lastPct = pct;
-                void callback(job.callback_url, {
-                  job_id: job.job_id, status: "rendering", progress: 80 + Math.round(share * 4),
-                  stage_message: `Drawing graphics (${pct}%)`,
-                });
-              }
-            },
-          });
+          const draw = (graphics, name, from, share) =>
+            renderGraphics({
+              graphics,
+              theme: motionJob.theme,
+              w,
+              h,
+              totalFrames,
+              workdir,
+              name,
+              onProgress: (part) => {
+                const pct = Math.round((from + part * share) * 100);
+                if (pct >= lastPct + 20) {
+                  lastPct = pct;
+                  void callback(job.callback_url, {
+                    job_id: job.job_id, status: "rendering", progress: 80 + Math.round(pct / 25),
+                    stage_message: `Drawing graphics (${pct}%)`,
+                  });
+                }
+              },
+            });
+          const share = back.length ? front.length / placed.graphics.length : 1;
+          graphicPieces = await draw(front, "graphics", 0, share);
+          if (back.length) {
+            const backPieces = await draw(back, "behind", share, 1 - share);
+            try {
+              await callback(job.callback_url, {
+                job_id: job.job_id, status: "rendering", progress: 84,
+                stage_message: "Cutting you out for the graphics behind you",
+              });
+              const masks = await personMasks({
+                ffmpegPath,
+                input: composedOut,
+                zoom,
+                ranges: behindRanges(back),
+                workdir,
+              });
+              behind = masks.length ? { pieces: backPieces, masks, w, h } : null;
+              if (!behind) graphicPieces = [...graphicPieces, ...backPieces];
+            } catch (e) {
+              // Without the cut-out: those graphics go in front.
+              console.warn(`[Worker] Cut-out failed for job=${job.job_id}:`, e?.message || e);
+              editPlan = { ...(editPlan ?? {}), cutout_error: String(e?.message ?? e).slice(0, 300) };
+              graphicPieces = [...graphicPieces, ...backPieces];
+            }
+          }
         }
-        zoom = zoomFilter(placed.zooms, w, h);
         // Captions step aside while a key line or chapter fills their space.
-        if (graphicPieces.length && captionWords.length) {
+        if ((graphicPieces.length || behind) && captionWords.length) {
           const gaps = captionGaps(placed.graphics);
           captionWords = captionWords.filter(
             (wd) => !gaps.some(([a, b]) => wd.start_ms >= a && wd.start_ms < b),
@@ -1710,6 +1745,7 @@ async function runRender(job) {
       } catch (e) {
         console.warn(`[Worker] Graphics failed for job=${job.job_id}:`, e?.message || e);
         graphicPieces = [];
+        behind = null;
         zoom = null;
         editPlan = { ...(editPlan ?? {}), graphics_error: String(e?.message ?? e).slice(0, 300) };
       }
@@ -1766,14 +1802,24 @@ async function runRender(job) {
 
     const textFilters = [captionsFilter, hookFilter].filter(Boolean);
     let graphicsDone = false;
-    if (graphicPieces.length || zoom) {
+    if (graphicPieces.length || behind || zoom) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 85,
         stage_message: "Adding graphics and captions",
       });
+      const out = path.join(workdir, "final-graphics.mp4");
+      const compose = (pieces, withBehind) =>
+        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind }));
       try {
-        const out = path.join(workdir, "final-graphics.mp4");
-        await run(ffmpegPath, composeArgs({ input: composedOut, pieces: graphicPieces, zoom, textFilters, output: out }));
+        try {
+          await compose(graphicPieces, behind);
+        } catch (e) {
+          if (!behind) throw e;
+          // Again without the cut-out: the behind graphics go in front.
+          console.warn(`[Worker] Cut-out compose failed for job=${job.job_id}:`, e?.message || e);
+          editPlan = { ...(editPlan ?? {}), cutout_error: String(e?.message ?? e).slice(0, 300) };
+          await compose([...graphicPieces, ...behind.pieces], null);
+        }
         finalOut = out;
         graphicsDone = true;
       } catch (e) {
