@@ -19,6 +19,7 @@ import {
   Code2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { MAX_UPLOAD_MB } from "@/lib/upload-rules";
 
 export const Route = createFileRoute("/_authenticated/help")({
   head: () => ({ meta: [{ title: "Help & docs — Stuccord Motion" }] }),
@@ -34,7 +35,7 @@ const GUIDES: { icon: typeof Upload; title: string; steps: string[] }[] = [
     title: "Adding footage",
     steps: [
       "Open a project and press Import Media, drop files anywhere on the editor, or drop them straight onto a track.",
-      "Videos: MP4, MOV or WebM. Images: JPG, PNG, WebP or GIF. Audio: MP3, WAV, M4A, AAC or OGG. Up to 500 MB per file.",
+      `Videos: MP4, MOV or WebM. Images: JPG, PNG, WebP or GIF. Audio: MP3, WAV, M4A, AAC or OGG. Up to ${MAX_UPLOAD_MB} MB per file.`,
       "Uploads run in the background, two at a time, with progress in the Media panel. You can keep editing, cancel a file, or retry one that failed.",
       "Videos and images go onto V1 one after another, in the order you picked them. Drop onto V2 to put one on top as B-roll; audio goes onto A2.",
       "iPhone HEIC photos don't open in browsers: export them as JPG first.",

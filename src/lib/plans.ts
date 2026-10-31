@@ -28,10 +28,11 @@ export const PLANS: Record<PlanId, Plan> = {
     personalExports: 5,
     teamExports: 5,
     teamSeats: 3,
-    personalPlans: 20,
-    teamPlans: 20,
-    personalImages: 100,
-    teamImages: 100,
+    // Kept low while everyone is free: each AI plan and picture costs money.
+    personalPlans: 3,
+    teamPlans: 3,
+    personalImages: 10,
+    teamImages: 10,
   },
 };
 

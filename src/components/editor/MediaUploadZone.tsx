@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { UploadCloud, Loader2, Plus, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MAX_UPLOAD_MB } from "@/lib/upload-rules";
 
 interface MediaUploadZoneProps {
   onUpload: (files: FileList | File[]) => void;
@@ -153,7 +154,7 @@ export function MediaUploadZone({
             {isUploading ? "Uploading clips..." : "Click or drag videos, images or audio here"}
           </p>
           <p className="text-[11px] text-neutral-400 mt-0.5">
-            MP4, MOV, WebM, JPG, PNG, MP3, WAV · Up to 500 MB
+            MP4, MOV, WebM, JPG, PNG, MP3, WAV · Up to {MAX_UPLOAD_MB} MB
           </p>
         </div>
 

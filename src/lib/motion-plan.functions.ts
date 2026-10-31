@@ -251,6 +251,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
       result = await requestPlan({
         title: project.title,
         script: project.script,
+        brief: project.brief,
         numberedWords: numberedTranscript(words),
         wordCount: words.length,
       });

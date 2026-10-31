@@ -619,18 +619,43 @@ export const getProject = createServerFn({ method: "POST" })
     };
   });
 
+/** Every file directly in a storage folder (paths with the folder). */
+async function listFolder(
+  db: { storage: { from: (b: string) => { list: (p: string, o: { limit: number; offset: number }) => Promise<{ data: { name: string; id: string | null }[] | null; error: { message: string } | null }> } } },
+  bucket: string,
+  folder: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  const dir = folder.replace(/\/$/, "");
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await db.storage.from(bucket).list(dir, { limit: 1000, offset });
+    if (error) {
+      console.error(`[storage] Couldn't list ${bucket}/${dir}:`, error.message);
+      break;
+    }
+    const page = data ?? [];
+    for (const f of page) if (f.id) out.push(`${dir}/${f.name}`);
+    if (page.length < 1000) break;
+  }
+  return out;
+}
+
 export const deleteProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { canDelete } = await projectAccess(context.supabase, data.id, context.userId);
+    const { canDelete, project: owned } = await projectAccess(
+      context.supabase,
+      data.id,
+      context.userId,
+    );
     if (!canDelete) {
       throw new Error("Only the team's owner and admins, or whoever made it, can delete this project");
     }
     // Its clips' thumbnail pictures go with it.
     const { data: projectClips } = await context.supabase
       .from("clips")
-      .select("id")
+      .select("id, storage_path")
       .eq("project_id", data.id);
     const thumbs = [
       ...((await thumbnailPaths(
@@ -664,6 +689,28 @@ export const deleteProject = createServerFn({ method: "POST" })
     if (paths.length) {
       const { error: rmErr } = await context.supabase.storage.from("raw-clips").remove(paths);
       if (rmErr) console.error("[deleteProject] Failed to delete thumbnails:", rmErr.message);
+    }
+    // Its uploaded files (unless another project's clip still uses one) and
+    // its AI pictures and speaker photo. The project is already gone, so a
+    // failure here only leaves files behind; it's logged, not shown.
+    const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+    const media = [...new Set((projectClips ?? []).map((c) => c.storage_path))];
+    if (media.length) {
+      const { data: stillUsed } = await admin
+        .from("clips")
+        .select("storage_path")
+        .in("storage_path", media);
+      const used = new Set((stillUsed ?? []).map((c) => c.storage_path));
+      const unused = media.filter((m) => !used.has(m));
+      for (let i = 0; i < unused.length; i += 500) {
+        const { error: mErr } = await admin.storage.from("raw-clips").remove(unused.slice(i, i + 500));
+        if (mErr) console.error("[deleteProject] Failed to delete files:", mErr.message);
+      }
+    }
+    const pictures = await listFolder(admin, SCENE_BUCKET, sceneImageFolder(owned.user_id, owned.id));
+    for (let i = 0; i < pictures.length; i += 500) {
+      const { error: iErr } = await admin.storage.from(SCENE_BUCKET).remove(pictures.slice(i, i + 500));
+      if (iErr) console.error("[deleteProject] Failed to delete pictures:", iErr.message);
     }
     return { ok: true };
   });
@@ -729,7 +776,7 @@ export const moveProject = createServerFn({ method: "POST" })
       .eq("project_id", project.id);
 
     // Every file to move, once each (split clips share a file).
-    const files = new Map<string, "raw-clips" | "renders">();
+    const files = new Map<string, "raw-clips" | "renders" | typeof SCENE_BUCKET>();
     for (const c of clips ?? []) {
       files.set(c.storage_path, "raw-clips");
       if (c.thumbnail_path) files.set(c.thumbnail_path, "raw-clips");
@@ -738,14 +785,28 @@ export const moveProject = createServerFn({ method: "POST" })
     if (project.output_path) files.set(project.output_path, "renders");
     for (const j of jobs ?? []) if (j.output_path) files.set(j.output_path, "renders");
 
-    const done: { bucket: "raw-clips" | "renders"; from: string; to: string }[] = [];
+    // AI pictures and the speaker cartoon live under the project's owner; when
+    // the owner changes they move too, and the plan's paths with them.
+    const imgFrom = sceneImageFolder(project.user_id, project.id);
+    const imgTo = sceneImageFolder(target.user_id, project.id);
+    const imgMoved = (path: string) =>
+      path.startsWith(imgFrom) ? `${imgTo}${path.slice(imgFrom.length)}` : path;
+    if (imgFrom !== imgTo) {
+      for (const path of await listFolder(db, SCENE_BUCKET, imgFrom)) files.set(path, SCENE_BUCKET);
+    }
+    const repoint = <T,>(value: T): T =>
+      value == null || imgFrom === imgTo
+        ? value
+        : (JSON.parse(JSON.stringify(value).split(`"${imgFrom}`).join(`"${imgTo}`)) as T);
+
+    const done: { bucket: "raw-clips" | "renders" | typeof SCENE_BUCKET; from: string; to: string }[] = [];
     const undo = async () => {
       for (const m of done.reverse()) {
         await db.storage.from(m.bucket).move(m.to, m.from).catch(() => undefined);
       }
     };
     for (const [path, bucket] of files) {
-      const dest = moved(path);
+      const dest = bucket === SCENE_BUCKET ? imgMoved(path) : moved(path);
       if (!dest || dest === path) continue;
       const { error } = await db.storage.from(bucket).move(path, dest);
       if (error) {
@@ -791,6 +852,9 @@ export const moveProject = createServerFn({ method: "POST" })
             ? moved(project.thumbnail_url)
             : project.thumbnail_url,
           output_path: moved(project.output_path),
+          motion_plan: repoint(project.motion_plan),
+          motion_plan_previous: repoint(project.motion_plan_previous),
+          motion_character: repoint(project.motion_character),
         })
         .eq("id", project.id);
       if (pErr) throw pErr;

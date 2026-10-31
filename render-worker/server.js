@@ -5,8 +5,9 @@
 //   Start Command:  npm start
 //
 // Env vars:
-//   RENDER_WORKER_SECRET   shared HMAC secret (matches the Lovable app)
-//   LOVABLE_API_KEY        optional — enables AI edit-plan generation
+//   RENDER_WORKER_SECRET   shared HMAC secret (matches the app)
+//   ANTHROPIC_API_KEY      optional — a short AI hook line for videos without
+//                          Motion Explainer graphics (Claude)
 //   ELEVENLABS_API_KEY     optional — enables speech-to-text (Scribe v2) for captions
 //                          and /transcribe (words for planning graphics), and AI
 //                          voiceovers (text-to-speech, /voices and /tts)
@@ -32,6 +33,7 @@ import path from "path";
 import ffmpegPath from "ffmpeg-static";
 import { fileURLToPath } from "url";
 import { registerPublishing } from "./publish.js";
+import { elevenLabsError, generateEditPlan } from "./ai.js";
 import {
   MOTION_FPS,
   MUSIC_BEDS,
@@ -173,7 +175,10 @@ app.post("/voices", async (req, res) => {
         headers: { "xi-api-key": key },
         signal: AbortSignal.timeout(20_000),
       });
-      if (!r.ok) throw new Error(`voices failed: ${r.status}`);
+      if (!r.ok) {
+        const detail = await r.text().catch(() => "");
+        return res.status(502).json({ ok: false, error: elevenLabsError(r.status, detail, "AI voices") });
+      }
       const data = await r.json();
       const voices = (Array.isArray(data?.voices) ? data.voices : [])
         .filter((v) => typeof v?.voice_id === "string" && typeof v?.name === "string")
@@ -219,7 +224,7 @@ app.post("/tts", async (req, res) => {
     if (!r.ok) {
       const detail = await r.text().catch(() => "");
       console.warn(`[Worker] TTS failed: ${r.status} ${detail.slice(0, 200)}`);
-      return res.status(502).json({ ok: false, error: "The AI voice couldn't be made" });
+      return res.status(502).json({ ok: false, error: elevenLabsError(r.status, detail, "The AI voice") });
     }
     const audio = Buffer.from(await r.arrayBuffer());
     res.setHeader("content-type", "audio/mpeg");
@@ -1077,48 +1082,8 @@ function filterPath(p) {
   return `'${String(p).replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "'\\''")}'`;
 }
 
-// ---------- AI edit plan ----------
-
-async function generateEditPlan(job) {
-  if (!process.env.LOVABLE_API_KEY) return null;
-  const sys = `You are an expert short-form video editor in the style of Iman Gadzhi.
-Return a compact JSON edit plan with fields:
-  hook   — a punchy 3-7 word on-screen caption for the first 3 seconds
-  cuts   — array of {clip_id, in, out, role}
-  captions — array of {t, text, style}
-  broll_cues — array of {t, note}
-  music_vibe — string
-Return ONLY JSON, no prose.`;
-  const user = `Style: ${job.style_preset}. Aspect: ${job.aspect_ratio}.
-Title: ${job.title}
-Script:\n${job.script || "(none — infer from footage)"}
-Brief:\n${job.brief || "(none)"}
-Clips: ${JSON.stringify(job.clips.map((c) => ({ id: c.id, role: c.role, filename: c.filename })))}`;
-  try {
-    const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${process.env.LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [{ role: "system", content: sys }, { role: "user", content: user }],
-      }),
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
-    const text = data?.choices?.[0]?.message?.content ?? "";
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return { raw: text };
-    try { return JSON.parse(match[0]); } catch { return { raw: text }; }
-  } catch (e) {
-    console.error("ai plan failed", e);
-    return null;
-  }
-}
-
 // ---------- speech-to-text ----------
+
 
 // Transcribes an audio file with ElevenLabs Scribe v2 and returns the spoken
 // words with their timings in milliseconds from the start of the file.
@@ -1141,7 +1106,8 @@ async function transcribe(audioPath) {
   });
   if (!r.ok) {
     const detail = await r.text().catch(() => "");
-    throw new Error(`speech-to-text failed: ${r.status} ${detail.slice(0, 200)}`);
+    console.warn(`[Worker] Speech-to-text failed: ${r.status} ${detail.slice(0, 200)}`);
+    throw new Error(elevenLabsError(r.status, detail, "Transcribing"));
   }
   const data = await r.json();
 

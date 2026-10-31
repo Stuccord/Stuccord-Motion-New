@@ -12,7 +12,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { hashApiKey, type ApiKeyScope } from "@/lib/api-keys.functions";
 import { startCloudRender } from "@/lib/projects.functions";
 import { isAudioRole, isImageFilename, IMAGE_DEFAULT_MS } from "@/lib/media-kind";
-import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, UPLOAD_TYPES_MESSAGE } from "@/lib/upload-rules";
+import {
+  ALLOWED_UPLOAD_TYPES,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MB,
+  UPLOAD_TYPES_MESSAGE,
+} from "@/lib/upload-rules";
 
 export class ApiError extends Error {
   constructor(
@@ -282,7 +287,7 @@ export async function createUpload(
     throw new ApiError(400, "unsupported_type", `Unsupported file type. ${UPLOAD_TYPES_MESSAGE}`);
   }
   if (input.size > MAX_UPLOAD_BYTES) {
-    throw new ApiError(400, "too_large", "Files can be up to 500 MB");
+    throw new ApiError(400, "too_large", `Files can be up to ${MAX_UPLOAD_MB} MB`);
   }
   // In the user's own folder, like the editor's uploads.
   const safe = input.filename.replace(/[^\w.-]+/g, "_");

@@ -61,6 +61,8 @@ Writing:
 export type PlanRequest = {
   title: string;
   script: string | null;
+  /** The creator's notes for the video (a template's brief, or their own). */
+  brief?: string | null;
   numberedWords: string;
   wordCount: number;
 };
@@ -81,6 +83,11 @@ function userMessage(req: PlanRequest): string {
     req.script?.trim()
       ? `The creator's script (for context; follow what was actually said):\n<script>\n${req.script.trim().slice(0, 60_000)}\n</script>`
       : "No script was given.",
+    ...(req.brief?.trim()
+      ? [
+          `The creator's notes for this video (follow them where they fit the rules above):\n<notes>\n${req.brief.trim().slice(0, 4000)}\n</notes>`,
+        ]
+      : []),
     `The spoken words (${req.wordCount}), numbered:\n<words>\n${req.numberedWords}\n</words>`,
     "Plan the graphics for this video.",
   ];
@@ -121,6 +128,12 @@ export async function requestPlan(
       messages: [{ role: "user", content: userMessage(req) }],
     });
   } catch (e) {
+    if (e instanceof Anthropic.APIError && (e.status === 402 || e.type === "billing_error")) {
+      console.error("[motion-plan] The Anthropic account is out of credit:", e.message);
+      throw new PlanError(
+        "AI planning is paused: the AI account is out of credit. Please try again later.",
+      );
+    }
     if (
       e instanceof Anthropic.AuthenticationError ||
       e instanceof Anthropic.PermissionDeniedError

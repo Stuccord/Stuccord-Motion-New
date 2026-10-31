@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "@/lib/upload-rules";
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-rules";
 import { projectFolder } from "@/lib/workspace";
 
 const MAX_FILE_SIZE = MAX_UPLOAD_BYTES;
@@ -94,7 +94,7 @@ export const Route = createFileRoute("/api/authenticated/uploads/presign")({
         }
 
         if (size > MAX_FILE_SIZE) {
-          return new Response("File size exceeds 500 MB limit", { status: 400 });
+          return new Response(`Files can be up to ${MAX_UPLOAD_MB} MB`, { status: 400 });
         }
 
         // 4. Check the user can edit the project: their own, or a team's as

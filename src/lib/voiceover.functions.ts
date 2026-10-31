@@ -7,8 +7,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-/** AI voice characters each account gets a month (about 5 minutes of speech). */
-export const AI_VOICE_MONTHLY_CHARS = 5000;
+import { AI_VOICE_MONTHLY_CHARS } from "@/lib/ai-voice";
+export { AI_VOICE_MONTHLY_CHARS };
 /** Longest script in one go. */
 export const AI_VOICE_MAX_CHARS = 2500;
 

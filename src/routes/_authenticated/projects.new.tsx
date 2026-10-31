@@ -62,7 +62,8 @@ function NewProject() {
   const [title, setTitle] = useState(template ? template.title : "");
   const [script, setScript] = useState("");
   const [brief, setBrief] = useState(template?.brief ?? "");
-  const [preset, setPreset] = useState(template?.preset ?? "gadzhi");
+  // Motion Explainer is the one style today (templates set the brief and shape).
+  const [preset, setPreset] = useState("gadzhi");
   const [ratio, setRatio] = useState<"9:16" | "16:9" | "1:1">(template?.ratio ?? "9:16");
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -262,9 +263,6 @@ function NewProject() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="gadzhi">Motion Explainer — premium motion graphics</SelectItem>
-                    <SelectItem value="hormozi">Hormozi — pattern-interrupt captions</SelectItem>
-                    <SelectItem value="cinematic">Cinematic — slower, moody cuts</SelectItem>
-                    <SelectItem value="podcast">Podcast clip — 2-cam bounces</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -70,7 +70,9 @@ export const deleteAccount = createServerFn({ method: "POST" })
     }
 
     // Files first (storage doesn't cascade from the account).
-    for (const bucket of ["raw-clips", "renders"]) {
+    // motion-images: AI pictures, uploaded scene pictures and the photo a
+    // speaker cartoon was made from (all under <owner id>/<project id>/).
+    for (const bucket of ["raw-clips", "renders", "motion-images"]) {
       const paths = await listAllFiles(supabaseAdmin.storage, bucket, context.userId);
       for (let i = 0; i < paths.length; i += 500) {
         const { error } = await supabaseAdmin.storage.from(bucket).remove(paths.slice(i, i + 500));

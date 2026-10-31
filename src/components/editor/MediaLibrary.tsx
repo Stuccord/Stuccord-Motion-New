@@ -157,7 +157,7 @@ export function MediaLibrary({
           </span>
         </div>
 
-        {/* Media Category Tabs (image panels are still an honest disabled state) */}
+        {/* Media Category Tabs */}
         <div className="flex items-center gap-1 p-2 border-b border-white/[0.08] bg-[#0A0B11] shrink-0">
           <button
             type="button"
@@ -179,21 +179,6 @@ export function MediaLibrary({
             <span>Audio ({audioClips.length})</span>
           </button>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                disabled
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium text-neutral-500 hover:text-neutral-400 disabled:opacity-40 disabled:cursor-not-allowed transition"
-              >
-                <ImageIcon className="w-3.5 h-3.5" />
-                <span>Panels</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              Manga panel images coming in Phase 2
-            </TooltipContent>
-          </Tooltip>
         </div>
 
         {/* Compact Upload button at top of list */}

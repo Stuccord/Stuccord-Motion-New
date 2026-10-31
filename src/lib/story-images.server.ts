@@ -187,6 +187,9 @@ async function requestImage(body: object, fetchFn: typeof fetch): Promise<ImageB
         "The image service turned this description down. Try describing the scene differently.",
       );
     }
+    if (res.status === 402) {
+      throw new ImageError("AI pictures are paused: the image service is out of credit.");
+    }
     if (res.status === 401 || res.status === 403) {
       throw new ImageError("The image service didn't accept the server's key (GEMINI_API_KEY).");
     }

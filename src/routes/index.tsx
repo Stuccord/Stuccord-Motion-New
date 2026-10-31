@@ -19,6 +19,9 @@ import {
   Layers,
 } from "lucide-react";
 import logoUrl from "@/assets/logo.png";
+import { planFor } from "@/lib/plans";
+import { MAX_UPLOAD_MB } from "@/lib/upload-rules";
+import { AI_VOICE_MONTHLY_CHARS } from "@/lib/ai-voice";
 import creatorPortrait from "@/assets/creator-portrait.jpg";
 import editingDesk from "@/assets/editing-desk.jpg";
 import btsStudio from "@/assets/bts-studio.jpg";
@@ -136,7 +139,7 @@ function Hero() {
         {/* Top badge */}
         <div className="animate-fade-up">
           <a
-            href="#"
+            href="#workflow"
             className="group inline-flex items-center gap-2 rounded-full border border-primary/25 bg-surface/70 px-1 py-1 pr-3 text-xs text-foreground/80 shadow-[0_1px_0_0_rgb(255_255_255/0.04),0_0_24px_-8px_color-mix(in_oklab,var(--color-primary)_60%,transparent)] backdrop-blur-md transition-colors hover:bg-surface"
           >
             <span className="rounded-full bg-gradient-to-r from-primary to-primary-glow px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-primary-foreground">
@@ -151,7 +154,7 @@ function Hero() {
         <h1 className="mt-8 max-w-5xl text-balance font-display text-[44px] font-semibold leading-[0.98] tracking-[-0.035em] text-foreground sm:text-6xl md:text-[88px]">
           Talking-head footage in.{" "}
           <span className="relative inline-block">
-            <span className="relative z-10">Edited like Gadzhi</span>
+            <span className="relative z-10">Edited like the pros</span>
             <svg
               className="absolute -bottom-1 left-0 h-2.5 w-full text-primary md:-bottom-2 md:h-4"
               viewBox="0 0 300 12"
@@ -174,7 +177,7 @@ function Hero() {
             <Upload className="h-3 w-3" />
             <span>Drop a .mp4</span>
             <span className="text-hairline">·</span>
-            <span>first cut in ~90s</span>
+            <span>first edit in minutes</span>
           </div>
         </div>
 
@@ -211,10 +214,10 @@ function Hero() {
         {/* Micro stats strip */}
         <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-hairline bg-hairline text-center md:grid-cols-4">
           {[
-            ["~90s", "average first cut"],
-            ["8.6M", "captions animated"],
-            ["4K + 9:16", "master + vertical"],
-            ["100%", "editable after render"],
+            ["9:16 · 1:1 · 16:9", "video shapes"],
+            ["Word by word", "captions"],
+            ["16", "motion graphic types"],
+            ["100%", "editable before export"],
           ].map(([v, l]) => (
             <div key={l} className="bg-background px-4 py-4">
               <dt className="font-display text-xl font-semibold tracking-tight text-foreground">
@@ -254,7 +257,7 @@ function ShortsViewer() {
             <span className="h-2.5 w-2.5 rounded-full bg-hairline" />
           </div>
           <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
-            <span>hormozi_hook_v2.short</span>
+            <span>hook_v2.short</span>
             <span className="text-hairline">·</span>
             <span className="text-foreground">saved 2s ago</span>
           </div>
@@ -300,9 +303,9 @@ function ShortsViewer() {
               </div>
               {[
                 ["Zoom punch", "on \u201cpost more\u201d"],
-                ["B-roll cutaway", "on \u201cPremiere\u201d"],
+                ["Key line", "on \u201cyour own content\u201d"],
                 ["SFX · whoosh", "at 00:04.2"],
-                ["Music duck", "-8 dB under VO"],
+                ["Music dip", "under your voice"],
               ].map(([k, v]) => (
                 <div
                   key={k}
@@ -330,7 +333,7 @@ function ShortsViewer() {
           {/* Right — asset drawer */}
           <aside className="col-span-12 hidden border-l border-hairline bg-surface/60 p-4 md:col-span-3 md:block">
             <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-              B-roll suggested
+              Graphics planned
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {[
@@ -394,9 +397,9 @@ function ShortsViewer() {
             </div>
             <div className="space-y-1 text-[11px]">
               {[
-                ["High-retention · creator", true],
-                ["Cinematic · brand doc", false],
-                ["Cutdown · ads", false],
+                ["Motion Explainer · glass", true],
+                ["Motion Explainer · paper", false],
+                ["Notes · split screen", false],
               ].map(([n, active]) => (
                 <div
                   key={n as string}
@@ -447,10 +450,10 @@ function ShortsViewer() {
               9:16
             </span>
             <span className="rounded border border-hairline bg-background px-1.5 py-0.5">
-              4K
+              1080p
             </span>
             <span className="text-hairline">·</span>
-            <span>Ready to render</span>
+            <span>Ready to export</span>
           </div>
         </div>
       </div>
@@ -485,7 +488,7 @@ function VerticalShort() {
       {/* Top HUD */}
       <div className="absolute inset-x-3 top-3 flex items-center justify-between font-mono text-[9px] uppercase tracking-widest text-white/70">
         <span className="rounded border border-white/20 bg-black/40 px-1.5 py-0.5 backdrop-blur">
-          Rec · 4K
+          Rec · 1080p
         </span>
         <span className="rounded border border-white/20 bg-black/40 px-1.5 py-0.5 tabular-nums backdrop-blur">
           00:04
@@ -505,11 +508,11 @@ function VerticalShort() {
         Zoom 1.4×
       </div>
 
-      {/* B-roll cutaway thumb */}
+      {/* Graphic coming in */}
       <div className="absolute left-3 top-[28%] w-14 overflow-hidden rounded-sm border border-white/30 shadow-lg">
         <div className="aspect-video bg-[linear-gradient(135deg,#c67b5c,#3a2a2a)]" />
         <div className="bg-black/60 px-1 py-0.5 font-mono text-[8px] uppercase tracking-widest text-white/80">
-          B-roll · in 2f
+          Graphic · in 2f
         </div>
       </div>
 
@@ -597,7 +600,7 @@ function FramesWall() {
       <div className="pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 justify-center">
         <div className="rounded-full border border-white/20 bg-black/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-white/80 backdrop-blur-md">
           <span className="mr-2 inline-block h-1.5 w-1.5 animate-blink rounded-full bg-primary align-middle" />
-          rendering · 8,642 frames · live
+          live preview
         </div>
       </div>
     </section>
@@ -610,42 +613,6 @@ function FramesWall() {
 /* ============================================================
    Logo strip — creators shipping with Stuccord
    ============================================================ */
-function LogoStrip() {
-  const names = [
-    "HighKey Clips",
-    "Solo · Founder",
-    "Nomad Agency",
-    "Podcast Cutdown",
-    "Course Creator Co.",
-    "Reels Republic",
-    "Fitness Vertical",
-    "The Newsletter Guy",
-    "Kinograph Shorts",
-    "Vertical Ventures",
-  ];
-  return (
-    <section className="border-b border-hairline bg-surface">
-      <div className="mx-auto max-w-7xl px-5 py-10">
-        <div className="mb-6 text-center font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
-          Shipping daily with Stuccord
-        </div>
-        <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
-          <div className="flex w-max animate-marquee gap-14">
-            {[...names, ...names].map((n, i) => (
-              <span
-                key={i}
-                className="whitespace-nowrap font-display text-lg font-semibold tracking-tight text-foreground/60"
-              >
-                {n}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ============================================================
    Features bento
    ============================================================ */
@@ -663,7 +630,7 @@ function Features() {
               </span>
             </>
           }
-          subtitle="Cut. Zoom. Caption. Cutaway. SFX. Music. One pass."
+          subtitle="Cut. Zoom. Caption. Graphics. SFX. Music. One pass."
         />
 
         <div className="mt-14 grid grid-cols-1 gap-3 md:grid-cols-6">
@@ -714,7 +681,7 @@ function Features() {
           <BentoCard className="md:col-span-2">
             <FeatureBadge icon={Zap}>Zoom punches on emphasis</FeatureBadge>
             <h3 className="mt-5 font-display text-lg font-semibold tracking-tight text-foreground">
-              Hard cuts. 1.2×, 1.4×, snap back on the beat.
+              Punch-ins on the words that matter, eased back out.
             </h3>
             <div className="mt-5 relative aspect-video overflow-hidden rounded-md border border-hairline bg-foreground">
               <div className="absolute inset-0 bg-[radial-gradient(300px_200px_at_50%_40%,rgba(124,58,237,0.4),transparent_60%),linear-gradient(180deg,#0a0a0a,#1a1a20)]" />
@@ -731,11 +698,11 @@ function Features() {
             </div>
           </BentoCard>
 
-          {/* B-roll on keywords */}
+          {/* AI story scenes */}
           <BentoCard className="md:col-span-2">
-            <FeatureBadge icon={Film}>B-roll on keywords</FeatureBadge>
+            <FeatureBadge icon={Film}>AI story scenes</FeatureBadge>
             <h3 className="mt-5 font-display text-lg font-semibold tracking-tight text-foreground">
-              Say &ldquo;Premiere&rdquo; — get a cutaway of a timeline. Every time.
+              Tell a story and each beat gets its own cinematic picture, flown through in 3D.
             </h3>
             <div className="mt-5 grid grid-cols-3 gap-1.5">
               {[
@@ -755,7 +722,7 @@ function Features() {
               ))}
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
-              4M+ clip library. Or upload your own.
+              Made by AI in one cinematic style, or use your own pictures.
             </p>
           </BentoCard>
 
@@ -763,7 +730,7 @@ function Features() {
           <BentoCard className="md:col-span-2">
             <FeatureBadge icon={Volume2}>SFX on the punches</FeatureBadge>
             <h3 className="mt-5 font-display text-lg font-semibold tracking-tight text-foreground">
-              Whooshes, impacts, sub-drops. Auto-placed on your cuts.
+              Whooshes, clicks, risers and hits, placed on every graphic.
             </h3>
             <div className="mt-5 flex h-10 items-center gap-[3px]">
               {Array.from({ length: 40 }).map((_, i) => (
@@ -797,7 +764,7 @@ function Features() {
           <BentoCard className="md:col-span-2">
             <FeatureBadge icon={Music2}>Background music that ducks</FeatureBadge>
             <h3 className="mt-5 font-display text-lg font-semibold tracking-tight text-foreground">
-              Licensed tracks. Auto-ducked -8 dB under your voice.
+              A music bed for each chapter, dipped under your voice.
             </h3>
             <div className="mt-5 relative flex h-10 items-end gap-[2px]">
               {Array.from({ length: 32 }).map((_, i) => {
@@ -828,8 +795,8 @@ function Features() {
               Paste your script — or don&rsquo;t. Either works.
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              With a script, Stuccord matches beats exactly. Without, it
-              transcribes and follows the vibe.
+              With a script, the AI plans from the lines you wrote. Without
+              one, it works from your words.
             </p>
             <div className="mt-5 rounded border border-hairline bg-surface px-3 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
               <span className="text-foreground">// beat 03</span>
@@ -840,9 +807,9 @@ function Features() {
               &ldquo;your own content&rdquo;
               <br />
               <span className="rounded bg-primary/12 px-1 text-primary">
-                [B-ROLL]
+                [KEY LINE]
               </span>{" "}
-              &ldquo;Premiere&rdquo;
+              &ldquo;editing your own content&rdquo;
             </div>
           </BentoCard>
 
@@ -850,31 +817,29 @@ function Features() {
           <BentoCard className="md:col-span-6">
             <div className="grid gap-8 md:grid-cols-[1.1fr_1fr] md:items-center">
               <div>
-                <FeatureBadge icon={Layers}>Multi-clip auto-sequencing</FeatureBadge>
+                <FeatureBadge icon={Layers}>Motion graphics on your words</FeatureBadge>
                 <h3 className="mt-5 max-w-lg font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-                  Dump every take, every angle, every B-roll clip.
-                  Stuccord figures out what goes where.
+                  Say a number, it counts up. Name three things, they stack.
+                  Every graphic lands on the word that triggers it.
                 </h3>
                 <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-                  Upload 2 clips or 20. If you paste a script, Stuccord matches each
-                  line to the take that delivers it — in the exact order your script
-                  reads. No script? It listens to the audio, reads the room, and
-                  builds the sequence itself. Then it decides which clips are A-roll
-                  (you, on camera) and which drop in as B-roll cutaways on the
-                  right words.
+                  The AI reads your transcript and plans key lines, numbers, lists,
+                  steps, loops, comparisons, chapters, story scenes and calls to
+                  action, some drawn behind you. Pick a glass or paper look, then
+                  move, retype or delete any graphic on its own track.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                   <span className="rounded border border-hairline bg-surface px-2 py-1">
-                    Transcript match
+                    Word-timed
                   </span>
                   <span className="rounded border border-hairline bg-surface px-2 py-1">
-                    Angle detection
+                    Behind the speaker
                   </span>
                   <span className="rounded border border-hairline bg-surface px-2 py-1">
-                    A-roll / B-roll routing
+                    Glass or paper look
                   </span>
                   <span className="rounded border border-hairline bg-surface px-2 py-1">
-                    Continuity check
+                    Fully editable
                   </span>
                 </div>
               </div>
@@ -883,7 +848,7 @@ function Features() {
               <div className="rounded-md border border-hairline bg-surface p-4">
                 <div className="mb-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                   <span>Bin · 6 clips uploaded</span>
-                  <span>unordered</span>
+                  <span>your order</span>
                 </div>
                 <div className="grid grid-cols-6 gap-1.5">
                   {[
@@ -908,7 +873,7 @@ function Features() {
 
                 <div className="my-4 flex items-center justify-center gap-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
                   <span className="h-px flex-1 bg-hairline" />
-                  Stuccord orders it
+                  On your timeline
                   <ArrowRight className="h-3 w-3" />
                   <span className="h-px flex-1 bg-hairline" />
                 </div>
@@ -941,7 +906,7 @@ function Features() {
                 </div>
 
                 <div className="mt-1.5 mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  <span>V2 (B-roll · keyword-triggered)</span>
+                  <span>V2 (B-roll · on top)</span>
                 </div>
                 <div className="relative flex h-6 items-stretch gap-[2px] rounded border border-hairline bg-background p-1">
                   <div className="w-[22%]" />
@@ -1006,27 +971,27 @@ function Workflow() {
   const steps = [
     {
       k: "01",
-      title: "Drop every clip",
-      body: "One take or twenty. A-roll, B-roll, phone footage, screen recordings — throw it all in. Order doesn't matter. Stuccord sorts it against your script (or figures it out from the audio).",
-      detail: "6 clips · auto-ordered · A-roll + B-roll routed",
+      title: "Drop your clips",
+      body: "One take or several. Videos, images and audio go on the timeline in the order you choose, with B-roll on its own track.",
+      detail: "MP4 · MOV · WebM · images · audio",
     },
     {
       k: "02",
       title: "Add your script (optional)",
-      body: "Paste it, upload a .txt, or skip it entirely. With a script, cuts land on the exact beats you wrote.",
-      detail: "hook.txt · 214 words · 58s target",
+      body: "Paste it or skip it. Your words are transcribed either way; with a script, the graphics follow the lines you meant.",
+      detail: "Word-level transcript",
     },
     {
       k: "03",
       title: "AI edits like a pro",
-      body: "Transcribes, cuts, zooms, drops captions, places B-roll, layers SFX, scores it, ducks the music. All the moves.",
-      detail: "142 edits placed · 47s render time",
+      body: "Trims the pauses, writes word-by-word captions, plans motion graphics on your words, adds zooms, sounds and music under your voice.",
+      detail: "Captions · graphics · zooms · sound",
     },
     {
       k: "04",
       title: "Tweak or ship",
-      body: "Every AI decision is a clip you can nudge. Or hit render and get 9:16, 1:1, 16:9 masters in one export.",
-      detail: "9:16 · 1:1 · 16:9 · SRT · MP4",
+      body: "Every AI decision is something you can move, retype or delete. Then export an MP4 in 9:16, 1:1 or 16:9.",
+      detail: "MP4 · 1080p · 9:16 · 1:1 · 16:9",
     },
   ];
 
@@ -1040,9 +1005,9 @@ function Workflow() {
           eyebrow="02 — How it works"
           title={
             <>
-              Raw take on Monday.{" "}
+              Raw take in.{" "}
               <span className="text-muted-foreground">
-                Ten posts by Friday.
+                Finished post out.
               </span>
             </>
           }
@@ -1053,25 +1018,24 @@ function Workflow() {
           <div className="rounded-xl border border-hairline bg-background p-2 shadow-[0_1px_0_0_rgba(0,0,0,0.02)]">
             <div className="flex items-center gap-2 border-b border-hairline px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               <Sparkles className="h-3 w-3 text-primary" />
-              Your brief (or paste script)
-              <span className="ml-auto">⌘ ↵ to render</span>
+              Your script (optional)
+              <span className="ml-auto">What the AI picks out</span>
             </div>
             <div className="p-4">
               <div className="font-mono text-sm leading-relaxed text-foreground">
-                Cut this into a{" "}
+                Most people{" "}
                 <span className="rounded bg-primary/12 px-1.5 py-0.5 text-primary">
-                  58-second short
+                  quit right before it works
+                </span>
+                . I went from zero to{" "}
+                <span className="rounded bg-primary/12 px-1.5 py-0.5 text-primary">
+                  10,000 subscribers
                 </span>{" "}
-                for TikTok. Style like{" "}
+                in a year with{" "}
                 <span className="rounded bg-primary/12 px-1.5 py-0.5 text-primary">
-                  Iman Gadzhi
+                  three simple steps
                 </span>
-                . Hard zooms on every emphasis, word-by-word captions in{" "}
-                <span className="rounded bg-primary/12 px-1.5 py-0.5 text-primary">
-                  Anton
-                </span>
-                , B-roll when I say &ldquo;editor&rdquo; or &ldquo;Premiere&rdquo;,
-                lofi score at -12 dB.
+                : show up, build, launch.
                 <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-blink bg-foreground" />
               </div>
             </div>
@@ -1131,7 +1095,7 @@ function Compare() {
               <span className="text-muted-foreground">Very different post.</span>
             </>
           }
-          subtitle="Drag the handle. Left is what you filmed. Right is what Stuccord ships."
+          subtitle="Drag the handle. Left is a raw take. Right is the kind of edit Stuccord adds."
         />
 
         <div className="mt-14 grid gap-6 md:grid-cols-[1fr_320px] md:items-center">
@@ -1214,12 +1178,12 @@ function Compare() {
               What AI added, right side
             </div>
             {[
-              ["Cut", "12 hard cuts on emphasis words"],
+              ["Cut", "Pauses trimmed"],
               ["Zoom", "1.4× punch on \u201cMORE\u201d"],
               ["Caption", "Word-by-word · Anton · brand yellow"],
-              ["B-roll", "1 cutaway · keyword \u201cpost\u201d"],
+              ["Graphic", "Key line on \u201cPost MORE\u201d"],
               ["SFX", "3 whooshes, 1 impact, 1 sub"],
-              ["Music", "Lofi · -12 dB, ducked under VO"],
+              ["Music", "A music bed, dipped under your voice"],
             ].map(([tag, v]) => (
               <div
                 key={tag}
@@ -1239,113 +1203,26 @@ function Compare() {
 }
 
 /* ============================================================
-   Showcase — creator testimonials
-   ============================================================ */
-function Showcase() {
-  const quotes = [
-    {
-      text: "I was paying an editor $3.2k a month for daily shorts. Stuccord makes cuts I'd fight my editor for. First month I saved eight grand and posted more.",
-      name: "Jordan Vance",
-      role: "Solo creator · 480k IG",
-    },
-    {
-      text: "Our agency runs 14 creator clients. We do the strategy, Stuccord does the edit. Turnaround went from four days to same-day.",
-      name: "Sana Okafor",
-      role: "Founder, HighKey Clips",
-    },
-    {
-      text: "I'm not an editor. I could never be. This is the first tool that makes me look like I hired one.",
-      name: "Marcus Lin",
-      role: "Course creator",
-    },
-  ];
-
-  return (
-    <section id="showcase" className="border-b border-hairline">
-      <div className="mx-auto max-w-7xl px-5 py-24 md:py-32">
-        <SectionHeader
-          eyebrow="04 — In the wild"
-          title={
-            <>
-              Creators fired their editor.{" "}
-              <span className="text-muted-foreground">Kept the output.</span>
-            </>
-          }
-        />
-
-        <div className="mt-14 grid gap-3 md:grid-cols-3">
-          {quotes.map((q, i) => (
-            <figure
-              key={q.name}
-              className="relative flex flex-col justify-between rounded-xl border border-hairline bg-background p-7"
-            >
-              <div className="mb-6 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
-                Case 0{i + 1}
-              </div>
-              <blockquote className="font-display text-lg leading-snug tracking-tight text-foreground">
-                &ldquo;{q.text}&rdquo;
-              </blockquote>
-              <figcaption className="mt-8 flex items-center gap-3 border-t border-hairline pt-5">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-foreground font-mono text-[11px] font-medium text-background">
-                  {q.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
-                </span>
-                <div>
-                  <div className="text-sm font-medium text-foreground">{q.name}</div>
-                  <div className="text-xs text-muted-foreground">{q.role}</div>
-                </div>
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ============================================================
    Pricing
    ============================================================ */
+// Free while in beta: the real limits, from src/lib/plans.ts (paid plans come
+// later; see the Billing page).
+const FREE = planFor("free");
 const PLANS = [
   {
-    name: "Creator",
-    price: "$29",
-    tag: "You post daily. Solo.",
+    name: "Free beta",
+    price: "$0",
+    tag: "Everything, while Stuccord is in beta. No card.",
     features: [
-      "20 shorts / month",
-      "9:16, 1:1, 16:9 exports",
-      "Word-by-word captions",
-      "500+ SFX · 10k music tracks",
+      `${FREE.personalExports} exports a month, no watermark`,
+      `${FREE.personalPlans} AI motion-graphics plans a month`,
+      `${FREE.personalImages} AI pictures a month (story scenes, cartoons)`,
+      "Word-by-word captions, sounds and music",
+      `AI voiceover: ${AI_VOICE_MONTHLY_CHARS.toLocaleString("en")} characters a month`,
+      `9:16, 1:1 and 16:9 · uploads up to ${MAX_UPLOAD_MB} MB`,
     ],
     cta: "Start free",
-  },
-  {
-    name: "Studio",
-    price: "$99",
-    tag: "You run 3–10 creator clients.",
-    features: [
-      "Unlimited shorts",
-      "4K masters",
-      "Custom brand kit (font, colors, LUTs)",
-      "Client review links",
-      "Priority render queue",
-    ],
-    cta: "Start 14-day trial",
     featured: true,
-  },
-  {
-    name: "Agency",
-    price: "Custom",
-    tag: "You run 10+ clients or a media desk.",
-    features: [
-      "Dedicated GPU pool",
-      "SSO + team seats",
-      "API access",
-      "Named onboarding editor",
-    ],
-    cta: "Talk to us",
   },
 ];
 
@@ -1357,14 +1234,14 @@ function Pricing() {
           eyebrow="05 — Pricing"
           title={
             <>
-              Less than a{" "}
-              <span className="text-muted-foreground">one-off Fiverr edit.</span>
+              Free while{" "}
+              <span className="text-muted-foreground">we&rsquo;re in beta.</span>
             </>
           }
-          subtitle="Less than one freelance short."
+          subtitle="Paid plans with more exports will come later. You'll always see the limits up front."
         />
 
-        <div className="mt-14 grid gap-3 md:grid-cols-3">
+        <div className="mx-auto mt-14 grid max-w-md gap-3">
           {PLANS.map((p) => (
             <div
               key={p.name}
@@ -1377,7 +1254,7 @@ function Pricing() {
             >
               {p.featured && (
                 <span className="absolute right-6 top-6 rounded-full bg-primary px-2.5 py-0.5 font-mono text-[9px] font-medium uppercase tracking-widest text-primary-foreground">
-                  Most picked
+                  Beta
                 </span>
               )}
               <div
@@ -1392,7 +1269,7 @@ function Pricing() {
                 <span className="font-display text-5xl font-semibold tracking-tight">
                   {p.price}
                 </span>
-                {p.price !== "Custom" && (
+                {p.price !== "$0" && (
                   <span
                     className={
                       "text-sm " + (p.featured ? "text-background/60" : "text-muted-foreground")
@@ -1448,27 +1325,27 @@ function Pricing() {
 const FAQS = [
   {
     q: "Do I really not need to know how to edit?",
-    a: "Correct. Upload the raw take. If you want, paste your script or bullet points. Stuccord transcribes, cuts, zooms, drops captions, places B-roll, layers SFX, scores it. You get a finished short. No timeline required.",
+    a: "No. Upload your takes and, if you like, paste your script. Stuccord transcribes you, trims the pauses, writes captions, plans motion graphics on your words, and adds zooms, sounds and music. You can export straight away or change anything first.",
   },
   {
-    q: "Can I tweak individual edits if I don't love one?",
-    a: "Yes. Every AI decision — every cut, zoom, caption, cutaway, SFX, music beat — lands as an editable clip. Drag it, delete it, swap it, or hit \"re-edit that beat\" and Stuccord tries again with your note.",
+    q: "Can I change what the AI did?",
+    a: "Yes. Every graphic sits on its own track: move it, change its words or type, delete it, or add your own. Captions, sounds and music can be edited or switched off too.",
   },
   {
-    q: "Does the style really match creators like Gadzhi, Hormozi, Hamza?",
-    a: "That's exactly what it's built for. Hard zooms on emphasis, word-by-word captions in bold display type, B-roll on keywords, whoosh SFX on cuts, lofi/hip-hop score ducked under VO. Pick a preset or upload a reference short and it matches the vibe.",
+    q: "What style does it edit in?",
+    a: "The Motion Explainer style: premium motion graphics on every key line, number, list and story, with zooms, sound design and music, in a dark glass or a paper-on-a-desk look. More styles are coming.",
   },
   {
     q: "What footage does it accept?",
-    a: "Anything modern — iPhone, mirrorless, DSLR, screen recording, Zoom, Riverside. H.264, H.265, ProRes. Vertical, horizontal, or square. We handle proxies and color on our side.",
+    a: `MP4, MOV and WebM video, JPG, PNG, WebP and GIF images, and MP3, WAV, M4A, AAC and OGG audio, up to ${MAX_UPLOAD_MB} MB per file. Vertical, horizontal or square.`,
   },
   {
-    q: "Do you use my footage to train?",
-    a: "Never. Your clips, scripts, and edits are yours. No training, no aggregation, no reuse. Files are deleted 30 days after your project closes unless you keep them.",
+    q: "Do you use my footage to train AI?",
+    a: "No. Your clips and scripts are only used to make your videos. Some steps use AI services (speech-to-text, graphics planning, AI pictures and voices); they process your content for that job only. See the Privacy policy for the details.",
   },
   {
-    q: "Can I get the raw project file to finish in Premiere / CapCut?",
-    a: "Yes. Export FCPXML for Premiere and Final Cut, or a native CapCut project. Nothing is locked in Stuccord.",
+    q: "What do I get when I export?",
+    a: "An MP4 in 1080p in the shape you chose (9:16, 1:1 or 16:9), with the captions, graphics, sounds and music burned in, ready to post or download. You can also publish to YouTube, TikTok or Instagram from Stuccord.",
   },
 ];
 
@@ -1485,14 +1362,14 @@ function FAQ() {
               creators actually ask.
             </h2>
             <p className="mt-5 max-w-sm text-sm leading-relaxed text-muted-foreground">
-              Still on the fence? Send us your rawest take — we&rsquo;ll edit
-              the first one on the house so you can see it on your own footage.
+              Still on the fence? It&rsquo;s free while we&rsquo;re in beta:
+              upload a raw take and see the edit on your own footage.
             </p>
             <a
-              href="#"
+              href="/auth"
               className="group mt-6 inline-flex items-center gap-2 text-sm font-medium text-foreground"
             >
-              Get my free first edit
+              Try it on my footage
               <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </a>
           </div>
@@ -1553,37 +1430,37 @@ function CTA() {
           <div className="relative grid gap-10 md:grid-cols-[1.4fr_1fr] md:items-end">
             <div className="max-w-2xl">
               <div className="font-mono text-[11px] uppercase tracking-widest text-background/50">
-                Beta · v1.4 · free while in beta
+                Beta · free while in beta
               </div>
               <h2 className="mt-4 font-display text-4xl font-semibold leading-[1.02] tracking-tight md:text-6xl">
                 Your next post is one upload away.
               </h2>
               <p className="mt-5 max-w-lg text-background/70">
-                Drop a raw take. Get a scroll-stopping short back before you
-                finish your coffee. No card, no watermark, no subscription trap.
+                Drop a raw take. Get an edited, captioned short with motion
+                graphics back in minutes. No card, no watermark.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <a
-                  href="#"
+                  href="/auth"
                   className="group inline-flex items-center gap-2 rounded-md bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-px"
                 >
                   Upload footage
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </a>
                 <a
-                  href="#"
+                  href="#compare"
                   className="inline-flex items-center gap-2 rounded-md border border-background/25 px-5 py-3 text-sm font-medium text-background transition-colors hover:bg-background/10"
                 >
-                  Watch a full edit
+                  See before and after
                 </a>
               </div>
             </div>
             <ul className="space-y-3 border-t border-background/15 pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
               {[
-                "First edit is free — no card",
-                "Export FCPXML / CapCut anytime",
-                "Your footage is never used to train",
-                "Cancel by closing the tab",
+                "Free while in beta, no card",
+                "MP4 exports with no watermark",
+                "Your footage is never used to train AI",
+                "Edit every AI decision before you export",
               ].map((l) => (
                 <li key={l} className="flex items-center gap-2.5 text-sm text-background/80">
                   <Check className="h-4 w-4 text-primary" strokeWidth={2.5} />
@@ -1605,7 +1482,7 @@ function Footer() {
   return (
     <footer className="bg-background">
       <div className="mx-auto max-w-7xl px-5 pt-16">
-        <div className="grid gap-10 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
+        <div className="grid gap-10 md:grid-cols-[1.5fr_1fr_1fr]">
           <div>
             <div className="flex items-center gap-2.5">
               <LogoMark />
@@ -1619,19 +1496,33 @@ function Footer() {
             </p>
           </div>
           {[
-            { title: "Product", links: ["Editor", "Style presets", "Changelog", "Roadmap"] },
-            { title: "For", links: ["Solo creators", "Agencies", "Podcasters", "Course creators"] },
-            { title: "Legal", links: ["Terms", "Privacy", "DPA", "Status"] },
+            {
+              title: "Product",
+              links: [
+                ["How it works", "#workflow"],
+                ["Pricing", "#pricing"],
+                ["FAQ", "#faq"],
+                ["Sign in", "/auth"],
+              ],
+            },
+            {
+              title: "Legal",
+              links: [
+                ["Terms", "/terms"],
+                ["Privacy", "/privacy"],
+                ["Contact", "mailto:support@stuccord.com"],
+              ],
+            },
           ].map((c) => (
             <div key={c.title}>
               <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 {c.title}
               </div>
               <ul className="mt-4 space-y-2 text-sm text-foreground">
-                {c.links.map((l) => (
-                  <li key={l}>
-                    <a href="#" className="transition-colors hover:text-primary">
-                      {l}
+                {c.links.map(([label, href]) => (
+                  <li key={label}>
+                    <a href={href} className="transition-colors hover:text-primary">
+                      {label}
                     </a>
                   </li>
                 ))}
@@ -1647,8 +1538,8 @@ function Footer() {
         </div>
 
         <div className="flex flex-col justify-between gap-3 border-t border-hairline py-6 text-xs text-muted-foreground md:flex-row">
-          <span>© {new Date().getFullYear()} Stuccord, Inc. Your footage stays yours.</span>
-          <span className="font-mono">v1.4.2 · build 20260701 · all systems normal</span>
+          <span>© {new Date().getFullYear()} Stuccord. Your footage stays yours.</span>
+          <span className="font-mono">Beta</span>
         </div>
       </div>
     </footer>
@@ -1723,8 +1614,8 @@ function Gallery() {
           eyebrow="05 — Frames"
           title={
             <>
-              A week of shipped shorts.{" "}
-              <span className="text-muted-foreground">Every frame edited by Stuccord.</span>
+              Made for people who talk to camera.{" "}
+              <span className="text-muted-foreground">Creators, coaches, founders, educators.</span>
             </>
           }
         />
@@ -1792,11 +1683,9 @@ function Landing() {
       <main>
         <Hero />
         <FramesWall />
-        <LogoStrip />
         <Features />
         <Workflow />
         <Compare />
-        <Showcase />
         <Gallery />
         <Pricing />
         <FAQ />

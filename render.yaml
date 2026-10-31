@@ -21,6 +21,10 @@ services:
         sync: false
       - key: VITE_SUPABASE_PUBLISHABLE_KEY
         sync: false
+      # Largest upload in MB: 50 on Supabase Free; raise (e.g. 500) after
+      # upgrading Supabase to Pro and raising its storage file size limit
+      - key: VITE_MAX_UPLOAD_MB
+        value: 50
       - key: RENDER_WORKER_URL
         sync: false
       - key: RENDER_WORKER_SECRET
@@ -29,6 +33,10 @@ services:
         sync: false
       # Motion Explainer: Claude plans the graphics (Anthropic API key)
       - key: ANTHROPIC_API_KEY
+        sync: false
+      # Motion Explainer: AI story pictures and the speaker's cartoon (Google
+      # Gemini API key; its Google project needs billing turned on)
+      - key: GEMINI_API_KEY
         sync: false
       # Publishing: encrypts connected accounts' sign-ins (32 random bytes, base64)
       - key: PUBLISHING_TOKEN_KEY
@@ -65,8 +73,12 @@ services:
     envVars:
       - key: RENDER_WORKER_SECRET
         sync: false
-      # Optional: speech-to-text (ElevenLabs Scribe v2) for captions
+      # Speech-to-text (captions, words for the AI graphics) and AI voices (ElevenLabs)
       - key: ELEVENLABS_API_KEY
+        sync: false
+      # Optional: a short AI hook line on videos without Motion Explainer
+      # graphics (the same Anthropic API key as the app)
+      - key: ANTHROPIC_API_KEY
         sync: false
       # Optional: the app's address, for the once-a-minute scheduled-post tick
       - key: PUBLIC_APP_URL

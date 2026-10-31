@@ -10,6 +10,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { getUsageStats } from "@/lib/projects.functions";
 import { AI_VOICE_MONTHLY_CHARS, getAiVoiceUsage } from "@/lib/voiceover.functions";
 import { listAllowances } from "@/lib/teams.functions";
+import { MAX_UPLOAD_MB } from "@/lib/upload-rules";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({ meta: [{ title: "Billing — Stuccord Motion" }] }),
@@ -30,7 +31,7 @@ const INCLUDED = [
     `${AI_VOICE_MONTHLY_CHARS.toLocaleString("en")} characters a month`,
   "B-roll, images and picture-in-picture",
   "9:16, 16:9 and 1:1 videos",
-  "Uploads up to 500 MB per file",
+  `Uploads up to ${MAX_UPLOAD_MB} MB per file`,
 ];
 
 function nextResetLabel() {
