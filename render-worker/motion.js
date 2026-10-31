@@ -22,7 +22,11 @@ export const MOTION_FPS = 30;
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
-const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "chapter", "label", "cta"]);
+const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "chapter", "label", "cta"]);
+// Most items per type (src/lib/motion-plan.ts maxItems).
+const MAX_ITEMS = { compare: 2, card: 4, steps: 5, loop: 6 };
+// Graphics that fill the screen, so the captions make way (FULL_SCREEN_TYPES).
+const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins"]);
 // Types with pictured scenes (a cartoon has one).
 const SCENE_TYPES = new Set(["story", "cartoon"]);
 const MAX_SCENES = 6;
@@ -71,7 +75,7 @@ export function placeGraphics(elements, words) {
       items: (Array.isArray(el.items) ? el.items : [])
         .map((i) => str(i, 80).trim())
         .filter(Boolean)
-        .slice(0, 8),
+        .slice(0, MAX_ITEMS[el.type] ?? 8),
       number:
         n && Number.isFinite(n.value)
           ? { value: n.value, prefix: str(n.prefix, 8), suffix: str(n.suffix, 12) }
@@ -79,6 +83,10 @@ export function placeGraphics(elements, words) {
       cta: ["like", "subscribe", "comment", "link"].includes(el.cta) ? el.cta : null,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
+      swap:
+        el.type === "loop" && Number.isInteger(el.swap?.item) && typeof el.swap?.text === "string" && el.swap.text
+          ? { item: el.swap.item, text: el.swap.text.slice(0, 40) }
+          : null,
       scenes: SCENE_TYPES.has(el.type) ? placeScenes(el.type === "cartoon" ? (el.scenes ?? []).slice(0, 1) : el.scenes, from, to, byKey) : null,
     });
   }
@@ -112,6 +120,26 @@ function placeScenes(scenes, from, to, byKey) {
   }));
 }
 
+// When the parts of the 3D sequences happen (src/motion/beats.ts).
+export function stepStarts(count, length) {
+  const n = Math.max(1, count);
+  return Array.from({ length: n }, (_, i) => Math.round((i * length * 0.8) / n));
+}
+export function loopBeats(count, length) {
+  const n = Math.max(1, count);
+  const arcFrom = 10;
+  const arcFrames = Math.max(16, Math.round(length * 0.45));
+  return {
+    arcFrom,
+    arcFrames,
+    dots: Array.from({ length: n }, (_, i) => arcFrom + Math.round((arcFrames * i) / n)),
+    swapAt: Math.max(arcFrom + arcFrames + 6, Math.round(length * 0.72)),
+  };
+}
+export function coinBeats(length) {
+  return { fanAt: Math.max(18, Math.round(length * 0.45)) };
+}
+
 /**
  * Story pictures' links from the job: storage path -> https link, only
  * well-formed entries (the drawing loads them in Chrome).
@@ -140,10 +168,10 @@ export function graphicRanges(graphics, totalFrames, joinGap = 15) {
   return out;
 }
 
-/** Time ranges (ms) where a key line, chapter, story or cartoon fills the captions' space. */
+/** Time ranges (ms) where a full-screen graphic fills the captions' space. */
 export function captionGaps(graphics) {
   return graphics
-    .filter((g) => g.type === "keyline" || g.type === "chapter" || g.type === "story" || g.type === "cartoon")
+    .filter((g) => FULL_SCREEN.has(g.type))
     .map((g) => [(g.from / MOTION_FPS) * 1000, (g.to / MOTION_FPS) * 1000]);
 }
 
@@ -347,6 +375,30 @@ export function baseSoundEvents(graphics, zooms) {
         add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
         add(g, "pop", "pop", at);
         break;
+      case "steps":
+        // A whoosh as the camera flies to each platform (a deeper one first),
+        // and a click as its label lands.
+        stepStarts(g.items.length, len).forEach((f, i) => {
+          add(g, `step${i}`, i === 0 ? "whoosh-deep" : "whoosh-light", at + frameMs(f) - WHOOSH_LEAD_MS);
+          add(g, `label${i}`, "click", at + frameMs(f + 6));
+        });
+        break;
+      case "loop": {
+        // The sphere rises, a click on each stop as the arc reaches it, a
+        // glitch when a word swaps.
+        const b = loopBeats(g.items.length, len);
+        add(g, "enter", "whoosh-deep", at - WHOOSH_LEAD_MS);
+        b.dots.forEach((f, i) => add(g, `stop${i}`, "click", at + frameMs(f)));
+        if (g.swap) add(g, "swap", "glitch", at + frameMs(b.swapAt));
+        break;
+      }
+      case "coins": {
+        const b = coinBeats(len);
+        add(g, "enter", "whoosh-deep", at - WHOOSH_LEAD_MS);
+        add(g, "fan", "whoosh-light", at + frameMs(b.fanAt) - WHOOSH_LEAD_MS);
+        add(g, "blip", "ui-blip", at + frameMs(b.fanAt));
+        break;
+      }
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
         add(g, "hit", "hit", at);

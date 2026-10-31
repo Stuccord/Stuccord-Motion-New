@@ -27,6 +27,9 @@ Graphic types (field "type"):
 - compare: an A-vs-B idea ("a powerful tool or an expensive burden"). "items" has exactly the two sides; "text" is an optional title.
 - story: a short story or journey told over a few sentences ("when I started I had nothing... I slept on a friend's floor... then I made my first sale"). Shown as a sequence of cinematic AI-generated pictures joined by one camera move. Set "scenes": 2-6 scenes in spoken order, each with "from_word" (the word that scene's phrase starts on, within the story's words), "text" (3-7 words on screen, the speaker's words), "emphasis" (one word from that text, or null) and "prompt" (what the picture shows: a person or place living that moment, the setting, the light and mood, in one or two sentences; no words or lettering in the picture; never a real, named person, brand or logo) and "speaker" (true when the speaker themself is in that picture - they are drawn as their own cartoon character - e.g. "I slept on a friend's floor"; false for other people or places). "text" is an optional title for the whole story. Use it for real stories only, at most one or two per video.
 - cartoon: a full-screen cartoon of the speaker acting out a moment - a pain point or common mistake ("most people just copy what they see online"), a joke or sarcastic aside, or a metaphor taken literally ("I was drowning in work"). Set "scenes" to exactly one scene: "from_word" the cartoon's first word, "text" an optional caption of 2-6 words from what was said ("" for none), "emphasis" one word from it or null, "prompt" what the speaker's cartoon is doing, where, and the expression, in one or two sentences (no words or lettering; never a real, named person, brand or logo), and "speaker" true. Use it for short moments, 2-5 seconds, at most one every 30 seconds.
+- steps: a process or path said as steps ("first you show up, then you build, then you launch"). Full screen: numbered 3D platforms climbing away, each lit as the camera reaches it. "items" has the 2-5 steps in order, 1-3 words each; "text" is an optional title. Use it for real step-by-step moments, at most a few per video.
+- loop: a cycle or routine that repeats ("wake up, go to work, come home, sleep, repeat"). Full screen: a glowing sphere with an orbit drawing round it, a stop lighting up for each item. "items" has the 3-6 stops in order, 1-3 words each; "text" is an optional title. If the speaker then changes one part of the loop ("swap the job for building a system"), set "swap" {item: the stop's number from 0, text: the new words}; otherwise null.
+- coins: a choice, a gamble or chances ("every choice is a coin flip", "most will fail, one will change everything"). Full screen: a glossy coin spins up, then many fan out in a ring. "text" is the line (under 10 words), "emphasis" one word from it; "items" optional labels for the coins (2-8 short ones) or [].
 - chapter: a section divider when the speaker starts a new part, tip or step ("tip number one", "moving on to..."). "text" is the section title.
 - label: a small "you are here" label naming the current item or topic; it may stay up while other graphics come and go.
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
@@ -39,13 +42,14 @@ Behind the speaker (field "behind"):
 
 Timing:
 - "from_word" is the first word that triggers the graphic; "to_word" the last word it stays up for (usually the end of the phrase or sentence, 1.5-8 seconds of speech). A list stays until its last item is said.
-- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
+- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
 - Pace: the opening (hook) is the densest - a visual every 3-4 seconds. Later, a graphic or a zoom roughly every 5-10 seconds. Leave the speaker on screen for personal, emotional moments.
 
 Writing:
 - Use the speaker's own words and language. Keep on-screen text short: titles under 6 words, items under 5 words, key lines under 12 words.
 - Never invent facts, numbers, names or claims that weren't said. If the script differs from what was said, follow what was said.
 - "reason" is a few words on why this graphic fits here (e.g. "number said", "three benefits listed", "new tip starts").
+- "swap" is null on every type but loop (and on most loops).
 - Use null for fields a type doesn't use, and [] for unused items and for "scenes" on every type but story and cartoon.
 - "language" is the transcript's language as a short code (e.g. "en").`;
 

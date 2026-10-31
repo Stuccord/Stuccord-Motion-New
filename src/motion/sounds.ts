@@ -7,6 +7,7 @@
 // live in public/sounds and render-worker/sounds.
 
 import { MOTION_FPS, type PlacedGraphic, type PlacedZoom } from "@/motion/timing";
+import { coinBeats, loopBeats, stepStarts } from "@/motion/beats";
 
 export const SOUND_KINDS = [
   "whoosh-light",
@@ -138,6 +139,35 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
         add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
         add(g, "pop", "pop", at);
         break;
+      case "steps":
+        // A whoosh as the camera flies to each platform (a deeper one first),
+        // and a click as its label lands.
+        stepStarts(g.items.length, len).forEach((f, i) => {
+          add(
+            g,
+            `step${i}`,
+            i === 0 ? "whoosh-deep" : "whoosh-light",
+            at + frameMs(f) - WHOOSH_LEAD_MS,
+          );
+          add(g, `label${i}`, "click", at + frameMs(f + 6));
+        });
+        break;
+      case "loop": {
+        // The sphere rises, a click on each stop as the arc reaches it, a
+        // glitch when a word swaps.
+        const b = loopBeats(g.items.length, len);
+        add(g, "enter", "whoosh-deep", at - WHOOSH_LEAD_MS);
+        b.dots.forEach((f, i) => add(g, `stop${i}`, "click", at + frameMs(f)));
+        if (g.swap) add(g, "swap", "glitch", at + frameMs(b.swapAt));
+        break;
+      }
+      case "coins": {
+        const b = coinBeats(len);
+        add(g, "enter", "whoosh-deep", at - WHOOSH_LEAD_MS);
+        add(g, "fan", "whoosh-light", at + frameMs(b.fanAt) - WHOOSH_LEAD_MS);
+        add(g, "blip", "ui-blip", at + frameMs(b.fanAt));
+        break;
+      }
       case "chapter":
         if (at >= RISER_MS) add(g, "riser", "riser", at - RISER_MS);
         add(g, "hit", "hit", at);

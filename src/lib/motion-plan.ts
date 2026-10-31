@@ -31,6 +31,9 @@ export const ELEMENT_TYPES = [
   "compare",
   "story",
   "cartoon",
+  "steps",
+  "loop",
+  "coins",
   "chapter",
   "label",
   "cta",
@@ -46,6 +49,9 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   compare: "A vs B",
   story: "Story",
   cartoon: "Cartoon",
+  steps: "Steps",
+  loop: "Loop",
+  coins: "Coins",
   chapter: "Chapter",
   label: "Label",
   cta: "Call to action",
@@ -62,6 +68,25 @@ export const MAX_SCENES = 6;
  * acting a moment out (exactly one, always with the speaker).
  */
 export const SCENE_TYPES: ReadonlySet<ElementType> = new Set(["story", "cartoon"]);
+
+/** Most items each type shows (list items, steps, loop stops, coin labels...). */
+export function maxItems(type: ElementType): number {
+  switch (type) {
+    case "compare":
+      return 2;
+    case "card":
+      return 4;
+    case "steps":
+      return 5;
+    case "loop":
+      return 6;
+    default:
+      return 8;
+  }
+}
+
+/** Longest word a loop's stop swaps to. */
+const MAX_SWAP = 40;
 /** Longest scene text on screen, and longest image description. */
 const MAX_SCENE_TEXT = 80;
 export const MAX_SCENE_PROMPT = 600;
@@ -125,6 +150,8 @@ export const DraftElement = z.object({
   zoom: z.enum(ZOOM_KINDS).nullable(),
   /** Drawn behind the speaker (cut out in front of it). */
   behind: z.boolean(),
+  /** A loop's stop (0-based) whose words change near the end, and to what; or null. */
+  swap: z.object({ item: z.number().int(), text: z.string() }).nullable(),
   /** A story's scenes in order, or a cartoon's one; [] for every other type. */
   scenes: z.array(DraftScene),
   /** Why this graphic, in a few words (shown to the user). */
@@ -210,6 +237,10 @@ export const MotionElement = z.object({
   reason: z.string().max(300),
   /** Drawn behind the speaker, who is cut out in front of it (BEHIND_TYPES only). */
   behind: z.boolean().optional(),
+  /** A loop's stop whose words change near the end (loops only). */
+  swap: z
+    .object({ item: z.number().int().min(0).max(7), text: z.string().min(1).max(MAX_SWAP) })
+    .optional(),
   /** A story's scenes in order, or a cartoon's one (SCENE_TYPES only). */
   scenes: z.array(MotionScene).max(MAX_SCENES).optional(),
   /** "ai" as planned; "user" once added or changed by hand. */
@@ -318,8 +349,25 @@ const EXCLUSIVE: ReadonlySet<ElementType> = new Set([
   "compare",
   "story",
   "cartoon",
+  "steps",
+  "loop",
+  "coins",
   "chapter",
   "cta",
+]);
+
+/**
+ * Graphics that fill the screen, so the captions make way (the editor and
+ * render-worker/motion.js captionGaps).
+ */
+export const FULL_SCREEN_TYPES: ReadonlySet<ElementType> = new Set([
+  "keyline",
+  "chapter",
+  "story",
+  "cartoon",
+  "steps",
+  "loop",
+  "coins",
 ]);
 
 const clean = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
@@ -401,6 +449,10 @@ export function draftsToElements(
           return d.scenes.length >= 2;
         case "cartoon":
           return d.scenes.length === 1;
+        case "steps":
+          return d.items.length >= 2;
+        case "loop":
+          return d.items.length >= 3;
         default:
           return d.text !== "";
       }
@@ -432,12 +484,19 @@ export function draftsToElements(
       end: { clip_id: to.clipId, word_index: to.wordIndex },
       text: d.text,
       emphasis: d.emphasis,
-      items: d.items.slice(0, d.type === "card" ? 4 : 8),
+      items: d.items.slice(0, maxItems(d.type)),
       number: d.type === "counter" ? d.number : null,
       cta: d.type === "cta" ? d.cta : null,
       zoom: d.type === "zoom" ? d.zoom : null,
       reason: clean(d.reason, 300),
       ...(d.behind === true && BEHIND_TYPES.has(d.type) ? { behind: true } : {}),
+      ...(d.type === "loop" &&
+      d.swap &&
+      clean(d.swap.text, MAX_SWAP) &&
+      d.swap.item >= 0 &&
+      d.swap.item < Math.min(d.items.length, maxItems("loop"))
+        ? { swap: { item: d.swap.item, text: clean(d.swap.text, MAX_SWAP) } }
+        : {}),
       ...(SCENE_TYPES.has(d.type)
         ? {
             scenes: d.scenes.map((sc) => ({
@@ -496,6 +555,11 @@ export function elementSummary(el: MotionElement): string {
       return el.text || (el.scenes ?? []).map((sc) => sc.text).join(" → ");
     case "cartoon":
       return el.scenes?.[0]?.text || el.text || "Cartoon of the speaker";
+    case "steps":
+    case "loop":
+      return [el.text, el.items.join(" → ") + (el.type === "loop" ? " ↻" : "")]
+        .filter(Boolean)
+        .join(": ");
     default:
       return el.text;
   }
@@ -609,11 +673,14 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
     ...el,
     type,
     items:
-      type === "list" && el.items.length < 2
-        ? [...el.items, "First", "Second"].slice(0, Math.max(2, el.items.length))
-        : type === "compare"
-          ? [el.items[0] ?? "This", el.items[1] ?? "That"]
-          : el.items,
+      (type === "list" || type === "steps") && el.items.length < 2
+        ? [...el.items, "First", "Second"].slice(0, 2)
+        : type === "loop" && el.items.length < 3
+          ? [...el.items, "Wake up", "Work", "Sleep"].slice(0, 3)
+          : type === "compare"
+            ? [el.items[0] ?? "This", el.items[1] ?? "That"]
+            : el.items.slice(0, maxItems(type)),
+    swap: type === "loop" && el.swap && el.swap.item < maxItems("loop") ? el.swap : undefined,
     number: type === "counter" ? (el.number ?? { value: 100, prefix: "", suffix: "%" }) : null,
     cta: type === "cta" ? (el.cta ?? "like") : null,
     zoom: type === "zoom" ? (el.zoom ?? "in") : null,

@@ -40,6 +40,7 @@ import { GraphicInspector } from "@/components/editor/GraphicInspector";
 import { useMotionPlan } from "@/components/editor/useMotionPlan";
 import type { GraphicsTrackData } from "@/components/editor/GraphicsTrack";
 import {
+  FULL_SCREEN_TYPES,
   elementSpan,
   elementSummary,
   moveElement,
@@ -1744,13 +1745,7 @@ function EditorPage() {
     if (!graphicsOn) return false;
     const f = frameAtMs(ms);
     return placedMotion.graphics.some(
-      (g) =>
-        (g.type === "keyline" ||
-          g.type === "chapter" ||
-          g.type === "story" ||
-          g.type === "cartoon") &&
-        f >= g.from &&
-        f < g.to,
+      (g) => FULL_SCREEN_TYPES.has(g.type) && f >= g.from && f < g.to,
     );
   };
   const selectedGraphic = motionPlan?.elements.find((e) => e.id === selectedGraphicId) ?? null;

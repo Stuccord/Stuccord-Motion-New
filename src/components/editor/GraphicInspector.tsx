@@ -15,6 +15,7 @@ import {
   ELEMENT_TYPES,
   ZOOM_KINDS,
   markEdited,
+  maxItems,
   withType,
   type ElementType,
   type MotionElement,
@@ -37,6 +38,9 @@ const HINT: Record<ElementType, string> = {
   compare: "Two sides, A vs B.",
   story: "A short story: one AI picture per scene, joined by one camera move.",
   cartoon: "The speaker's cartoon acting a moment out, full screen.",
+  steps: "Numbered 3D platforms, lit one by one as the camera climbs.",
+  loop: "A glowing sphere with an orbit; each stop lights up as the line reaches it.",
+  coins: "A glossy coin spins up, then many fan out in a ring.",
   chapter: "A full-screen divider for a new part, with progress.",
   label: "A small label naming the current topic.",
   cta: "A button the pointer clicks (like, subscribe…).",
@@ -87,8 +91,19 @@ export function GraphicInspector({
   const set = (patch: Partial<MotionElement>) => onChange(markEdited({ ...el, ...patch }));
   // A cartoon's words are its scene's caption.
   const showText = el.type !== "zoom" && el.type !== "cartoon";
-  const showEmphasis = el.type === "keyline" || el.type === "card";
-  const showItems = el.type === "list" || el.type === "compare" || el.type === "card";
+  const showEmphasis =
+    el.type === "keyline" ||
+    el.type === "card" ||
+    el.type === "steps" ||
+    el.type === "loop" ||
+    el.type === "coins";
+  const showItems =
+    el.type === "list" ||
+    el.type === "compare" ||
+    el.type === "card" ||
+    el.type === "steps" ||
+    el.type === "loop" ||
+    el.type === "coins";
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -154,9 +169,15 @@ export function GraphicInspector({
             label={
               el.type === "counter"
                 ? "Caption"
-                : el.type === "list" || el.type === "compare" || el.type === "story"
+                : el.type === "list" ||
+                    el.type === "compare" ||
+                    el.type === "story" ||
+                    el.type === "steps" ||
+                    el.type === "loop"
                   ? "Title (optional)"
-                  : "Text"
+                  : el.type === "coins"
+                    ? "Line"
+                    : "Text"
             }
           >
             <Textarea
@@ -209,7 +230,13 @@ export function GraphicInspector({
                 ? "The two sides (one per line)"
                 : el.type === "card"
                   ? "Lines (up to 4)"
-                  : "Items (one per line, up to 8)"
+                  : el.type === "steps"
+                    ? "Steps (one per line, up to 5)"
+                    : el.type === "loop"
+                      ? "Stops round the loop (one per line, up to 6)"
+                      : el.type === "coins"
+                        ? "Coin labels (optional, one per line, up to 8)"
+                        : "Items (one per line, up to 8)"
             }
           >
             <Textarea
@@ -220,11 +247,51 @@ export function GraphicInspector({
                   items: e.target.value
                     .split("\n")
                     .map((l) => l.slice(0, 80))
-                    .slice(0, el.type === "compare" ? 2 : el.type === "card" ? 4 : 8),
+                    .slice(0, maxItems(el.type)),
                 })
               }
               className={cn(inputCls, "min-h-[80px] resize-none font-mono")}
             />
+          </Field>
+        )}
+
+        {el.type === "loop" && (
+          <Field label="Swap a stop's words near the end (optional)">
+            <div className="flex gap-2">
+              <select
+                value={el.swap ? String(el.swap.item) : ""}
+                disabled={readOnly}
+                onChange={(e) =>
+                  set({
+                    swap:
+                      e.target.value === ""
+                        ? undefined
+                        : { item: Number(e.target.value), text: el.swap?.text || "New words" },
+                  })
+                }
+                className={cn(inputCls, "h-8 rounded-md px-2 max-w-[45%]")}
+                aria-label="Stop to swap"
+              >
+                <option value="">No swap</option>
+                {el.items.map((item, i) => (
+                  <option key={i} value={i}>
+                    {item || `Stop ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+              {el.swap && (
+                <Input
+                  value={el.swap.text}
+                  maxLength={40}
+                  readOnly={readOnly}
+                  placeholder="Becomes…"
+                  onChange={(e) =>
+                    set({ swap: { item: el.swap?.item ?? 0, text: e.target.value || " " } })
+                  }
+                  className={cn(inputCls, "h-8")}
+                />
+              )}
+            </div>
           </Field>
         )}
 

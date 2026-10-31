@@ -13,6 +13,7 @@ import { AbsoluteFill, Img, Sequence, useCurrentFrame, useVideoConfig } from "re
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
 import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
 import { storyCamera } from "@/motion/camera";
+import { coinBeats, coinCount, loopBeats, stepStarts } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 
 export type MotionGraphicsProps = {
@@ -338,6 +339,585 @@ function Cartoon({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
         />
       )}
     </AbsoluteFill>
+  );
+}
+
+// ---------- 3D sequences (stage 9): steps, loop, coins ----------
+//
+// Pure-graphic sequences in CSS 3D with a glossy look: the room is the
+// theme's radial gradient, shapes get depth from stacked faces, gradients,
+// shine and glow (tutorial 5), and the camera never stops.
+
+/** The full-screen backdrop the sequences share: the theme's radial gradient. */
+function Backdrop({
+  theme,
+  opacity,
+  children,
+}: {
+  theme: MotionTheme;
+  opacity: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <AbsoluteFill
+      style={{
+        opacity,
+        background: `radial-gradient(ellipse at 50% 45%, ${theme.secondary} 0%, ${theme.main} 72%)`,
+        fontFamily: SANS,
+        color: theme.text,
+        overflow: "hidden",
+      }}
+    >
+      {children}
+    </AbsoluteFill>
+  );
+}
+
+/** A sequence's title along the top, its special word in the serif. */
+function SequenceTitle({
+  text,
+  emphasis,
+  frame,
+  theme,
+  unit,
+  portrait,
+}: {
+  text: string;
+  emphasis: string | null;
+  frame: number;
+  theme: MotionTheme;
+  unit: number;
+  portrait: boolean;
+}) {
+  if (!text) return null;
+  const size = unit * (portrait ? 5.6 : 4.6);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: unit * 7,
+        right: unit * 7,
+        top: portrait ? "11%" : "8%",
+        textAlign: "center",
+        fontWeight: 700,
+        fontSize: size,
+        lineHeight: 1.15,
+        zIndex: 2,
+      }}
+    >
+      {splitWords(text, emphasis).map(({ w, special }, i) => (
+        <span
+          key={i}
+          style={{
+            display: "inline-block",
+            marginRight: size * 0.26,
+            ...pop(frame, 2 + i * 2, unit),
+            ...(special
+              ? {
+                  fontFamily: SERIF,
+                  fontStyle: "italic",
+                  fontWeight: 400,
+                  fontSize: size * 1.2,
+                  color: theme.accent,
+                  textShadow: `0 0 ${unit * 2.4}px ${theme.glow}`,
+                }
+              : { textShadow: "0 2px 14px rgba(0,0,0,0.6)" }),
+          }}
+        >
+          {w}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** A glossy ball or disc face: light top-left, the accent, then dark. */
+const glossy = (theme: MotionTheme) =>
+  `radial-gradient(circle at 34% 28%, rgba(255,255,255,0.9) 0%, ${theme.accent} 22%, ${theme.secondary} 68%, ${theme.main} 100%)`;
+
+function Steps({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  const frame = useStepFrame();
+  const { unit, portrait, width, height } = useUnit();
+  const length = g.to - g.from;
+  const items = g.items.length ? g.items : [""];
+  const n = items.length;
+  const starts = stepStarts(n, length);
+  const cam = storyCamera(starts, frame);
+
+  // Platforms climb up and away: across in landscape, zig-zagging in portrait.
+  const P = width * (portrait ? 0.46 : 0.2);
+  const D = P * 0.62;
+  const T = P * 0.13;
+  const place = (i: number) => ({
+    x: portrait ? (i % 2 ? 1 : -1) * P * 0.32 * Math.min(1, i) : (i - (n - 1) / 2) * P * 1.35,
+    y: -i * P * (portrait ? 0.42 : 0.3),
+    z: -i * P * (portrait ? 1.1 : 0.7),
+  });
+  const a = place(Math.floor(cam));
+  const b = place(Math.min(n - 1, Math.floor(cam) + 1));
+  const t = cam - Math.floor(cam);
+  const mix = (p: number, q: number) => p + (q - p) * t;
+  const push = frame * unit * (portrait ? 0.12 : 0.04);
+  // Portrait follows each step; landscape frames the whole stair and only
+  // drifts a little toward the current one.
+  const mid = place((n - 1) / 2);
+  const follow = portrait ? 1 : 0.3;
+  const aim = (k: "x" | "y" | "z") => mid[k] + (mix(a[k], b[k]) - mid[k]) * follow;
+  const world =
+    `translateY(${height * (portrait ? 0.08 : 0.02)}px) translateZ(${push}px) rotateX(-24deg) ` +
+    `translate3d(${-aim("x")}px, ${-aim("y")}px, ${-aim("z")}px)`;
+  // A step's light switches on as the camera arrives.
+  const light = (i: number) => easeOut((frame - (starts[i] - 3)) / 8);
+
+  return (
+    <Backdrop theme={theme} opacity={Math.min(easeOut(frame / 8), exitOpacity(frame, length))}>
+      <AbsoluteFill style={{ perspective: width * 1.2 }}>
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transformStyle: "preserve-3d",
+            transform: world,
+          }}
+        >
+          {items.map((label, i) => {
+            const p = place(i);
+            const on = light(i);
+            const rise = easeOut((frame - i * 3) / 12);
+            // In portrait the camera climbs past each step: let it go.
+            const gone = portrait ? clamp01((cam - i - 0.35) / 0.4) : 0;
+            return (
+              <div
+                key={i}
+                style={{
+                  position: "absolute",
+                  transformStyle: "preserve-3d",
+                  transform: `translate3d(${p.x}px, ${p.y + (1 - rise) * P * 0.5}px, ${p.z}px)`,
+                  opacity: rise * (1 - gone),
+                }}
+              >
+                {/* The platform: its top face and its front edge. */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: -P / 2,
+                    top: -D / 2,
+                    width: P,
+                    height: D,
+                    borderRadius: P * 0.12,
+                    transform: "rotateX(90deg)",
+                    background: `linear-gradient(160deg, ${theme.secondary} 0%, ${theme.main} 90%)`,
+                    border: `${Math.max(1, unit * 0.2)}px solid ${theme.glow}`,
+                    boxShadow: `0 0 ${unit * (2 + on * 7)}px ${theme.glow}, inset 0 0 ${P * 0.2}px rgba(255,255,255,${0.04 + on * 0.12})`,
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    left: -P / 2,
+                    top: 0,
+                    width: P,
+                    height: T,
+                    borderRadius: `0 0 ${P * 0.06}px ${P * 0.06}px`,
+                    transform: `translateZ(${D / 2}px)`,
+                    background: `linear-gradient(to bottom, ${theme.secondary}, ${theme.main})`,
+                    borderTop: `${Math.max(1, unit * 0.25)}px solid ${theme.accent}`,
+                    opacity: 0.95,
+                  }}
+                />
+                {/* The spotlight from above. */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: -P * 0.55,
+                    top: -P * 1.9,
+                    width: P * 1.1,
+                    height: P * 1.9,
+                    clipPath: "polygon(42% 0, 58% 0, 100% 100%, 0 100%)",
+                    background: `linear-gradient(to bottom, rgba(255,255,255,0.0), rgba(255,255,255,0.16))`,
+                    opacity: on,
+                  }}
+                />
+                {/* The big number, standing on the platform. */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: -P / 2,
+                    width: P,
+                    top: -P * 0.62,
+                    height: P * 0.6,
+                    display: "flex",
+                    alignItems: "flex-end",
+                    justifyContent: "center",
+                    fontWeight: 800,
+                    fontSize: P * 0.5,
+                    lineHeight: 1,
+                    color: theme.text,
+                    opacity: 0.35 + on * 0.65,
+                    textShadow: [1, 2, 3, 4, 5, 6]
+                      .map((k) => `0 ${k * unit * 0.12}px 0 ${theme.secondary}`)
+                      .concat(`0 0 ${unit * 3 * on}px ${theme.glow}`)
+                      .join(", "),
+                  }}
+                >
+                  {i + 1}
+                </div>
+                {/* A dashed line down to the step's label. */}
+                {label && (
+                  <>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: -1,
+                        top: T,
+                        width: 0,
+                        height: P * 0.32 * easeOut((frame - starts[i]) / 8),
+                        transform: `translateZ(${D / 2}px)`,
+                        borderLeft: `${Math.max(1, unit * 0.25)}px dashed ${theme.accent}`,
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: -P,
+                        width: P * 2,
+                        top: T + P * 0.36,
+                        transform: `translateZ(${D / 2}px)`,
+                        textAlign: "center",
+                        fontWeight: 700,
+                        fontSize: unit * (portrait ? 5.4 : 4.2),
+                        textShadow: `0 0 ${unit * 2}px ${theme.glow}, 0 2px 12px rgba(0,0,0,0.6)`,
+                      }}
+                    >
+                      <div style={pop(frame, starts[i] + 5, unit)}>{label}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </AbsoluteFill>
+      <SequenceTitle
+        text={g.text}
+        emphasis={g.emphasis}
+        frame={frame}
+        theme={theme}
+        unit={unit}
+        portrait={portrait}
+      />
+    </Backdrop>
+  );
+}
+
+function Loop({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  const frame = useStepFrame();
+  const { unit, portrait, width, height } = useUnit();
+  const length = g.to - g.from;
+  const items = g.items;
+  const n = Math.max(1, items.length);
+  const beats = loopBeats(n, length);
+
+  // The sphere, and the orbit round it (an ellipse, as if seen from above).
+  const R = Math.min(width, height) * 0.13;
+  const cx = width / 2;
+  const cy = height * (portrait ? 0.52 : 0.55);
+  // Portrait has little room either side, plenty above and below.
+  const rx = R * (portrait ? 1.75 : 2.6);
+  const ry = R * (portrait ? 2.4 : 1.45);
+  const rise = easeOut(frame / 14);
+  const at = (k: number) => {
+    const ang = -Math.PI / 2 + k * Math.PI * 2;
+    return { x: cx + rx * Math.cos(ang), y: cy + ry * Math.sin(ang) };
+  };
+  // The orbit as a path from the top, clockwise; drawn on by its length.
+  const pts = Array.from({ length: 121 }, (_, i) => at(i / 120));
+  const d = pts.map((q, i) => `${i ? "L" : "M"}${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" ");
+  const perimeter = pts.reduce(
+    (sum, q, i) => (i ? sum + Math.hypot(q.x - pts[i - 1].x, q.y - pts[i - 1].y) : 0),
+    0,
+  );
+  const drawn = easeOut((frame - beats.arcFrom) / beats.arcFrames);
+  // A slow push in.
+  const zoom = 1 + (frame / Math.max(1, length)) * 0.08;
+  const swapT = g.swap ? clamp01((frame - beats.swapAt) / 8) : 0;
+
+  return (
+    <Backdrop theme={theme} opacity={Math.min(easeOut(frame / 8), exitOpacity(frame, length))}>
+      <AbsoluteFill style={{ transform: `scale(${zoom})` }}>
+        <svg width={width} height={height} style={{ position: "absolute", inset: 0 }}>
+          <path
+            d={d}
+            fill="none"
+            stroke={theme.glow}
+            strokeWidth={unit * 0.35}
+            strokeDasharray={`${unit * 0.8} ${unit * 1.2}`}
+            opacity={0.35 * rise}
+          />
+          <path
+            d={d}
+            fill="none"
+            stroke={theme.accent}
+            strokeWidth={unit * 0.45}
+            strokeLinecap="round"
+            strokeDasharray={perimeter}
+            strokeDashoffset={perimeter * (1 - drawn)}
+            style={{ filter: `drop-shadow(0 0 ${unit * 1.2}px ${theme.glow})` }}
+          />
+        </svg>
+        {/* The sphere rises from below. */}
+        <div
+          style={{
+            position: "absolute",
+            left: cx - R,
+            top: cy - R + (1 - rise) * height * 0.45,
+            width: R * 2,
+            height: R * 2,
+            borderRadius: "50%",
+            background: glossy(theme),
+            boxShadow: `0 0 ${unit * 8}px ${theme.glow}, inset ${-R * 0.12}px ${-R * 0.18}px ${R * 0.4}px rgba(0,0,0,0.45)`,
+          }}
+        />
+        {items.map((label, i) => {
+          const q = at(i / n);
+          const shown = frame >= beats.dots[i];
+          const dotP = easeOut((frame - beats.dots[i]) / 5);
+          // Labels sit outside the orbit, on the dot's side.
+          const dx = q.x - cx;
+          const dy = q.y - cy;
+          const len = Math.hypot(dx, dy) || 1;
+          const lx = q.x + (dx / len) * unit * 6 + Math.sign(dx) * unit * 1.5;
+          const ly = q.y + (dy / len) * unit * 5;
+          const align = Math.abs(dx) < rx * 0.2 ? "center" : dx > 0 ? "left" : "right";
+          const swapped = g.swap?.item === i;
+          const size = unit * (portrait ? 4 : 3.2);
+          return (
+            <React.Fragment key={i}>
+              <div
+                style={{
+                  position: "absolute",
+                  left: q.x - unit * 1.1,
+                  top: q.y - unit * 1.1,
+                  width: unit * 2.2,
+                  height: unit * 2.2,
+                  borderRadius: "50%",
+                  background: theme.text,
+                  boxShadow: `0 0 ${unit * 2}px ${theme.accent}`,
+                  transform: `scale(${shown ? dotP : 0})`,
+                }}
+              />
+              {/* Placed apart from the pop-in, which has its own transform; long
+                  words wrap rather than run off the edge. */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: ly,
+                  transform: `translate(${align === "center" ? "-50%" : "0"}, -50%)`,
+                  ...(align === "left"
+                    ? { left: lx, width: Math.max(unit * 12, width - lx - unit * 3) }
+                    : align === "right"
+                      ? { left: unit * 3, width: Math.max(unit * 12, lx - unit * 3) }
+                      : { left: lx, width: width * 0.6 }),
+                  textAlign: align,
+                  fontWeight: 700,
+                  fontSize: size,
+                  lineHeight: 1.1,
+                  textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+                }}
+              >
+                <div style={{ display: "grid", ...pop(frame, beats.dots[i], unit, 8) }}>
+                  <span
+                    style={{
+                      gridArea: "1 / 1",
+                      opacity: swapped ? 1 - swapT : 1,
+                      transform: swapped ? `translateY(${-swapT * size * 0.8}px)` : undefined,
+                    }}
+                  >
+                    {label}
+                  </span>
+                  {swapped && g.swap && (
+                    <span
+                      style={{
+                        gridArea: "1 / 1",
+                        opacity: swapT,
+                        transform: `translateY(${(1 - swapT) * size * 0.8}px)`,
+                        color: theme.accent,
+                        textShadow: `0 0 ${unit * 2.4}px ${theme.glow}`,
+                      }}
+                    >
+                      {g.swap.text}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </AbsoluteFill>
+      <SequenceTitle
+        text={g.text}
+        emphasis={g.emphasis}
+        frame={frame}
+        theme={theme}
+        unit={unit}
+        portrait={portrait}
+      />
+    </Backdrop>
+  );
+}
+
+/** A glossy coin with an edge: stacked discs, a face front and back. */
+function Coin({
+  size,
+  theme,
+  unit,
+  turn,
+}: {
+  size: number;
+  theme: MotionTheme;
+  unit: number;
+  /** Turn round its upright axis, in degrees. */
+  turn: number;
+}) {
+  const depth = size * 0.09;
+  const layers = 7;
+  const face = (back: boolean): React.CSSProperties => ({
+    position: "absolute",
+    inset: 0,
+    borderRadius: "50%",
+    background: glossy(theme),
+    border: `${Math.max(1, size * 0.035)}px solid ${theme.accent}`,
+    boxShadow: `inset 0 0 0 ${size * 0.09}px rgba(0,0,0,0.18), inset 0 0 ${size * 0.16}px rgba(255,255,255,0.25)`,
+    transform: `translateZ(${back ? -depth / 2 : depth / 2}px)${back ? " rotateY(180deg)" : ""}`,
+    backfaceVisibility: "hidden",
+  });
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        transformStyle: "preserve-3d",
+        transform: `rotateY(${turn}deg)`,
+      }}
+    >
+      {Array.from({ length: layers }, (_, k) => (
+        <div
+          key={k}
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            background: theme.secondary,
+            border: `${Math.max(1, unit * 0.15)}px solid ${theme.main}`,
+            transform: `translateZ(${-depth / 2 + (depth * (k + 0.5)) / layers}px)`,
+          }}
+        />
+      ))}
+      <div style={face(false)}>
+        {/* The embossed middle. */}
+        <div
+          style={{
+            position: "absolute",
+            inset: "28%",
+            borderRadius: "50%",
+            border: `${Math.max(1, size * 0.03)}px solid rgba(255,255,255,0.45)`,
+            boxShadow: `0 0 ${size * 0.08}px ${theme.glow}`,
+          }}
+        />
+      </div>
+      <div style={face(true)} />
+    </div>
+  );
+}
+
+function Coins({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  const frame = useStepFrame();
+  const { unit, portrait, width, height } = useUnit();
+  const length = g.to - g.from;
+  const { fanAt } = coinBeats(length);
+  const count = coinCount(g.items.length);
+  const C = Math.min(width, height) * (portrait ? 0.4 : 0.34);
+  const cy = height * (portrait ? 0.55 : 0.56);
+
+  // One coin spins up and slows to face the camera...
+  const up = easeOut(frame / 14);
+  const spin = 900 * (1 - easeOut(frame / Math.max(10, fanAt - 4)));
+  // ...then shrinks into a ring of coins that fans out and slowly turns.
+  const fan = easeOut((frame - fanAt) / 12);
+  const ringR = Math.min(width, height) * (portrait ? 0.3 : 0.27);
+  const small = C * 0.42;
+  const turning = Math.max(0, frame - fanAt) * 0.6;
+
+  return (
+    <Backdrop theme={theme} opacity={Math.min(easeOut(frame / 8), exitOpacity(frame, length))}>
+      <AbsoluteFill style={{ perspective: width * 1.4 }}>
+        {frame < fanAt + 12 && (
+          <div
+            style={{
+              position: "absolute",
+              left: width / 2 - C / 2,
+              top: cy - C / 2 + (1 - up) * height * 0.5,
+              transformStyle: "preserve-3d",
+              transform: `scale(${1 - fan * 0.58})`,
+              opacity: 1 - fan,
+              filter: `drop-shadow(0 0 ${unit * 5}px ${theme.glow})`,
+            }}
+          >
+            <Coin size={C} theme={theme} unit={unit} turn={spin} />
+          </div>
+        )}
+        {frame >= fanAt &&
+          Array.from({ length: count }, (_, i) => {
+            const p = easeOut((frame - fanAt - i * 2) / 12);
+            const ang = ((-90 + (360 * i) / count + turning) * Math.PI) / 180;
+            const x = width / 2 + Math.cos(ang) * ringR * p;
+            const y = cy + Math.sin(ang) * ringR * p * 0.92;
+            const label = g.items[i];
+            return (
+              <div
+                key={i}
+                style={{
+                  position: "absolute",
+                  left: x - small / 2,
+                  top: y - small / 2,
+                  opacity: p,
+                  transformStyle: "preserve-3d",
+                  filter: `drop-shadow(0 0 ${unit * 2.5}px ${theme.glow})`,
+                }}
+              >
+                <Coin size={small} theme={theme} unit={unit} turn={Math.sin(ang) * 35} />
+                {label && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: -small,
+                      width: small * 3,
+                      top: small + unit,
+                      textAlign: "center",
+                      fontWeight: 700,
+                      fontSize: unit * (portrait ? 3.6 : 2.8),
+                      textShadow: "0 2px 12px rgba(0,0,0,0.7)",
+                      ...pop(frame, fanAt + 6 + i * 2, unit, 8),
+                    }}
+                  >
+                    {label}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+      </AbsoluteFill>
+      <SequenceTitle
+        text={g.text}
+        emphasis={g.emphasis}
+        frame={frame}
+        theme={theme}
+        unit={unit}
+        portrait={portrait}
+      />
+    </Backdrop>
   );
 }
 
@@ -941,6 +1521,9 @@ const DRAW: Record<
   compare: Compare,
   story: Story,
   cartoon: Cartoon,
+  steps: Steps,
+  loop: Loop,
+  coins: Coins,
   chapter: Chapter,
   label: Label,
   cta: Cta,

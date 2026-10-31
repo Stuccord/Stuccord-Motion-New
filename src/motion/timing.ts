@@ -37,6 +37,8 @@ export type PlacedGraphic = {
   chapter: { index: number; count: number } | null;
   /** Drawn behind the speaker (cut out in front of it). */
   behind: boolean;
+  /** A loop's stop whose words change near the end; null otherwise. */
+  swap: { item: number; text: string } | null;
   /** A story's scenes in order, or a cartoon's one; null for other graphics. */
   scenes: PlacedScene[] | null;
 };
@@ -127,6 +129,7 @@ export function placeGraphics(
       cta: el.cta,
       chapter: el.type === "chapter" ? { index: ++chapterIndex, count: chapterCount } : null,
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
+      swap: el.type === "loop" && el.swap ? el.swap : null,
       scenes: SCENE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
     });
   }
