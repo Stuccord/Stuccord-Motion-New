@@ -13,6 +13,7 @@ import { openToken, sealToken, tokenOwner } from "./crypto.server";
 import { provider, ReconnectNeeded } from "./providers.server";
 import { tiktokPublishStatus } from "./tiktok.server";
 
+import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 type Db = SupabaseClient<Database>;
 type AccountRow = Database["public"]["Tables"]["social_accounts"]["Row"];
 type PostRow = Database["public"]["Tables"]["social_posts"]["Row"];
@@ -58,7 +59,7 @@ async function hmacHex(secret: string, body: string): Promise<string> {
 
 /** Checks a request signed with RENDER_WORKER_SECRET (like the render webhook). */
 export async function verifyWorkerSignature(body: string, signature: string): Promise<boolean> {
-  const secret = process.env.RENDER_WORKER_SECRET?.trim();
+  const secret = workerSecret();
   if (!secret) return false;
   const expected = await hmacHex(secret, body);
   if (expected.length !== signature.length) return false;
@@ -71,7 +72,7 @@ export async function verifyWorkerSignature(body: string, signature: string): Pr
 class WorkerUnreachable extends Error {}
 
 async function sendToWorker(payload: unknown) {
-  const secret = process.env.RENDER_WORKER_SECRET?.trim();
+  const secret = workerSecret();
   if (!secret) throw new Error("The render worker isn't set up (RENDER_WORKER_SECRET)");
   const body = JSON.stringify(payload);
   let res: Response;
@@ -88,6 +89,7 @@ async function sendToWorker(payload: unknown) {
   } catch {
     throw new WorkerUnreachable("Couldn't reach the upload service");
   }
+  if (res.status === 401) throw new Error(WORKER_SECRET_MISMATCH);
   if (res.status === 404) throw new Error("Posting needs the render worker to be updated");
   if (res.status === 503 || res.status === 429)
     throw new WorkerUnreachable("The upload service is busy");

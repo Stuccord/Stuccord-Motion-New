@@ -35,6 +35,7 @@ import {
 import { planFor, type Plan } from "@/lib/plans";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
 
+import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 const ProjectInput = z.object({ project_id: z.string().uuid() });
 
 type Db = SupabaseClient<Database>;
@@ -445,7 +446,7 @@ export const transcribeForPlan = createServerFn({ method: "POST" })
     const files = [...new Map(missing.map((c) => [c.storage_path, c])).values()];
     if (files.length === 0) return { queued: 0 };
 
-    const secret = process.env.RENDER_WORKER_SECRET?.trim();
+    const secret = workerSecret();
     if (!secret)
       throw new Error("Transcribing isn't set up yet (RENDER_WORKER_SECRET is missing).");
 
@@ -488,6 +489,7 @@ export const transcribeForPlan = createServerFn({ method: "POST" })
       throw new Error("The worker is busy with an export. Try again in a minute.");
     if (res.status === 404)
       throw new Error("The render worker needs updating before it can transcribe.");
+    if (res.status === 401) throw new Error(WORKER_SECRET_MISMATCH);
     if (res.status !== 202) throw new Error(`The render worker refused (HTTP ${res.status}).`);
 
     const { error } = await db

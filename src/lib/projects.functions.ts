@@ -11,6 +11,7 @@ import { planFor, type TeamRole } from "@/lib/plans";
 import { SCENE_BUCKET, parseMotionPlan, sceneImageFolder } from "@/lib/motion-plan";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 
+import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
 // so the next Render produces a fresh video instead of re-serving the old one.
@@ -1630,8 +1631,8 @@ export async function startCloudRender(
   // Dispatch to external worker with timeout and robust status validation
   try {
     const workerJobsUrl = resolveWorkerJobsEndpoint(process.env.RENDER_WORKER_URL);
-    const workerSecret = process.env.RENDER_WORKER_SECRET?.trim();
-    if (!workerSecret) {
+    const secretForWorker = workerSecret();
+    if (!secretForWorker) {
       throw new Error("RENDER_WORKER_SECRET is not configured");
     }
     const callbackWebhookUrl = resolveCallbackWebhookEndpoint(
@@ -1783,7 +1784,7 @@ export async function startCloudRender(
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey(
       "raw",
-      enc.encode(workerSecret),
+      enc.encode(secretForWorker),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"],
@@ -1815,6 +1816,7 @@ export async function startCloudRender(
       clearTimeout(timeoutId);
     }
 
+    if (res.status === 401) throw new Error(WORKER_SECRET_MISMATCH);
     if (res.status !== 202) {
       throw new Error(`Render worker rejected job with HTTP status ${res.status}`);
     }

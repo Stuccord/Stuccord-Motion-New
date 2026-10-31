@@ -8,6 +8,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 import { AI_VOICE_MONTHLY_CHARS } from "@/lib/ai-voice";
+import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 export { AI_VOICE_MONTHLY_CHARS };
 /** Longest script in one go. */
 export const AI_VOICE_MAX_CHARS = 2500;
@@ -40,7 +41,7 @@ function workerUrl(endpoint: "voices" | "tts"): URL {
 
 /** Sends a signed request to the worker (signed like render jobs). */
 async function callWorker(endpoint: "voices" | "tts", payload: unknown, timeoutMs: number) {
-  const secret = process.env.RENDER_WORKER_SECRET?.trim();
+  const secret = workerSecret();
   if (!secret) throw new Error("AI voices aren't set up yet");
   const body = JSON.stringify(payload);
   const enc = new TextEncoder();
@@ -65,6 +66,7 @@ async function callWorker(endpoint: "voices" | "tts", payload: unknown, timeoutM
   } catch {
     throw new Error("Couldn't reach the voice service; try again in a moment");
   }
+  if (res.status === 401) throw new Error(WORKER_SECRET_MISMATCH);
   if (res.status === 404) {
     // A worker deployed before voiceovers.
     throw new Error("AI voices aren't available yet: the render worker needs updating");

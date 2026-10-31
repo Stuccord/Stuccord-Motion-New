@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createHmac, timingSafeEqual } from "crypto";
 import { saveIncomingTranscripts } from "@/lib/transcripts.server";
 
+import { workerSecret } from "@/lib/worker-secret";
 /**
  * Render worker callback for a Transcribe run (planning graphics before an
  * export; see transcribeForPlan in src/lib/motion-plan.functions.ts).
@@ -21,7 +22,7 @@ export const Route = createFileRoute("/api/public/transcribe-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const secret = process.env.RENDER_WORKER_SECRET;
+        const secret = workerSecret();
         if (!secret) return new Response("Worker not configured", { status: 503 });
 
         const signature = request.headers.get("x-stuccord-signature") ?? "";

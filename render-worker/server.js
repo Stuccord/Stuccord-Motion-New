@@ -55,7 +55,12 @@ import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
 
-const SECRET = process.env.RENDER_WORKER_SECRET;
+// The secret shared with the app, read like the app does (src/lib/worker-secret.ts):
+// surrounding spaces and quotes pasted into the host's settings are ignored.
+const SECRET = (process.env.RENDER_WORKER_SECRET ?? "")
+  .trim()
+  .replace(/^(["'])(.*)\1$/, "$2")
+  .trim();
 if (!SECRET) console.warn("[Worker] RENDER_WORKER_SECRET not set — /jobs will reject all requests");
 if (!ffmpegPath) console.warn("[Worker] ffmpeg-static failed to resolve a binary path");
 
