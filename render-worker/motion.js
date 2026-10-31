@@ -282,11 +282,16 @@ export function zoomExpression(zooms) {
  * middle when unknown), like the preview's transform-origin: that point
  * stays put while the picture grows.
  */
-export function zoomFilter(zooms, w, h, { shots = [], center = null, closeScale = ANGLE_CLOSE } = {}) {
+export function zoomFilter(zooms, w, h, { shots = [], center = null, closeScale = ANGLE_CLOSE, move = "cut" } = {}) {
   if (!zooms.length && !shots.length) return null;
   const c = angleCenter(center);
+  // A close shot: tighter straight away ("cut"), or easing in over the shot ("push").
+  const shot = (s) =>
+    move === "push"
+      ? `between(in,${s.from},${s.to - 1})*(in-${s.from})/${s.to - s.from}`
+      : `between(in,${s.from},${s.to - 1})`;
   const close = shots.length
-    ? `*(1+${num(closeScale - 1)}*(${shots.map((s) => `between(in,${s.from},${s.to - 1})`).join("+")}))`
+    ? `*(1+${num(closeScale - 1)}*(${shots.map(shot).join("+")}))`
     : "";
   return (
     `zoompan=z='(${zoomExpression(zooms)})${close}'` +
@@ -302,22 +307,86 @@ const DEFAULT_ANGLE_CENTER = { x: 0.5, y: 0.4 };
 const ANGLE_PACES = {
   normal: { hookMin: 3.5, hookMax: 7, min: 5, max: 10 },
   calm: { hookMin: 5, hookMax: 9, min: 7, max: 12 },
+  slow: { hookMin: 6, hookMax: 10, min: 8, max: 14 },
 };
 
 // ---------- looks' finish (mirrors src/motion/looks.ts) ----------
 
-const STANDARD_FINISH = { grade: null, angleClose: ANGLE_CLOSE, pace: "normal", captions: "bold" };
+const STANDARD_FINISH = {
+  grade: null,
+  grain: 0,
+  vignette: false,
+  bars: false,
+  angleClose: ANGLE_CLOSE,
+  pace: "normal",
+  angleMove: "cut",
+  captions: "bold",
+};
 export const LOOK_FINISH = {
   glass: STANDARD_FINISH,
   paper: STANDARD_FINISH,
-  minimal: { grade: { saturation: 0.82, contrast: 1.06 }, angleClose: 1.15, pace: "calm", captions: "clean" },
+  minimal: {
+    ...STANDARD_FINISH,
+    grade: { saturation: 0.82, contrast: 1.06 },
+    angleClose: 1.15,
+    pace: "calm",
+    captions: "clean",
+  },
+  film: {
+    grade: {
+      saturation: 1.05,
+      contrast: 1.08,
+      curves: {
+        r: [0, 0.22, 0.5, 0.79, 1],
+        g: [0, 0.25, 0.5, 0.76, 0.98],
+        b: [0.04, 0.29, 0.5, 0.7, 0.92],
+      },
+    },
+    grain: 0.5,
+    vignette: true,
+    bars: true,
+    angleClose: 1.12,
+    pace: "slow",
+    angleMove: "push",
+    captions: "clean",
+  },
 };
 export const lookFinish = (look) => (Object.hasOwn(LOOK_FINISH, look ?? "") ? LOOK_FINISH[look] : STANDARD_FINISH);
 
-/** The look's colour grade as an ffmpeg filter (the preview's CSS saturate/contrast); null: none. */
+/**
+ * The look's colour grade as an ffmpeg filter: its per-channel curves (at
+ * 0, 0.25, 0.5, 0.75 and 1, like the preview's SVG tables), then saturation
+ * and contrast (the preview's CSS saturate/contrast); null: none.
+ */
 export function gradeFilter(finish) {
   const g = finish?.grade;
-  return g ? `eq=saturation=${num(g.saturation)}:contrast=${num(g.contrast)}` : null;
+  if (!g) return null;
+  const curve = (pts) => pts.map((y, i) => `${num(i / 4)}/${num(y)}`).join(" ");
+  const curves = g.curves
+    ? `curves=r='${curve(g.curves.r)}':g='${curve(g.curves.g)}':b='${curve(g.curves.b)}',`
+    : "";
+  return `${curves}eq=saturation=${num(g.saturation)}:contrast=${num(g.contrast)}`;
+}
+
+/** The black bars' height (src/motion/looks.ts barHeight). */
+export function barHeight(w, h) {
+  const share = h > w ? 0.05 : h === w ? 0.07 : 0.1;
+  return Math.round((h * share) / 2) * 2;
+}
+
+/**
+ * The look's finish over the whole picture, graphics included, before the
+ * captions: grain, then the vignette, then the black bars. Empty: none.
+ */
+export function finishFilters(finish, w, h) {
+  const out = [];
+  if (finish?.grain > 0) out.push(`noise=alls=${Math.round(finish.grain * 20)}:allf=t`);
+  if (finish?.vignette) out.push("vignette=angle=0.5");
+  if (finish?.bars) {
+    const b = barHeight(w, h);
+    out.push(`drawbox=x=0:y=0:w=iw:h=${b}:color=black:t=fill`, `drawbox=x=0:y=ih-${b}:w=iw:h=${b}:color=black:t=fill`);
+  }
+  return out;
 }
 
 /** The plan's speaker point, if it's a valid one; else the upper middle. */
@@ -460,7 +529,7 @@ export async function renderGraphics({
  * text filters (captions, hook). Audio is copied. `textFilters` is a list of
  * filters (or empty).
  */
-export function composeArgs({ input, pieces, zoom, textFilters, output, behind = null, split = null, grade = null }) {
+export function composeArgs({ input, pieces, zoom, textFilters, output, behind = null, split = null, grade = null, finish = [] }) {
   const args = ["-y", "-i", input];
   for (const p of pieces) {
     args.push("-itsoffset", p.startS.toFixed(4), "-i", p.file);
@@ -499,7 +568,9 @@ export function composeArgs({ input, pieces, zoom, textFilters, output, behind =
     graph.push(`[${last}][${i + 1}:v]overlay=0:0:eof_action=pass:format=auto[g${i}]`);
     last = `g${i}`;
   });
-  graph.push(`[${last}]${textFilters.length ? textFilters.join(",") + "," : ""}format=yuv420p[vout]`);
+  // The look's grain, vignette and bars over everything, then the captions on top.
+  const after = [...finish, ...textFilters];
+  graph.push(`[${last}]${after.length ? after.join(",") + "," : ""}format=yuv420p[vout]`);
   args.push(
     "-filter_complex", graph.join(";"),
     "-map", "[vout]", "-map", "0:a?",

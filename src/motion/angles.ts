@@ -13,11 +13,12 @@ export const ANGLE_CLOSE = 1.3;
 export const DEFAULT_ANGLE_CENTER = { x: 0.5, y: 0.4 };
 
 const FPS = 30;
-/** Shot lengths (s): in the first minute, and after it; "calm" looks cut less often. */
+/** Shot lengths (s): in the first minute, and after it; "calm" and "slow" looks cut less often. */
 const HOOK_S = 60;
 const PACES = {
   normal: { hookMin: 3.5, hookMax: 7, min: 5, max: 10 },
   calm: { hookMin: 5, hookMax: 9, min: 7, max: 12 },
+  slow: { hookMin: 6, hookMax: 10, min: 8, max: 14 },
 } as const;
 export type AnglePace = keyof typeof PACES;
 /** A pause this long (ms) is a good place to cut. */
@@ -96,7 +97,17 @@ function withoutBlocked(shots: CloseShot[], blocked: [number, number][]): CloseS
   return out.filter((s) => s.to - s.from >= MIN_SHOT);
 }
 
-/** How much the angle tightens the picture at a frame (1 wide, `close` close). */
-export function angleAt(shots: CloseShot[], frame: number, close = ANGLE_CLOSE): number {
-  return shots.some((s) => frame >= s.from && frame < s.to) ? close : 1;
+/**
+ * How much the angle tightens the picture at a frame: 1 wide, `close` in a
+ * close shot - straight away ("cut"), or easing in over the shot ("push").
+ */
+export function angleAt(
+  shots: CloseShot[],
+  frame: number,
+  close = ANGLE_CLOSE,
+  move: "cut" | "push" = "cut",
+): number {
+  const s = shots.find((x) => frame >= x.from && frame < x.to);
+  if (!s) return 1;
+  return move === "push" ? 1 + ((close - 1) * (frame - s.from)) / (s.to - s.from) : close;
 }

@@ -1,14 +1,17 @@
-// The Minimal look: every Motion Explainer graphic as clean type and thin
-// lines - no cards, glows or 3D. Words in one sans at light and medium
-// weights, the key word in the accent colour, hairlines that draw on, lots
-// of empty space, and gentle fades without blur. Full-screen graphics sit on
-// a near-black page. Same timings and sounds as the other looks; only the
-// drawing changes (the video's finish is set in looks.ts).
+// The Minimal and Cinematic looks: every Motion Explainer graphic as type
+// and thin lines - no cards, glows or 3D. The key word in the accent colour,
+// hairlines that draw on, lots of empty space, gentle fades without blur;
+// full-screen graphics sit on a near-black page. Both looks share these
+// layouts and differ in their skin: Minimal is one clean sans; Cinematic
+// has serif titles with the key word in italics, widely spaced capitals,
+// slower fades, a warmer page and light leaks across chapter and story
+// changes. Same timings and sounds as the other looks; only the drawing
+// changes (each look's video finish - grade, grain, bars - is in looks.ts).
 
 import React from "react";
 import { AbsoluteFill, Img } from "remotion";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
-import { SANS, type MotionTheme } from "@/motion/theme";
+import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
 import {
   coinBeats,
   coinCount,
@@ -31,22 +34,107 @@ import {
   useUnit,
 } from "@/motion/kit";
 
-const PAGE = "#0D0D0F";
-const INK = "#F2F2F0";
-const SOFT = "rgba(242, 242, 240, 0.7)";
-const LINE = "rgba(242, 242, 240, 0.2)";
-const TILE = "#1B1B1F";
-// Over the footage: a soft shadow under every word, so light words read on bright rooms.
-const OVER = "0 1px 12px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.35)";
+// The skin's colours and type (CSS variables set by MinimalGraphic or FilmGraphic).
+const PAGE = "var(--cg-page)";
+const INK = "var(--cg-ink)";
+const SOFT = "var(--cg-soft)";
+const LINE = "var(--cg-line)";
+const TILE = "var(--cg-tile)";
+/** Over the footage: a soft shadow under every word, so light words read on bright rooms. */
+const OVER = "var(--cg-over)";
+/** Titles' font: key lines, titles, chapters, scene words and big numbers. */
+const TITLE = "var(--cg-title)";
+/** Small capitals' spacing. */
+const TRACK = "var(--cg-track)";
+
+/** A look drawn with these layouts. */
+type Skin = {
+  vars: Record<`--cg-${string}`, string>;
+  /** Titles in the serif (it has one weight; the key word goes italic). */
+  serif: boolean;
+  /** How long arrivals take (frames). */
+  fadeFrames: number;
+  /** Warm light washing across chapter and story changes. */
+  leaks: boolean;
+};
+
+const SHADOW = "0 1px 12px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.35)";
+
+const MINIMAL_SKIN: Skin = {
+  vars: {
+    "--cg-page": "#0D0D0F",
+    "--cg-ink": "#F2F2F0",
+    "--cg-soft": "rgba(242, 242, 240, 0.7)",
+    "--cg-line": "rgba(242, 242, 240, 0.2)",
+    "--cg-tile": "#1B1B1F",
+    "--cg-over": SHADOW,
+    "--cg-title": SANS,
+    "--cg-track": "0.16em",
+  },
+  serif: false,
+  fadeFrames: 16,
+  leaks: false,
+};
+
+const FILM_SKIN: Skin = {
+  vars: {
+    "--cg-page": "#0B0A09",
+    "--cg-ink": "#F4EEE4",
+    "--cg-soft": "rgba(244, 238, 228, 0.72)",
+    "--cg-line": "rgba(244, 238, 228, 0.22)",
+    "--cg-tile": "#1A1714",
+    "--cg-over": SHADOW,
+    "--cg-title": SERIF,
+    "--cg-track": "0.32em",
+  },
+  serif: true,
+  fadeFrames: 24,
+  leaks: true,
+};
+
+const SkinContext = React.createContext<Skin>(MINIMAL_SKIN);
+const useSkin = () => React.useContext(SkinContext);
 
 type Draw = (p: { g: PlacedGraphic; theme: MotionTheme }) => React.ReactElement;
 
 // ---------- shared pieces ----------
 
-/** A gentle arrival: fades in and rises a little, no blur. */
-function fade(frame: number, delay: number, unit: number, frames = 16): React.CSSProperties {
-  const p = easeOut((frame - delay) / frames);
-  return { opacity: p, transform: `translateY(${(1 - p) * unit * 1.4}px)` };
+/** A gentle arrival: fades in and rises a little, no blur; at the skin's speed. */
+function useFade() {
+  const { fadeFrames } = useSkin();
+  return (frame: number, delay: number, unit: number, frames = fadeFrames): React.CSSProperties => {
+    const p = easeOut((frame - delay) / frames);
+    return { opacity: p, transform: `translateY(${(1 - p) * unit * 1.4}px)` };
+  };
+}
+
+/** Warm light washing across the page (Cinematic only), starting `at` frames in. */
+function Leak({
+  frame,
+  at,
+  unit,
+  flip = false,
+}: {
+  frame: number;
+  at: number;
+  unit: number;
+  flip?: boolean;
+}) {
+  const { leaks } = useSkin();
+  const t = (frame - at) / 30;
+  if (!leaks || t < 0 || t > 1) return null;
+  const x = flip ? 85 - t * 50 : 15 + t * 50;
+  return (
+    <AbsoluteFill
+      style={{
+        pointerEvents: "none",
+        mixBlendMode: "screen",
+        opacity: Math.sin(t * Math.PI) * 0.8,
+        background: `radial-gradient(ellipse 60% 85% at ${x}% 30%, rgba(255, 172, 92, 0.7) 0%, rgba(255, 112, 64, 0.32) 38%, transparent 72%)`,
+        filter: `blur(${unit * 2}px)`,
+      }}
+    />
+  );
 }
 
 /** How far a hairline has drawn (0-1). */
@@ -74,6 +162,8 @@ function Words({
   theme: MotionTheme;
   unit: number;
 }) {
+  const fade = useFade();
+  const { serif } = useSkin();
   return (
     <>
       {splitWords(text, emphasis).map(({ w, special }, i) => (
@@ -82,7 +172,9 @@ function Words({
           style={{
             display: "inline-block",
             marginRight: size * 0.26,
-            fontWeight: weight,
+            fontFamily: TITLE,
+            fontWeight: serif ? 400 : weight,
+            fontStyle: serif && special ? "italic" : undefined,
             color: special ? theme.accent : INK,
             ...fade(frame, delay + i * step, unit),
           }}
@@ -295,7 +387,9 @@ const MinimalKeyLine: Draw = ({ g, theme }) => {
 };
 
 const MinimalCounter: Draw = ({ g, theme }) => {
+  const { serif } = useSkin();
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   const n = g.number ?? { value: 0, prefix: "", suffix: "" };
@@ -305,7 +399,7 @@ const MinimalCounter: Draw = ({ g, theme }) => {
       style={{
         fontSize: unit * (portrait ? 3 : 2.4),
         fontWeight: 500,
-        letterSpacing: "0.16em",
+        letterSpacing: TRACK,
         textTransform: "uppercase",
         color: SOFT,
         ...fade(frame, 6, unit),
@@ -323,7 +417,8 @@ const MinimalCounter: Draw = ({ g, theme }) => {
           {label}
           <div
             style={{
-              fontWeight: 200,
+              fontFamily: TITLE,
+              fontWeight: serif ? 400 : 200,
               fontSize: unit * (portrait ? 30 : 24),
               lineHeight: 1,
               color: INK,
@@ -348,7 +443,8 @@ const MinimalCounter: Draw = ({ g, theme }) => {
         <div
           style={{
             marginTop: unit * 1.2,
-            fontWeight: 200,
+            fontFamily: TITLE,
+            fontWeight: serif ? 400 : 200,
             fontSize: unit * (portrait ? 17 : 13),
             lineHeight: 1,
             color: INK,
@@ -374,6 +470,7 @@ const MinimalCounter: Draw = ({ g, theme }) => {
 
 const MinimalList: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   // Items arrive one by one over the first two thirds (as the other looks).
@@ -402,7 +499,7 @@ const MinimalList: Draw = ({ g, theme }) => {
             style={{
               fontSize: unit * (portrait ? 3 : 2.4),
               fontWeight: 500,
-              letterSpacing: "0.16em",
+              letterSpacing: TRACK,
               textTransform: "uppercase",
               color: SOFT,
               marginBottom: unit * 1.6,
@@ -457,6 +554,7 @@ const MinimalList: Draw = ({ g, theme }) => {
 
 const MinimalCard: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   const size = unit * (portrait ? 5.4 : 4.2);
@@ -511,6 +609,7 @@ const MinimalCard: Draw = ({ g, theme }) => {
 
 const MinimalCompare: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   const [a, b] = [g.items[0] ?? "", g.items[1] ?? ""];
@@ -559,7 +658,7 @@ const MinimalCompare: Draw = ({ g, theme }) => {
             style={{
               fontSize: unit * (portrait ? 3 : 2.4),
               fontWeight: 500,
-              letterSpacing: "0.16em",
+              letterSpacing: TRACK,
               textTransform: "uppercase",
               color: SOFT,
               marginBottom: unit * 2.4,
@@ -598,6 +697,7 @@ const MinimalCompare: Draw = ({ g, theme }) => {
 
 const MinimalLabel: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait } = useUnit();
   return (
     <AbsoluteFill
@@ -635,6 +735,7 @@ const CTA_ICON = { like: ThumbsUp, subscribe: Bell, comment: MessageCircle, link
 
 const MinimalCta: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait } = useUnit();
   const kind = g.cta ?? "like";
   // The pointer glides in and clicks (the click sound is at the same frame).
@@ -665,7 +766,7 @@ const MinimalCta: Draw = ({ g, theme }) => {
           ...fade(frame, 0, unit),
         }}
       >
-        <Icon size={unit * 3.4} strokeWidth={1.6} color={done ? theme.accent : INK} />
+        <Icon size={unit * 3.4} strokeWidth={1.6} style={{ color: done ? theme.accent : INK }} />
         {g.text || CTA_TEXT[kind]}
         <span
           style={{
@@ -676,7 +777,7 @@ const MinimalCta: Draw = ({ g, theme }) => {
             transform: click ? "scale(0.88)" : undefined,
           }}
         >
-          <MousePointer2 size={unit * 4.4} fill={INK} strokeWidth={1.2} color={PAGE} />
+          <MousePointer2 size={unit * 4.4} strokeWidth={1.2} style={{ fill: INK, color: PAGE }} />
         </span>
       </div>
     </AbsoluteFill>
@@ -687,6 +788,7 @@ const MinimalCta: Draw = ({ g, theme }) => {
 
 const MinimalChapter: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   const ch = g.chapter ?? { index: 1, count: 1 };
@@ -711,7 +813,7 @@ const MinimalChapter: Draw = ({ g, theme }) => {
           style={{
             fontSize: unit * 2.8,
             fontWeight: 500,
-            letterSpacing: "0.2em",
+            letterSpacing: TRACK,
             color: theme.accent,
             fontVariantNumeric: "tabular-nums",
             ...fade(frame, 0, unit),
@@ -759,6 +861,7 @@ const MinimalChapter: Draw = ({ g, theme }) => {
           })}
         </div>
       </div>
+      <Leak frame={frame} at={0} unit={unit} />
     </Page>
   );
 };
@@ -871,6 +974,9 @@ const MinimalStory: Draw = ({ g, theme }) => {
           </AbsoluteFill>
         );
       })}
+      {starts.map((at, i) => (
+        <Leak key={i} frame={frame} at={at} unit={unit} flip={i % 2 === 1} />
+      ))}
     </Page>
   );
 };
@@ -899,6 +1005,7 @@ const MinimalCartoon: Draw = ({ g, theme }) => {
 
 const MinimalSteps: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait, width, height } = useUnit();
   const length = g.to - g.from;
   const items = g.items.length ? g.items : [""];
@@ -1003,7 +1110,7 @@ const MinimalSteps: Draw = ({ g, theme }) => {
                 style={{
                   fontSize: unit * 2.4,
                   fontWeight: 500,
-                  letterSpacing: "0.16em",
+                  letterSpacing: TRACK,
                   color: on ? theme.accent : SOFT,
                   fontVariantNumeric: "tabular-nums",
                 }}
@@ -1033,6 +1140,7 @@ const MinimalSteps: Draw = ({ g, theme }) => {
 
 const MinimalLoop: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait, width, height } = useUnit();
   const length = g.to - g.from;
   const items = g.items;
@@ -1060,7 +1168,13 @@ const MinimalLoop: Draw = ({ g, theme }) => {
     <Page opacity={Math.min(easeOut(frame / 8), exitOpacity(frame, length))}>
       <Title g={g} frame={frame} theme={theme} unit={unit} portrait={portrait} />
       <svg width={width} height={height} style={{ position: "absolute", inset: 0 }}>
-        <path d={d} fill="none" stroke={LINE} strokeWidth={thin} opacity={easeOut(frame / 10)} />
+        <path
+          d={d}
+          fill="none"
+          style={{ stroke: LINE }}
+          strokeWidth={thin}
+          opacity={easeOut(frame / 10)}
+        />
         <path
           d={d}
           fill="none"
@@ -1145,6 +1259,7 @@ const MinimalLoop: Draw = ({ g, theme }) => {
 
 const MinimalCoins: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait, width, height } = useUnit();
   const length = g.to - g.from;
   const { fanAt } = coinBeats(length);
@@ -1201,7 +1316,7 @@ const MinimalCoins: Draw = ({ g, theme }) => {
               cy={C / 2}
               r={C / 2 - thin}
               fill="none"
-              stroke={INK}
+              style={{ stroke: INK }}
               strokeWidth={thin}
               strokeDasharray={circumference}
               strokeDashoffset={circumference * (1 - ringIn)}
@@ -1260,6 +1375,7 @@ const MinimalCoins: Draw = ({ g, theme }) => {
 
 const MinimalStream: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait, width, height } = useUnit();
   const images = React.useContext(ImagesContext);
   const logo = React.useContext(LogoContext);
@@ -1338,6 +1454,7 @@ const MinimalStream: Draw = ({ g, theme }) => {
 
 const MinimalProfile: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
+  const fade = useFade();
   const { unit, portrait, width, height } = useUnit();
   const images = React.useContext(ImagesContext);
   const length = g.to - g.from;
@@ -1495,8 +1612,26 @@ const MINIMAL_DRAW: Record<PlacedGraphic["type"], Draw> = {
   cta: MinimalCta,
 };
 
+function Skinned({ skin, g, theme }: { skin: Skin; g: PlacedGraphic; theme: MotionTheme }) {
+  const Draw = MINIMAL_DRAW[g.type];
+  return (
+    <SkinContext.Provider value={skin}>
+      {/* No faux bold or italics: the serif has one weight and its own italic. */}
+      <AbsoluteFill
+        style={{ ...(skin.vars as React.CSSProperties), fontSynthesis: "none", color: INK }}
+      >
+        <Draw g={g} theme={theme} />
+      </AbsoluteFill>
+    </SkinContext.Provider>
+  );
+}
+
 /** One graphic in the minimal look. */
 export function MinimalGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  const Draw = MINIMAL_DRAW[g.type];
-  return <Draw g={g} theme={theme} />;
+  return <Skinned skin={MINIMAL_SKIN} g={g} theme={theme} />;
+}
+
+/** One graphic in the cinematic look. */
+export function FilmGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  return <Skinned skin={FILM_SKIN} g={g} theme={theme} />;
 }

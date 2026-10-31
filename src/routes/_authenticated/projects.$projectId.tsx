@@ -36,6 +36,7 @@ import {
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
 import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
+import { FinishOverlay } from "@/components/editor/FinishOverlay";
 import { GraphicInspector } from "@/components/editor/GraphicInspector";
 import { useMotionPlan } from "@/components/editor/useMotionPlan";
 import type { GraphicsTrackData } from "@/components/editor/GraphicsTrack";
@@ -2632,6 +2633,9 @@ function EditorPage() {
                       />
                     </Suspense>
                   )}
+                  {graphicsOn && (
+                    <FinishOverlay finish={finish} timeMs={timeMs} aspect={project.aspect_ratio} />
+                  )}
                   <PreviewOverlay
                     kit={brand.data?.kit}
                     logoUrl={brand.data?.logoUrl}
@@ -2647,7 +2651,7 @@ function EditorPage() {
               pictureScale: graphicsOn
                 ? (timeMs) =>
                     zoomAt(placedMotion.zooms, frameAtMs(timeMs)) *
-                    angleAt(angleShots, frameAtMs(timeMs), finish.angleClose)
+                    angleAt(angleShots, frameAtMs(timeMs), finish.angleClose, finish.angleMove)
                 : undefined,
               pictureOrigin: graphicsOn ? angleCenter : undefined,
               pictureFilter: graphicsOn ? gradeCss(finish) : undefined,

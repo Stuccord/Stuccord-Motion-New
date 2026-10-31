@@ -44,6 +44,7 @@ import {
   splitRanges,
   closeShots,
   angleBlocked,
+  finishFilters,
   gradeFilter,
   lookFinish,
   placeGraphics,
@@ -1659,6 +1660,7 @@ async function runRender(job) {
     // The look's finish: its colour grade, camera pace and captions.
     const finish = lookFinish(motionJob?.look);
     const grade = motionJob ? gradeFilter(finish) : null;
+    const filmFinish = motionJob ? finishFilters(finish, w, h) : [];
     // Notes pages: when the speaker moves aside for them.
     let split = null;
     // Graphics behind the speaker: their clips and the speaker's masks
@@ -1677,6 +1679,7 @@ async function runRender(job) {
             : [],
           center: motionJob.angles?.center ?? null,
           closeScale: finish.angleClose,
+          move: finish.angleMove,
         });
         const ranges = splitRanges(placed.graphics);
         split = ranges.length ? { ranges, portrait: h > w } : null;
@@ -1808,14 +1811,14 @@ async function runRender(job) {
 
     const textFilters = [captionsFilter, hookFilter].filter(Boolean);
     let graphicsDone = false;
-    if (graphicPieces.length || behind || zoom || split || grade) {
+    if (graphicPieces.length || behind || zoom || split || grade || filmFinish.length) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 85,
         stage_message: "Adding graphics and captions",
       });
       const out = path.join(workdir, "final-graphics.mp4");
       const compose = (pieces, withBehind) =>
-        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind, split, grade }));
+        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind, split, grade, finish: filmFinish }));
       try {
         try {
           await compose(graphicPieces, behind);

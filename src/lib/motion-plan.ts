@@ -385,7 +385,7 @@ export const MotionPlan = z.object({
   sound: SoundSettings.optional(),
   /** The colour: picked by hand, or from the brand kit or the video. */
   colour: MotionColour.optional(),
-  /** The graphics' look, one per video: dark glass (the default), paper on a desk, or minimal. */
+  /** The graphics' look, one per video: dark glass (the default), paper on a desk, minimal or film. */
   look: z.enum(MOTION_LOOKS).optional(),
   /**
    * Camera angles: switching between the full shot and a close crop on the

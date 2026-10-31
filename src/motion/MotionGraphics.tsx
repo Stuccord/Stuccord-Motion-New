@@ -23,7 +23,7 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { PaperGraphic } from "@/motion/PaperGraphics";
-import { MinimalGraphic } from "@/motion/MinimalGraphics";
+import { FilmGraphic, MinimalGraphic } from "@/motion/MinimalGraphics";
 import type { MotionLookId } from "@/motion/looks";
 import { NotesGraphic } from "@/motion/NotesGraphic";
 import {
@@ -48,7 +48,7 @@ export type MotionGraphicsProps = {
   images?: Record<string, string>;
   /** A link to the brand kit's logo, which ends a card stream. */
   logo?: string | null;
-  /** The graphics' look: dark glass (the default), paper on a desk, or minimal. */
+  /** The graphics' look: dark glass (the default), paper on a desk, minimal or cinematic. */
   look?: MotionLookId;
 };
 
@@ -1794,7 +1794,13 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
         <AbsoluteFill>
           {graphics.map((g) => {
             const Draw =
-              look === "paper" ? PaperGraphic : look === "minimal" ? MinimalGraphic : DRAW[g.type];
+              look === "paper"
+                ? PaperGraphic
+                : look === "minimal"
+                  ? MinimalGraphic
+                  : look === "film"
+                    ? FilmGraphic
+                    : DRAW[g.type];
             return (
               <Sequence
                 key={g.id}

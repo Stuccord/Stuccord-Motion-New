@@ -1,6 +1,6 @@
 import {
   Zap, Radio, Rocket, PlayCircle, Mic, Camera, Sparkles, MessageCircle,
-  BookOpen, Newspaper, ShoppingBag, GraduationCap, Type,
+  BookOpen, Newspaper, ShoppingBag, GraduationCap, Type, Film,
 } from "lucide-react";
 
 export type TemplateDef = {
@@ -65,6 +65,13 @@ export const TEMPLATES: TemplateDef[] = [
     icon: Type, gradient: "from-neutral-500 to-neutral-800",
     ratio: "9:16", duration: "0:60", preset: "minimal",
     brief: "Calm and clear. Few graphics, each with lots of space: one key line, a number or a short list at a time. No hype.",
+  },
+  {
+    id: "film", cat: "Storytime", title: "Cinematic story",
+    desc: "Your story with film colour, grain, black bars and slow push-ins.",
+    icon: Film, gradient: "from-amber-600 to-teal-800",
+    ratio: "9:16", duration: "1:00", preset: "film",
+    brief: "Tell it like a short film. Few graphics, each given room to breathe: chapter titles between parts, a story scene for each turn. Calm and serious.",
   },
   {
     id: "story", cat: "Storytime", title: "Storytime narration",
