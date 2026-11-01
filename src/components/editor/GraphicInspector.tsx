@@ -24,6 +24,7 @@ import { GRAPHIC_TINT } from "./graphic-tint";
 import { StoryScenesEditor, type StoryTools } from "./StoryScenesEditor";
 import { PictureSetEditor, type PictureTools } from "./PictureSetEditor";
 import { NotesLinesEditor } from "./NotesLinesEditor";
+import { ScreenEditor } from "./ScreenEditor";
 
 const CTA_LABEL: Record<(typeof CTA_KINDS)[number], string> = {
   like: "Like",
@@ -49,6 +50,7 @@ const HINT: Record<ElementType, string> = {
   chapter: "A full-screen divider for a new part, with progress.",
   label: "A small label naming the current topic.",
   cta: "A button the pointer clicks (like, subscribe…).",
+  screen: "A phone or browser floating in: a cursor clicks, the camera zooms in.",
   zoom: "Zooms the picture in or eases it out.",
 };
 
@@ -81,6 +83,7 @@ export function GraphicInspector({
   onClose,
   story,
   hasLogo = false,
+  portrait = true,
 }: {
   element: MotionElement;
   /** Where it is on the timeline now; null when its words are trimmed away. */
@@ -94,11 +97,14 @@ export function GraphicInspector({
   story?: StoryTools & PictureTools;
   /** The brand kit has a logo (it ends a card stream). */
   hasLogo?: boolean;
+  /** The video is tall (an app screen shows a phone by default). */
+  portrait?: boolean;
 }) {
   const el = element;
   const set = (patch: Partial<MotionElement>) => onChange(markEdited({ ...el, ...patch }));
   // A cartoon's words are its scene's caption.
-  const showText = el.type !== "zoom" && el.type !== "cartoon" && el.type !== "profile";
+  const showText =
+    el.type !== "zoom" && el.type !== "cartoon" && el.type !== "profile" && el.type !== "screen";
   const showEmphasis =
     el.type === "keyline" ||
     el.type === "card" ||
@@ -226,6 +232,17 @@ export function GraphicInspector({
               inputCls={inputCls}
             />
           </div>
+        )}
+
+        {el.type === "screen" && story && (
+          <ScreenEditor
+            element={el}
+            tools={story}
+            readOnly={readOnly}
+            portrait={portrait}
+            onChange={set}
+            inputCls={inputCls}
+          />
         )}
 
         {(el.type === "story" || el.type === "cartoon") && story && (

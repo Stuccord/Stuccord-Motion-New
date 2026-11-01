@@ -39,6 +39,13 @@ export const TEMPLATES: TemplateDef[] = [
     brief: "Smooth cursor tracking, soft zoom-ins on UI elements being demoed. Add subtle callout arrows and highlights. Ambient underscore, no vocal.",
   },
   {
+    id: "saas", cat: "Product", title: "SaaS launch",
+    desc: "Talk about your app with light motion design and app screens.",
+    icon: Sparkles, gradient: "from-sky-400 to-indigo-500",
+    ratio: "9:16", duration: "0:45", preset: "saas",
+    brief: "Show the product whenever it's mentioned: an app screen for each feature, page or result. Numbers as clean counters, benefits as short lists. Bright, friendly and fast.",
+  },
+  {
     id: "podcast", cat: "Podcast", title: "Podcast clip",
     desc: "Square clip from a podcast or interview, captioned.",
     icon: Mic, gradient: "from-orange-500 to-rose-500",

@@ -56,6 +56,7 @@ import {
   zoomFilter,
 } from "./motion.js";
 import { behindRanges, personMasks, personModelReady } from "./cutout.js";
+import { CaptureError, capturePage } from "./capture.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -310,6 +311,35 @@ function validateTranscribePayload(p) {
   );
   return ok ? null : "Each file needs a safe storage_path and an http(s) download_url";
 }
+
+// A screenshot of a public web page for an app screen (capture.js), one at a
+// time, alongside any export. Answers with the PNG, or 422 and a message.
+let capturing = false;
+app.post("/capture", async (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  if (typeof p.url !== "string" || p.url.length > 500 || !["phone", "browser"].includes(p.device)) {
+    return res.status(400).json({ ok: false, error: "Invalid capture payload" });
+  }
+  if (capturing) {
+    res.setHeader("Retry-After", "10");
+    return res.status(503).json({ ok: false, error: "Another page is being captured" });
+  }
+  capturing = true;
+  try {
+    const { png, url } = await capturePage({ url: p.url, device: p.device });
+    res.setHeader("x-captured-url", encodeURI(url).slice(0, 500));
+    res.type("image/png").send(png);
+  } catch (e) {
+    if (!(e instanceof CaptureError)) console.warn("[Worker] Capture failed:", e?.message || e);
+    res.status(422).json({
+      ok: false,
+      error: e instanceof CaptureError ? e.message : "Couldn't capture that page. Try again, or upload a screenshot.",
+    });
+  } finally {
+    capturing = false;
+  }
+});
 
 app.post("/transcribe", async (req, res) => {
   if (!verifySignature(req)) return res.status(401).send("bad signature");

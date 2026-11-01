@@ -20,6 +20,7 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { NotesGraphic } from "@/motion/NotesGraphic";
+import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import {
   ImagesContext,
   LogoContext,
@@ -1537,6 +1538,7 @@ const PAPER_DRAW: Record<PlacedGraphic["type"], Draw> = {
   chapter: PaperChapter,
   label: PaperLabel,
   cta: PaperCta,
+  screen: ({ g, theme }) => <ScreenGraphic g={g} theme={theme} background={DESK} ink={PAPER} />,
 };
 
 /** One graphic in the paper look. */

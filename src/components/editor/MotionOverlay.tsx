@@ -52,7 +52,7 @@ export function MotionOverlay({
   images?: Record<string, string>;
   /** A link to the brand kit's logo (ends a card stream). */
   logo?: string | null;
-  /** The graphics' look (glass, paper, minimal or cinematic). */
+  /** The graphics' look (glass, paper, minimal, cinematic or SaaS). */
   look?: MotionLookId;
 }) {
   useMotionFonts();

@@ -24,6 +24,7 @@ import {
 } from "@/lib/motion-plan";
 import type { SpeakerFrame } from "@/lib/speaker-frames";
 import {
+  captureScreenPage,
   makeSceneImage,
   makeSpeakerCartoon,
   sceneUploadSlot,
@@ -97,6 +98,7 @@ export function useStoryImages(
   const slotFn = useServerFn(sceneUploadSlot);
   const signFn = useServerFn(signSceneImages);
   const cartoonFn = useServerFn(makeSpeakerCartoon);
+  const captureFn = useServerFn(captureScreenPage);
   const character = motion.state?.character ?? null;
 
   // Links for every picture in the plan and the speaker's cartoon
@@ -414,6 +416,44 @@ export function useStoryImages(
     [motion, store],
   );
 
+  /**
+   * Screenshots a web page for an app screen (the worker does it, public
+   * addresses only) and shows it as the screen's picture.
+   */
+  const capturePage = useCallback(
+    async (elementId: string, url: string, device: "phone" | "browser") => {
+      const key = `${elementId}:0`;
+      mark(key, true);
+      try {
+        const shot = await captureFn({ data: { project_id: projectId, url, device } });
+        if (shot.url) setFresh((m) => ({ ...m, [shot.path]: shot.url as string }));
+        motion.update((p) => ({
+          ...p,
+          elements: p.elements.map((e) =>
+            e.id !== elementId
+              ? e
+              : {
+                  ...e,
+                  source: "user",
+                  scenes: [pictureScene(e, { path: shot.path, source: "capture" })],
+                  screen: {
+                    kind: "picture",
+                    device: e.screen?.device ?? "auto",
+                    url: url.slice(0, 200),
+                  },
+                },
+          ),
+        }));
+        toast.success("Page captured.");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't capture that page");
+      } finally {
+        mark(key, false);
+      }
+    },
+    [captureFn, motion, projectId],
+  );
+
   /** Takes a picture out of a card stream. */
   const removePicture = useCallback(
     (elementId: string, index: number) =>
@@ -487,6 +527,7 @@ export function useStoryImages(
     setPicture,
     removePicture,
     fillFromFootage,
+    capturePage,
     hasCartoon,
     cartoon: {
       character,

@@ -22,16 +22,19 @@ export const MOTION_FPS = 30;
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
-const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "chapter", "label", "cta"]);
+const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "chapter", "label", "cta", "screen"]);
 // Most items per type (src/lib/motion-plan.ts maxItems).
-const MAX_ITEMS = { compare: 2, card: 4, steps: 5, loop: 6 };
+const MAX_ITEMS = { compare: 2, card: 4, steps: 5, loop: 6, screen: 5 };
 // Graphics that fill the screen, so the captions make way (FULL_SCREEN_TYPES).
-const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes"]);
+const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "screen"]);
 // How far the picture shifts while a Notes page is up (src/motion/timing.ts).
 const SPLIT_WIDE = 0.25;
 const SPLIT_TALL = 0.15;
 // Types with pictures, and how many each holds (src/lib/motion-plan.ts maxScenes).
-const PICTURE_LIMIT = { story: 6, cartoon: 1, stream: 12, profile: 7 };
+const PICTURE_LIMIT = { story: 6, cartoon: 1, stream: 12, profile: 7, screen: 1 };
+// An app screen's kinds and devices (src/lib/motion-plan.ts SCREEN_KINDS, SCREEN_DEVICES).
+const SCREEN_KINDS = ["picture", "chat", "dashboard", "page"];
+const SCREEN_DEVICES = ["auto", "phone", "browser"];
 // Types that can go behind the speaker (src/lib/motion-plan.ts BEHIND_TYPES).
 const BEHIND_TYPES = new Set(["keyline", "counter", "list", "card", "compare", "chapter"]);
 const msToFrame = (ms) => Math.round((ms / 1000) * MOTION_FPS);
@@ -90,6 +93,7 @@ export function placeGraphics(elements, words) {
           ? { item: el.swap.item, text: el.swap.text.slice(0, 40) }
           : null,
       profile: el.type === "profile" ? profileDetails(el.profile) : null,
+      screen: el.type === "screen" ? screenDetails(el.screen) : null,
       lines: el.type === "notes" ? placeLines(el.lines, from, to, byKey) : null,
       scenes: PICTURE_LIMIT[el.type] ? placeScenes(el.scenes, PICTURE_LIMIT[el.type], from, to, byKey) : null,
     });
@@ -146,6 +150,16 @@ export function splitFilters(input, ranges, portrait, out) {
     `[${out}b]${crop}[${out}c]`,
     `[${out}a][${out}c]overlay=0:0:enable='${when}'[${out}]`,
   ];
+}
+
+/** An app screen's kind, device and address (unknown ones: a page, by the video's shape). */
+function screenDetails(s) {
+  const o = s && typeof s === "object" ? s : {};
+  return {
+    kind: SCREEN_KINDS.includes(o.kind) ? o.kind : "page",
+    device: SCREEN_DEVICES.includes(o.device) ? o.device : "auto",
+    url: typeof o.url === "string" ? o.url.slice(0, 200) : "",
+  };
 }
 
 /** A social profile's details, each a string within its limit. */
@@ -210,6 +224,10 @@ export function profileBeats(photos, length) {
     flickFrom,
     flicks: Array.from({ length: photos }, (_, i) => flickFrom + i * each).filter((f) => f < length - 6),
   };
+}
+export function screenBeats(length) {
+  const clickAt = Math.max(18, Math.round(length * 0.34));
+  return { cursorFrom: clickAt - 12, clickAt, zoomFrom: clickAt + 6, zoomFrames: Math.max(12, Math.round(length * 0.35)) };
 }
 
 /**
@@ -348,6 +366,12 @@ export const LOOK_FINISH = {
     angleClose: 1.12,
     pace: "slow",
     angleMove: "push",
+    captions: "clean",
+  },
+  saas: {
+    ...STANDARD_FINISH,
+    grade: { saturation: 1.06, contrast: 1.04 },
+    angleClose: 1.2,
     captions: "clean",
   },
 };
@@ -709,6 +733,13 @@ export function baseSoundEvents(graphics, zooms) {
         add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
         add(g, "click", "click", at + frameMs(22));
         break;
+      case "screen": {
+        const b = screenBeats(len);
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        add(g, "click", "click", at + frameMs(b.clickAt));
+        add(g, "zoom", "ui-blip", at + frameMs(b.zoomFrom));
+        break;
+      }
     }
   }
   for (const z of zooms) {

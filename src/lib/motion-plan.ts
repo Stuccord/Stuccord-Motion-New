@@ -52,6 +52,7 @@ export const ELEMENT_TYPES = [
   "chapter",
   "label",
   "cta",
+  "screen",
   "zoom",
 ] as const;
 export type ElementType = (typeof ELEMENT_TYPES)[number];
@@ -73,6 +74,7 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   chapter: "Chapter",
   label: "Label",
   cta: "Call to action",
+  screen: "App screen",
   zoom: "Zoom",
 };
 
@@ -97,12 +99,14 @@ export const PICTURE_TYPES: ReadonlySet<ElementType> = new Set([
   "cartoon",
   "stream",
   "profile",
+  "screen",
 ]);
 
 /** Most pictures each type holds. */
 export function maxScenes(type: ElementType): number {
   switch (type) {
     case "cartoon":
+    case "screen":
       return 1;
     case "stream":
       return MAX_STREAM;
@@ -146,6 +150,8 @@ export function maxItems(type: ElementType): number {
       return 5;
     case "loop":
       return 6;
+    case "screen":
+      return 5;
     default:
       return 8;
   }
@@ -172,6 +178,24 @@ export const BEHIND_TYPES: ReadonlySet<ElementType> = new Set([
 ]);
 
 export const CTA_KINDS = ["like", "subscribe", "comment", "link"] as const;
+
+/**
+ * What an app screen shows: a picture (uploaded, or a captured web page), or
+ * one the graphic draws from its words - a chat (the question, then the
+ * reply's lines), a dashboard (a headline number and rows) or a sales page
+ * (a headline, a few feature lines and a button).
+ */
+export const SCREEN_KINDS = ["picture", "chat", "dashboard", "page"] as const;
+/** The device: a phone or a browser window, or "auto" (by the video's shape). */
+export const SCREEN_DEVICES = ["auto", "phone", "browser"] as const;
+const ScreenDetails = z.object({
+  kind: z.enum(SCREEN_KINDS),
+  device: z.enum(SCREEN_DEVICES),
+  /** The address in the browser bar; for a captured page, where it came from. */
+  url: z.string().max(200),
+});
+export type ScreenDetails = z.infer<typeof ScreenDetails>;
+export const EMPTY_SCREEN: ScreenDetails = { kind: "page", device: "auto", url: "" };
 export const ZOOM_KINDS = ["in", "out"] as const;
 
 const NumberValue = z.object({
@@ -229,6 +253,8 @@ export const DraftElement = z.object({
       sketch: z.enum(SKETCH_IDS).nullable(),
     }),
   ),
+  /** An app screen: what it draws, and the site's address if one was said; null for other types. */
+  screen: z.object({ kind: z.enum(["chat", "dashboard", "page"]), url: z.string() }).nullable(),
   /** A social profile's details, as far as they were said; null for other types. */
   profile: z
     .object({
@@ -266,10 +292,10 @@ export type Anchor = z.infer<typeof Anchor>;
 export const SCENE_BUCKET = "motion-images";
 export const sceneImageFolder = (ownerId: string, projectId: string) => `${ownerId}/${projectId}/`;
 
-/** A scene's picture in storage (bucket motion-images): made by the AI, uploaded, or a frame of the footage. */
+/** A scene's picture in storage (bucket motion-images): made by the AI, uploaded, a frame of the footage, or a captured web page. */
 const SceneImage = z.object({
   path: z.string().min(1).max(300),
-  source: z.enum(["ai", "upload", "footage"]),
+  source: z.enum(["ai", "upload", "footage", "capture"]),
 });
 export type SceneImage = z.infer<typeof SceneImage>;
 
@@ -342,6 +368,8 @@ export const MotionElement = z
     scenes: z.array(MotionScene).max(MAX_STREAM).optional(),
     /** A social profile's details (profiles only). */
     profile: ProfileDetails.optional(),
+    /** An app screen's kind, device and address (screens only; its picture is scenes[0]). */
+    screen: ScreenDetails.optional(),
     /** A Notes page's lines, each written on its word (notes only). */
     lines: z.array(NoteLine).max(MAX_NOTE_LINES).optional(),
     /** "ai" as planned; "user" once added or changed by hand. */
@@ -385,7 +413,7 @@ export const MotionPlan = z.object({
   sound: SoundSettings.optional(),
   /** The colour: picked by hand, or from the brand kit or the video. */
   colour: MotionColour.optional(),
-  /** The graphics' look, one per video: dark glass (the default), paper on a desk, minimal or film. */
+  /** The graphics' look, one per video: dark glass (the default), paper on a desk, minimal, film or saas. */
   look: z.enum(MOTION_LOOKS).optional(),
   /**
    * Camera angles: switching between the full shot and a close crop on the
@@ -480,6 +508,7 @@ const EXCLUSIVE: ReadonlySet<ElementType> = new Set([
   "notes",
   "chapter",
   "cta",
+  "screen",
 ]);
 
 /**
@@ -497,6 +526,7 @@ export const FULL_SCREEN_TYPES: ReadonlySet<ElementType> = new Set([
   "stream",
   "profile",
   "notes",
+  "screen",
 ]);
 
 const clean = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
@@ -617,6 +647,11 @@ export function draftsToElements(
           return true;
         case "notes":
           return noteLines(d).length >= 2;
+        case "screen":
+          // A chat needs its question, a page its headline, a dashboard a number or rows.
+          return d.screen?.kind === "dashboard"
+            ? d.number != null || d.items.length > 0
+            : d.screen != null && d.text !== "";
         default:
           return d.text !== "";
       }
@@ -649,7 +684,10 @@ export function draftsToElements(
       text: d.text,
       emphasis: d.emphasis,
       items: d.items.slice(0, maxItems(d.type)),
-      number: d.type === "counter" ? d.number : null,
+      number:
+        d.type === "counter" || (d.type === "screen" && d.screen?.kind === "dashboard")
+          ? d.number
+          : null,
       cta: d.type === "cta" ? d.cta : null,
       zoom: d.type === "zoom" ? d.zoom : null,
       reason: clean(d.reason, 300),
@@ -663,6 +701,12 @@ export function draftsToElements(
         : {}),
       ...(d.type === "stream" || d.type === "profile" ? { scenes: [] } : {}),
       ...(d.type === "profile" ? { profile: cleanProfile(d.profile) } : {}),
+      ...(d.type === "screen" && d.screen
+        ? {
+            scenes: [],
+            screen: { kind: d.screen.kind, device: "auto" as const, url: clean(d.screen.url, 200) },
+          }
+        : {}),
       ...(d.type === "notes"
         ? {
             lines: noteLines(d).map((l) => ({
@@ -738,6 +782,8 @@ export function elementSummary(el: MotionElement): string {
       return el.profile?.handle ? `@${el.profile.handle}` : el.text || "Social profile";
     case "notes":
       return el.text || (el.lines ?? []).map((l) => l.text).join(" · ");
+    case "screen":
+      return el.text || el.screen?.url || "App screen";
     case "steps":
     case "loop":
       return [el.text, el.items.join(" → ") + (el.type === "loop" ? " ↻" : "")]
@@ -864,7 +910,12 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
             ? [el.items[0] ?? "This", el.items[1] ?? "That"]
             : el.items.slice(0, maxItems(type)),
     swap: type === "loop" && el.swap && el.swap.item < maxItems("loop") ? el.swap : undefined,
-    number: type === "counter" ? (el.number ?? { value: 100, prefix: "", suffix: "%" }) : null,
+    number:
+      type === "counter"
+        ? (el.number ?? { value: 100, prefix: "", suffix: "%" })
+        : type === "screen"
+          ? el.number
+          : null,
     cta: type === "cta" ? (el.cta ?? "like") : null,
     zoom: type === "zoom" ? (el.zoom ?? "in") : null,
     behind: BEHIND_TYPES.has(type) ? el.behind : undefined,
@@ -872,8 +923,8 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
     // keeps just one scene, always with the speaker.
     // Pictures only carry over between the picture-set types.
     scenes:
-      type === "stream" || type === "profile"
-        ? el.type === "stream" || el.type === "profile"
+      type === "stream" || type === "profile" || type === "screen"
+        ? el.type === "stream" || el.type === "profile" || el.type === "screen"
           ? (el.scenes ?? []).slice(0, maxScenes(type))
           : []
         : !SCENE_TYPES.has(type)
@@ -884,6 +935,7 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
               ? el.scenes.slice(0, MAX_SCENES)
               : [firstScene(el)],
     profile: type === "profile" ? (el.profile ?? { ...EMPTY_PROFILE }) : undefined,
+    screen: type === "screen" ? (el.screen ?? { ...EMPTY_SCREEN }) : undefined,
     // A Notes page starts from the graphic's items (or two blank lines).
     lines:
       type === "notes"

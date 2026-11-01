@@ -38,6 +38,7 @@ Graphic types (field "type"):
 - chapter: a section divider when the speaker starts a new part, tip or step ("tip number one", "moving on to..."). "text" is the section title.
 - label: a small "you are here" label naming the current item or topic; it may stay up while other graphics come and go.
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
+- screen: when the speaker talks about an app, a website, a tool or software on screen ("I asked ChatGPT...", "my dashboard shows...", "on the landing page"). Full screen: a phone or browser window floats in, a cursor clicks, the camera zooms in. Set "screen" {kind, url}: kind "chat" for asking an AI or messaging ("text" is the question as typed, under 15 words; "items" the reply's 1-4 short lines), "dashboard" for results and stats ("text" the panel's title; "number" the headline figure if one was said, else null; "items" 1-5 short row labels), or "page" for a website or product ("text" the page's headline, under 8 words; "emphasis" one word from it; "items" 1-3 short feature lines). "url" is the site's address only if the speaker said it (like "stripe.com"), else "". Use only what was said. At most a few per video.
 - zoom: a punch-in ("in") on an emphatic beat, or an ease back out ("out"). Use zooms to keep stretches without graphics moving.
 
 Behind the speaker (field "behind"):
@@ -47,14 +48,14 @@ Behind the speaker (field "behind"):
 
 Timing:
 - "from_word" is the first word that triggers the graphic; "to_word" the last word it stays up for (usually the end of the phrase or sentence, 1.5-8 seconds of speech). A list stays until its last item is said.
-- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, stream, profile, notes, chapter and cta never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
+- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, stream, profile, notes, chapter, cta and screen never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
 - Pace: the opening (hook) is the densest - a visual every 3-4 seconds. Later, a graphic or a zoom roughly every 5-10 seconds. Leave the speaker on screen for personal, emotional moments.
 
 Writing:
 - Use the speaker's own words and language. Keep on-screen text short: titles under 6 words, items under 5 words, key lines under 12 words.
 - Never invent facts, numbers, names or claims that weren't said. If the script differs from what was said, follow what was said.
 - "reason" is a few words on why this graphic fits here (e.g. "number said", "three benefits listed", "new tip starts").
-- "swap" is null on every type but loop (and on most loops); "profile" is null on every type but profile; "lines" is [] on every type but notes.
+- "swap" is null on every type but loop (and on most loops); "profile" is null on every type but profile; "screen" is null on every type but screen; "lines" is [] on every type but notes.
 - Use null for fields a type doesn't use, and [] for unused items and for "scenes" on every type but story and cartoon.
 - "language" is the transcript's language as a short code (e.g. "en").`;
 

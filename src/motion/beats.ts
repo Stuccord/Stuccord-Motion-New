@@ -64,3 +64,19 @@ export function profileBeats(photos: number, length: number) {
     ),
   };
 }
+
+/**
+ * App screen: the device floats in, the cursor glides over and clicks, then
+ * the camera eases in toward where it clicked.
+ */
+export function screenBeats(length: number) {
+  const clickAt = Math.max(18, Math.round(length * 0.34));
+  return {
+    /** When the cursor sets off. */
+    cursorFrom: clickAt - 12,
+    clickAt,
+    /** When the camera starts easing in, and how long it takes. */
+    zoomFrom: clickAt + 6,
+    zoomFrames: Math.max(12, Math.round(length * 0.35)),
+  };
+}

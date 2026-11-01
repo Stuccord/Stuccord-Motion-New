@@ -23,7 +23,8 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { PaperGraphic } from "@/motion/PaperGraphics";
-import { FilmGraphic, MinimalGraphic } from "@/motion/MinimalGraphics";
+import { FilmGraphic, MinimalGraphic, SaasGraphic } from "@/motion/MinimalGraphics";
+import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import type { MotionLookId } from "@/motion/looks";
 import { NotesGraphic } from "@/motion/NotesGraphic";
 import {
@@ -48,7 +49,7 @@ export type MotionGraphicsProps = {
   images?: Record<string, string>;
   /** A link to the brand kit's logo, which ends a card stream. */
   logo?: string | null;
-  /** The graphics' look: dark glass (the default), paper on a desk, minimal or cinematic. */
+  /** The graphics' look: dark glass (the default), paper on a desk, minimal, cinematic or SaaS. */
   look?: MotionLookId;
 };
 
@@ -1781,6 +1782,14 @@ const DRAW: Record<
   chapter: Chapter,
   label: Label,
   cta: Cta,
+  screen: ({ g, theme }) => (
+    <ScreenGraphic
+      g={g}
+      theme={theme}
+      background={`radial-gradient(ellipse at 50% 40%, ${theme.secondary} 0%, ${theme.main} 72%)`}
+      ink={theme.text}
+    />
+  ),
 };
 
 /** Every graphic, each in its own stretch of the timeline. */
@@ -1800,7 +1809,9 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
                   ? MinimalGraphic
                   : look === "film"
                     ? FilmGraphic
-                    : DRAW[g.type];
+                    : look === "saas"
+                      ? SaasGraphic
+                      : DRAW[g.type];
             return (
               <Sequence
                 key={g.id}

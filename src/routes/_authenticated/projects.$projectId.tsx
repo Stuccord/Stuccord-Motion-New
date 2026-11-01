@@ -2832,6 +2832,7 @@ function EditorPage() {
                   onClose={() => setSelectedGraphicId(null)}
                   story={storyImages}
                   hasLogo={!!brand.data?.logoUrl}
+                  portrait={project.aspect_ratio !== "16:9" && project.aspect_ratio !== "1:1"}
                 />
               ) : selectedClip ? (
                 <ClipInspector

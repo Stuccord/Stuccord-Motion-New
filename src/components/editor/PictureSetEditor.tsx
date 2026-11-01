@@ -29,6 +29,7 @@ export type PictureTools = {
   ) => Promise<void>;
   removePicture: (elementId: string, index: number) => void;
   fillFromFootage: (elementId: string) => Promise<void>;
+  capturePage: (elementId: string, url: string, device: "phone" | "browser") => Promise<void>;
 };
 
 export function PictureSetEditor({
@@ -188,7 +189,7 @@ export function PictureSetEditor({
   );
 }
 
-function Slot({
+export function Slot({
   url,
   busy,
   readOnly,

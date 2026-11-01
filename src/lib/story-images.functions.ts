@@ -25,7 +25,13 @@ import {
   sceneImageFolder,
   type SpeakerCartoon,
 } from "@/lib/motion-plan";
-import { imageAllowance, projectCartoon } from "@/lib/motion-plan.functions";
+import {
+  hmacHex,
+  imageAllowance,
+  projectCartoon,
+  workerEndpoint,
+} from "@/lib/motion-plan.functions";
+import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
 
 const Hex = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -264,4 +270,89 @@ export const signSceneImages = createServerFn({ method: "POST" })
     const urls: Record<string, string> = {};
     for (const s of signed ?? []) if (s.path && s.signedUrl) urls[s.path] = s.signedUrl;
     return { urls };
+  });
+
+// ---------- capturing a web page for an app screen ----------
+
+/** Captures per person: one at a time, and at most this many an hour (per server). */
+const CAPTURES_PER_HOUR = 20;
+const captureLog = new Map<string, number[]>();
+const capturingNow = new Set<string>();
+
+/** The biggest screenshot taken back from the worker. */
+const MAX_CAPTURE_BYTES = 12 * 1024 * 1024;
+
+/**
+ * Has the worker screenshot a public web page (render-worker/capture.js,
+ * which refuses internal addresses) and stores it in the project's pictures.
+ */
+export const captureScreenPage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        project_id: z.string().uuid(),
+        url: z.string().trim().min(3).max(500),
+        device: z.enum(["phone", "browser"]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { project } = await projectForEdit(context.supabase, data.project_id, context.userId);
+    const now = Date.now();
+    const recent = (captureLog.get(context.userId) ?? []).filter((t) => now - t < 3_600_000);
+    if (capturingNow.has(context.userId)) throw new Error("A page is already being captured.");
+    if (recent.length >= CAPTURES_PER_HOUR)
+      throw new Error("That's a lot of captures for one hour. Try again a little later.");
+    const secret = workerSecret();
+    if (!secret) throw new Error("Capturing isn't set up yet (RENDER_WORKER_SECRET is missing).");
+
+    captureLog.set(context.userId, [...recent, now]);
+    capturingNow.add(context.userId);
+    try {
+      const body = JSON.stringify({ url: data.url, device: data.device });
+      let res: Response;
+      try {
+        res = await fetch(workerEndpoint("capture").toString(), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-stuccord-signature": await hmacHex(secret, body),
+          },
+          body,
+          signal: AbortSignal.timeout(75_000),
+        });
+      } catch {
+        throw new Error("Couldn't reach the render worker. Please try again.");
+      }
+      if (res.status === 401) throw new Error(WORKER_SECRET_MISMATCH);
+      if (res.status === 404)
+        throw new Error("The render worker needs updating before it can capture pages.");
+      if (res.status === 503)
+        throw new Error("Another page is being captured. Try again in a few seconds.");
+      if (res.status === 422) {
+        const j = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        throw new Error(
+          typeof j?.error === "string" ? j.error.slice(0, 300) : "Couldn't capture that page.",
+        );
+      }
+      if (!res.ok) throw new Error(`The render worker refused (HTTP ${res.status}).`);
+      const png = new Uint8Array(await res.arrayBuffer());
+      const isPng = png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47;
+      if (!isPng || png.length > MAX_CAPTURE_BYTES)
+        throw new Error("The capture didn't come through properly. Please try again.");
+
+      const path = `${sceneImageFolder(project.user_id, project.id)}${crypto.randomUUID()}.png`;
+      const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+      const { error } = await admin.storage
+        .from(SCENE_BUCKET)
+        .upload(path, png, { contentType: "image/png", upsert: false });
+      if (error) throw new Error(error.message);
+      const { data: signed } = await admin.storage
+        .from(SCENE_BUCKET)
+        .createSignedUrl(path, LINK_SECONDS);
+      return { path, url: signed?.signedUrl ?? null };
+    } finally {
+      capturingNow.delete(context.userId);
+    }
   });

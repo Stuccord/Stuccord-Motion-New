@@ -1,11 +1,12 @@
-// The Minimal and Cinematic looks: every Motion Explainer graphic as type
-// and thin lines - no cards, glows or 3D. The key word in the accent colour,
-// hairlines that draw on, lots of empty space, gentle fades without blur;
-// full-screen graphics sit on a near-black page. Both looks share these
-// layouts and differ in their skin: Minimal is one clean sans; Cinematic
-// has serif titles with the key word in italics, widely spaced capitals,
-// slower fades, a warmer page and light leaks across chapter and story
-// changes. Same timings and sounds as the other looks; only the drawing
+// The Minimal, Cinematic and SaaS looks: every Motion Explainer graphic as
+// type and thin lines - no glows or 3D. The key word in the accent colour,
+// hairlines that draw on, lots of empty space, gentle fades without blur.
+// The looks share these layouts and differ in their skin: Minimal is one
+// clean sans on a near-black page; Cinematic has serif titles with the key
+// word in italics, widely spaced capitals, slower fades, a warmer page and
+// light leaks across chapter and story changes; SaaS is light - a pale page,
+// dark words, bold numbers, and words over the footage on white cards with
+// soft shadows. Same timings and sounds as the other looks; only the drawing
 // changes (each look's video finish - grade, grain, bars - is in looks.ts).
 
 import React from "react";
@@ -22,6 +23,7 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { NotesGraphic } from "@/motion/NotesGraphic";
+import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import {
   ImagesContext,
   LogoContext,
@@ -56,6 +58,10 @@ type Skin = {
   fadeFrames: number;
   /** Warm light washing across chapter and story changes. */
   leaks: boolean;
+  /** Big numbers' weight. */
+  numberWeight: number;
+  /** Words over the footage on white cards (instead of a dark wash). */
+  cards: boolean;
 };
 
 const SHADOW = "0 1px 12px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.35)";
@@ -70,10 +76,16 @@ const MINIMAL_SKIN: Skin = {
     "--cg-over": SHADOW,
     "--cg-title": SANS,
     "--cg-track": "0.16em",
+    "--cg-behind-ink": "#F2F2F0",
+    "--cg-behind-soft": "rgba(242, 242, 240, 0.7)",
+    "--cg-button": "rgba(13, 13, 15, 0.35)",
+    "--cg-button-edge": "rgba(242, 242, 240, 0.6)",
   },
   serif: false,
   fadeFrames: 16,
   leaks: false,
+  numberWeight: 200,
+  cards: false,
 };
 
 const FILM_SKIN: Skin = {
@@ -86,14 +98,62 @@ const FILM_SKIN: Skin = {
     "--cg-over": SHADOW,
     "--cg-title": SERIF,
     "--cg-track": "0.32em",
+    "--cg-behind-ink": "#F4EEE4",
+    "--cg-behind-soft": "rgba(244, 238, 228, 0.72)",
+    "--cg-button": "rgba(11, 10, 9, 0.35)",
+    "--cg-button-edge": "rgba(244, 238, 228, 0.6)",
   },
   serif: true,
   fadeFrames: 24,
   leaks: true,
+  numberWeight: 400,
+  cards: false,
 };
+
+const SAAS_SKIN: Skin = {
+  vars: {
+    "--cg-page": "#F5F7FB",
+    "--cg-ink": "#0F172A",
+    "--cg-soft": "rgba(15, 23, 42, 0.62)",
+    "--cg-line": "rgba(15, 23, 42, 0.14)",
+    "--cg-tile": "#E6EAF2",
+    "--cg-over": "none",
+    "--cg-title": SANS,
+    "--cg-track": "0.14em",
+    "--cg-card": "#FFFFFF",
+    // Behind the speaker the room is darkened: light words there.
+    "--cg-behind-ink": "#FFFFFF",
+    "--cg-behind-soft": "rgba(255, 255, 255, 0.78)",
+    "--cg-button": "#FFFFFF",
+    "--cg-button-edge": "rgba(15, 23, 42, 0.16)",
+  },
+  serif: false,
+  fadeFrames: 14,
+  leaks: false,
+  numberWeight: 700,
+  cards: true,
+};
+
+/** Behind the speaker (a darkened room): the skin's light words. */
+const BEHIND_INK = {
+  "--cg-ink": "var(--cg-behind-ink)",
+  "--cg-soft": "var(--cg-behind-soft)",
+} as React.CSSProperties;
 
 const SkinContext = React.createContext<Skin>(MINIMAL_SKIN);
 const useSkin = () => React.useContext(SkinContext);
+
+/** A white card under words over the footage, when the skin has them (SaaS). */
+function useCard(unit: number, small = false): React.CSSProperties {
+  const { cards } = useSkin();
+  if (!cards) return {};
+  return {
+    background: "var(--cg-card)",
+    borderRadius: unit * (small ? 1.6 : 2.6),
+    padding: small ? `${unit * 1}px ${unit * 1.8}px` : `${unit * 3}px ${unit * 3.4}px`,
+    boxShadow: "0 18px 50px rgba(15, 23, 42, 0.22), 0 2px 6px rgba(15, 23, 42, 0.08)",
+  };
+}
 
 type Draw = (p: { g: PlacedGraphic; theme: MotionTheme }) => React.ReactElement;
 
@@ -216,6 +276,8 @@ function Rule({
 
 /** A soft dark wash behind words over the footage, so they read anywhere. */
 function Wash({ side, opacity }: { side: "bottom" | "left" | "right"; opacity: number }) {
+  const { cards } = useSkin();
+  if (cards) return null;
   const to = side === "bottom" ? "to top" : side === "left" ? "to right" : "to left";
   return (
     <AbsoluteFill
@@ -325,12 +387,18 @@ const format = (n: NonNullable<PlacedGraphic["number"]>, shown: number) => {
 const MinimalKeyLine: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
   const { unit, portrait } = useUnit();
+  const card = useCard(unit);
   const length = g.to - g.from;
   if (g.behind) {
     const size = unit * (portrait ? 11 : 9);
     return (
       <AbsoluteFill
-        style={{ opacity: exitOpacity(frame, length), fontFamily: SANS, textShadow: OVER }}
+        style={{
+          opacity: exitOpacity(frame, length),
+          fontFamily: SANS,
+          textShadow: OVER,
+          ...BEHIND_INK,
+        }}
       >
         <div style={{ ...behindBand(portrait), left: unit * 4, right: unit * 4 }}>
           <div style={{ fontSize: size, lineHeight: 1.02, letterSpacing: "-0.035em" }}>
@@ -363,6 +431,7 @@ const MinimalKeyLine: Draw = ({ g, theme }) => {
           fontSize: size,
           lineHeight: 1.16,
           letterSpacing: "-0.02em",
+          ...card,
         }}
       >
         <Words
@@ -387,13 +456,14 @@ const MinimalKeyLine: Draw = ({ g, theme }) => {
 };
 
 const MinimalCounter: Draw = ({ g, theme }) => {
-  const { serif } = useSkin();
+  const { numberWeight } = useSkin();
   const frame = useStepFrame();
   const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   const n = g.number ?? { value: 0, prefix: "", suffix: "" };
   const value = format(n, n.value * easeOut((frame - 4) / 26));
+  const card = useCard(unit);
   const label = g.text && (
     <div
       style={{
@@ -411,14 +481,19 @@ const MinimalCounter: Draw = ({ g, theme }) => {
   if (g.behind) {
     return (
       <AbsoluteFill
-        style={{ opacity: exitOpacity(frame, length), fontFamily: SANS, textShadow: OVER }}
+        style={{
+          opacity: exitOpacity(frame, length),
+          fontFamily: SANS,
+          textShadow: OVER,
+          ...BEHIND_INK,
+        }}
       >
         <div style={behindBand(portrait)}>
           {label}
           <div
             style={{
               fontFamily: TITLE,
-              fontWeight: serif ? 400 : 200,
+              fontWeight: numberWeight,
               fontSize: unit * (portrait ? 30 : 24),
               lineHeight: 1,
               color: INK,
@@ -438,13 +513,13 @@ const MinimalCounter: Draw = ({ g, theme }) => {
       style={{ opacity: exitOpacity(frame, length), fontFamily: SANS, textShadow: OVER }}
     >
       <Wash side={portrait ? "bottom" : "right"} opacity={easeOut(frame / 12)} />
-      <div style={sidePlace(portrait, unit)}>
+      <div style={{ ...sidePlace(portrait, unit), ...card }}>
         {label}
         <div
           style={{
             marginTop: unit * 1.2,
             fontFamily: TITLE,
-            fontWeight: serif ? 400 : 200,
+            fontWeight: numberWeight,
             fontSize: unit * (portrait ? 17 : 13),
             lineHeight: 1,
             color: INK,
@@ -476,14 +551,15 @@ const MinimalList: Draw = ({ g, theme }) => {
   // Items arrive one by one over the first two thirds (as the other looks).
   const step = g.items.length > 1 ? Math.max(6, (length * 0.66) / g.items.length) : 0;
   const size = unit * (portrait ? 4.6 : 3.6);
+  const card = useCard(unit);
   return (
     <AbsoluteFill
       style={{ opacity: exitOpacity(frame, length), fontFamily: SANS, textShadow: OVER }}
     >
       <Wash side={portrait ? "bottom" : "left"} opacity={easeOut(frame / 12)} />
       <div
-        style={
-          portrait
+        style={{
+          ...(portrait
             ? { position: "absolute", left: unit * 8, right: unit * 8, top: "48%" }
             : {
                 position: "absolute",
@@ -491,8 +567,9 @@ const MinimalList: Draw = ({ g, theme }) => {
                 top: "50%",
                 width: "40%",
                 transform: "translateY(-50%)",
-              }
-        }
+              }),
+          ...card,
+        }}
       >
         {g.text && (
           <div
@@ -559,12 +636,13 @@ const MinimalCard: Draw = ({ g, theme }) => {
   const length = g.to - g.from;
   const size = unit * (portrait ? 5.4 : 4.2);
   const lines = 1 + g.items.length;
+  const card = useCard(unit);
   return (
     <AbsoluteFill
       style={{ opacity: exitOpacity(frame, length), fontFamily: SANS, textShadow: OVER }}
     >
       <Wash side={portrait ? "bottom" : "right"} opacity={easeOut(frame / 12)} />
-      <div style={{ ...sidePlace(portrait, unit), display: "flex", gap: unit * 3 }}>
+      <div style={{ ...sidePlace(portrait, unit), display: "flex", gap: unit * 3, ...card }}>
         {/* A thin accent line down the side, growing as the lines arrive. */}
         <div
           style={{
@@ -615,6 +693,7 @@ const MinimalCompare: Draw = ({ g, theme }) => {
   const [a, b] = [g.items[0] ?? "", g.items[1] ?? ""];
   const second = Math.max(10, Math.round(length * 0.4));
   const size = unit * (portrait ? 5 : 4);
+  const card = useCard(unit);
   const side = (text: string, delay: number, on: boolean) => (
     <div
       style={{
@@ -651,6 +730,7 @@ const MinimalCompare: Draw = ({ g, theme }) => {
           left: unit * 8,
           right: unit * 8,
           ...(portrait ? { top: "50%" } : { bottom: "16%" }),
+          ...card,
         }}
       >
         {g.text && (
@@ -699,6 +779,7 @@ const MinimalLabel: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
   const fade = useFade();
   const { unit, portrait } = useUnit();
+  const card = useCard(unit, true);
   return (
     <AbsoluteFill
       style={{ opacity: exitOpacity(frame, g.to - g.from), fontFamily: SANS, textShadow: OVER }}
@@ -715,6 +796,7 @@ const MinimalLabel: Draw = ({ g, theme }) => {
           fontWeight: 500,
           letterSpacing: "0.04em",
           color: INK,
+          ...card,
           textShadow: "0 1px 8px rgba(0,0,0,0.55)",
         }}
       >
@@ -758,8 +840,8 @@ const MinimalCta: Draw = ({ g, theme }) => {
           gap: unit * 1.4,
           padding: `${unit * 1.4}px ${unit * 3.2}px`,
           borderRadius: unit * 5,
-          border: `${Math.max(1, unit * 0.2)}px solid ${done ? INK : "rgba(242,242,240,0.6)"}`,
-          background: done ? INK : "rgba(13,13,15,0.35)",
+          border: `${Math.max(1, unit * 0.2)}px solid ${done ? INK : "var(--cg-button-edge)"}`,
+          background: done ? INK : "var(--cg-button)",
           color: done ? PAGE : INK,
           fontWeight: 500,
           fontSize: unit * 3.2,
@@ -1610,6 +1692,7 @@ const MINIMAL_DRAW: Record<PlacedGraphic["type"], Draw> = {
   chapter: MinimalChapter,
   label: MinimalLabel,
   cta: MinimalCta,
+  screen: ({ g, theme }) => <ScreenGraphic g={g} theme={theme} background={PAGE} ink={INK} />,
 };
 
 function Skinned({ skin, g, theme }: { skin: Skin; g: PlacedGraphic; theme: MotionTheme }) {
@@ -1634,4 +1717,9 @@ export function MinimalGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTh
 /** One graphic in the cinematic look. */
 export function FilmGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   return <Skinned skin={FILM_SKIN} g={g} theme={theme} />;
+}
+
+/** One graphic in the SaaS look. */
+export function SaasGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  return <Skinned skin={SAAS_SKIN} g={g} theme={theme} />;
 }

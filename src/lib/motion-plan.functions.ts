@@ -399,8 +399,8 @@ export const saveMotionPlan = createServerFn({ method: "POST" })
 
 // ---------- transcribing ----------
 
-/** The worker's /transcribe address, from RENDER_WORKER_URL (which may end in /jobs). */
-function workerTranscribeUrl(): URL {
+/** A worker address (/transcribe, /capture...), from RENDER_WORKER_URL (which may end in /jobs). */
+export function workerEndpoint(name: string): URL {
   const raw = process.env.RENDER_WORKER_URL?.trim();
   if (!raw) throw new Error("RENDER_WORKER_URL is not configured");
   const url = new URL(raw);
@@ -409,7 +409,7 @@ function workerTranscribeUrl(): URL {
   }
   const segments = url.pathname.split("/").filter(Boolean);
   if (segments[segments.length - 1] === "jobs") segments.pop();
-  segments.push("transcribe");
+  segments.push(name);
   url.pathname = `/${segments.join("/")}`;
   return url;
 }
@@ -422,7 +422,8 @@ function transcribeCallbackUrl(): string {
   return url.toString();
 }
 
-async function hmacHex(secret: string, body: string): Promise<string> {
+/** The worker's request signature: HMAC-SHA256 of the body, in hex. */
+export async function hmacHex(secret: string, body: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -476,7 +477,7 @@ export const transcribeForPlan = createServerFn({ method: "POST" })
     });
     let res: Response;
     try {
-      res = await fetch(workerTranscribeUrl().toString(), {
+      res = await fetch(workerEndpoint("transcribe").toString(), {
         method: "POST",
         headers: {
           "content-type": "application/json",

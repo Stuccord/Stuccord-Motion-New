@@ -7,7 +7,14 @@
 // live in public/sounds and render-worker/sounds.
 
 import { MOTION_FPS, type PlacedGraphic, type PlacedZoom } from "@/motion/timing";
-import { coinBeats, loopBeats, profileBeats, stepStarts, streamBeats } from "@/motion/beats";
+import {
+  coinBeats,
+  loopBeats,
+  profileBeats,
+  screenBeats,
+  stepStarts,
+  streamBeats,
+} from "@/motion/beats";
 
 export const SOUND_KINDS = [
   "whoosh-light",
@@ -211,6 +218,14 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
         // The pointer's click.
         add(g, "click", "click", at + frameMs(22));
         break;
+      case "screen": {
+        // The device floats in, the cursor clicks, a blip as the camera moves in.
+        const b = screenBeats(len);
+        add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
+        add(g, "click", "click", at + frameMs(b.clickAt));
+        add(g, "zoom", "ui-blip", at + frameMs(b.zoomFrom));
+        break;
+      }
     }
   }
   for (const z of zooms) {

@@ -70,6 +70,7 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   chapter: "text-emerald-300 border-emerald-400/30",
   label: "text-neutral-300 border-white/15",
   cta: "text-red-300 border-red-400/30",
+  screen: "text-blue-300 border-blue-400/30",
   zoom: "text-neutral-400 border-white/10",
 };
 
@@ -524,6 +525,7 @@ const LOOKS: { id: MotionLook; label: string; hint: string }[] = [
   { id: "paper", label: "Paper", hint: "Paper on a desk, a pen pointing" },
   { id: "minimal", label: "Minimal", hint: "Clean type, thin lines, calm cuts" },
   { id: "film", label: "Cinematic", hint: "Film colour, grain, bars, slow push-ins" },
+  { id: "saas", label: "SaaS", hint: "Light pages, white cards, app screens" },
 ];
 
 function LookRow({ look }: { look: LookControls }) {

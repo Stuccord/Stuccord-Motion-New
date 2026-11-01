@@ -12,6 +12,7 @@ import {
   type ElementType,
   type MotionElement,
   type ProfileDetails,
+  type ScreenDetails,
 } from "@/lib/motion-plan";
 import type { SketchId } from "@/motion/sketches";
 
@@ -44,6 +45,8 @@ export type PlacedGraphic = {
   swap: { item: number; text: string } | null;
   /** A social profile's details; null for other graphics. */
   profile: ProfileDetails | null;
+  /** An app screen's kind, device and address; null for other graphics. */
+  screen: ScreenDetails | null;
   /** A Notes page's lines: from which frame each is written, and its sketch; null for other graphics. */
   lines: PlacedNoteLine[] | null;
   /** The pictures (a story's scenes, a cartoon's one, a card stream's or profile's); null for other graphics. */
@@ -175,6 +178,7 @@ export function placeGraphics(
       behind: el.behind === true && BEHIND_TYPES.has(el.type),
       swap: el.type === "loop" && el.swap ? el.swap : null,
       profile: el.type === "profile" && el.profile ? el.profile : null,
+      screen: el.type === "screen" && el.screen ? el.screen : null,
       lines: el.type === "notes" ? placeLines(el, from, to, wordsByKey) : null,
       scenes: PICTURE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
     });

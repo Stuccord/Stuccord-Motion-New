@@ -5,7 +5,7 @@
 // render-worker/motion.js (LOOK_FINISH), the export. No app imports: the
 // worker bundles src/motion on its own.
 
-export const MOTION_LOOK_IDS = ["glass", "paper", "minimal", "film"] as const;
+export const MOTION_LOOK_IDS = ["glass", "paper", "minimal", "film", "saas"] as const;
 export type MotionLookId = (typeof MOTION_LOOK_IDS)[number];
 
 /** A colour channel's curve: its output at inputs 0, 0.25, 0.5, 0.75 and 1. */
@@ -77,6 +77,14 @@ export const LOOK_FINISH: Record<MotionLookId, LookFinish> = {
     angleClose: 1.12,
     pace: "slow",
     angleMove: "push",
+    captions: "clean",
+  },
+  // SaaS: bright and clean - a touch more colour and contrast, gentle close
+  // shots at the normal pace, clean captions.
+  saas: {
+    ...STANDARD,
+    grade: { saturation: 1.06, contrast: 1.04 },
+    angleClose: 1.2,
     captions: "clean",
   },
 };
