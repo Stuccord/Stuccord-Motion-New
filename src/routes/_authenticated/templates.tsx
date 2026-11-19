@@ -5,6 +5,11 @@ import { cn } from "@/lib/utils";
 import { Search } from "lucide-react";
 import { useState } from "react";
 import { TEMPLATES, TEMPLATE_CATS } from "@/lib/templates.data";
+import { NEW_PROJECT_STYLES } from "@/lib/presets";
+
+/** A look's short name ("Motion Explainer" from "Motion Explainer — premium motion graphics"). */
+const lookName = (id: string) =>
+  NEW_PROJECT_STYLES.find((s) => s.id === id)?.label.split(" — ")[0] ?? id;
 
 export const Route = createFileRoute("/_authenticated/templates")({
   head: () => ({ meta: [{ title: "Templates — Stuccord Motion" }] }),
@@ -27,7 +32,7 @@ function TemplatesPage() {
   return (
     <AppShell
       title="Templates"
-      subtitle="Each one starts a project with its shape, style and a brief the AI uses to write your opening hook."
+      subtitle="Each one starts a project with its shape, one of the four looks and a brief the AI follows when it plans your graphics and writes your opening hook."
       actions={<Button onClick={() => navigate({ to: "/projects/new" })}>Start from blank</Button>}
     >
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
@@ -62,11 +67,19 @@ function TemplatesPage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-mono font-medium text-white/90 bg-black/25 backdrop-blur rounded px-1.5 py-0.5">{t.ratio}</span>
-                  <span className="text-[10px] font-mono font-medium text-white/90 bg-black/25 backdrop-blur rounded px-1.5 py-0.5">{t.duration}</span>
+                  <span
+                    title="Suggested length"
+                    className="text-[10px] font-mono font-medium text-white/90 bg-black/25 backdrop-blur rounded px-1.5 py-0.5"
+                  >
+                    ~{t.duration}
+                  </span>
                 </div>
               </div>
-              <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+              <div className="absolute inset-x-0 bottom-0 p-4 text-white flex items-end justify-between gap-2">
                 <div className="text-[10px] uppercase tracking-wider text-white/70 font-medium">{t.cat}</div>
+                <div className="text-[10px] font-medium text-white/90 bg-black/25 backdrop-blur rounded px-1.5 py-0.5">
+                  {lookName(t.preset)}
+                </div>
               </div>
             </div>
             <div className="p-4">

@@ -22,6 +22,7 @@ import { UploadCloud, X, Loader2, Film, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TEMPLATES } from "@/lib/templates.data";
 import { NEW_PROJECT_STYLES } from "@/lib/presets";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-rules";
 import { z } from "zod";
 
 const searchSchema = z.object({
@@ -97,6 +98,9 @@ function NewProject() {
     mutationFn: async () => {
       if (!title.trim()) throw new Error("Give your project a title");
       if (files.length === 0) throw new Error("Upload at least one video clip");
+      // Checked before the project is made, so a too-big file doesn't leave an empty project.
+      const tooBig = files.find((f) => f.file.size > MAX_UPLOAD_BYTES);
+      if (tooBig) throw new Error(`${tooBig.file.name} is over the ${MAX_UPLOAD_MB} MB limit`);
 
       const project = await createFn({
         data: {
@@ -112,12 +116,6 @@ function NewProject() {
       // Upload each file to storage via signed upload URL, then attach to project
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-
-        const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
-        if (f.file.size > MAX_FILE_SIZE) {
-          throw new Error(`${f.file.name} exceeds 500 MB limit`);
-        }
-
         const contentType = f.file.type || "video/mp4";
         const { data: authData } = await supabase.auth.getSession();
         const headers: Record<string, string> = { "content-type": "application/json" };
@@ -207,8 +205,8 @@ function NewProject() {
           </p>
         )}
         <p className="text-sm text-neutral-500 mt-1">
-          Drop your clips in any order. Add a script if you have one — Stuccord will match
-          it against the footage.
+          Drop your clips, add your script if you have one, and the AI plans the graphics from
+          what you say.
         </p>
 
         {template && (
@@ -220,7 +218,7 @@ function NewProject() {
               <div className="text-xs font-semibold uppercase tracking-wider text-violet-700">Using template</div>
               <div className="text-sm font-semibold mt-0.5">{template.title}</div>
               <div className="text-xs text-neutral-600 mt-0.5">
-                Preset, aspect ratio & edit brief pre-filled — tweak anything below.
+                Look, shape and brief pre-filled — change anything below.
               </div>
             </div>
             <button
@@ -279,8 +277,8 @@ function NewProject() {
           <section className="bg-white border border-black/5 rounded-2xl p-6">
             <h2 className="text-sm font-semibold">2. Upload your clips</h2>
             <p className="text-xs text-neutral-500 mt-1">
-              A-roll, B-roll, phone shots, screen recordings — drop them all. Stuccord
-              orders them against your script or figures it out from the audio.
+              Your talking clips (A-roll) and any B-roll. They go on the timeline in the order
+              you add them; mark each one or leave it on auto-detect.
             </p>
             <div
               className={`mt-4 border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
@@ -301,7 +299,7 @@ function NewProject() {
               <UploadCloud className="mx-auto w-8 h-8 text-neutral-400" />
               <p className="mt-3 text-sm font-medium">Drop videos or click to browse</p>
               <p className="text-xs text-neutral-500 mt-1">
-                MP4, MOV, WebM · up to 2GB per clip
+                MP4, MOV, WebM · up to {MAX_UPLOAD_MB} MB per clip
               </p>
               <input
                 ref={inputRef}
@@ -352,8 +350,8 @@ function NewProject() {
           <section className="bg-white border border-black/5 rounded-2xl p-6">
             <h2 className="text-sm font-semibold">3. Script (optional)</h2>
             <p className="text-xs text-neutral-500 mt-1">
-              Paste the script if you have one. Stuccord will match takes to lines and know
-              exactly when to cut, zoom, and drop B-roll.
+              Paste the script if you have one. The AI reads it alongside what you actually say
+              when it plans the graphics and writes your opening hook.
             </p>
             <Textarea
               className="mt-4 min-h-32 font-mono text-sm"
@@ -366,11 +364,12 @@ function NewProject() {
           <section className="bg-white border border-black/5 rounded-2xl p-6">
             <h2 className="text-sm font-semibold">4. Brief the edit (optional)</h2>
             <p className="text-xs text-neutral-500 mt-1">
-              Tell the AI how it should feel. Reference creators, pace, energy.
+              Tell the AI which graphics you want and how fast. Captions, music and cuts are
+              set in the editor.
             </p>
             <Textarea
               className="mt-4 min-h-24"
-              placeholder="Premium motion-graphics edit. Hard zoom-ins on emphasis words. Word-by-word captions in white with yellow highlights. Whoosh SFX on cuts. Background music at -14 LUFS, duck to -22 under VO."
+              placeholder="Fast and punchy. Put the hook's key line behind me, every number as a counter, a chapter for each tip, punch-in zooms on emphatic words."
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
             />
