@@ -173,7 +173,9 @@ function MakePage() {
   const pictures = useCallback(
     async (start: MotionPlan) => {
       if (!needsAutoPictures(start)) {
-        mark("pictures", "skipped", "No story in this video.");
+        const made = start.elements.some((e) => e.type === "story" && e.scenes?.length);
+        if (made) mark("pictures", "done", "Already made.");
+        else mark("pictures", "skipped", "No story in this video.");
         return start;
       }
       mark("pictures", "active");
