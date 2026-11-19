@@ -11,6 +11,7 @@ import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { limitThreads } from "./threads.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const PERSON_MODEL = path.join(here, "models", "selfie_segmenter.onnx");
@@ -76,7 +77,7 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
     .join(",");
   const decoder = spawn(
     ffmpegPath,
-    ["-v", "error", "-i", input, "-an", "-vf", filters, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"],
+    limitThreads(["-v", "error", "-i", input, "-an", "-vf", filters, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"]),
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   let decodeErr = "";
@@ -99,8 +100,8 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
     encodeErr = "";
     const p = spawn(
       ffmpegPath,
-      ["-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", `${MASK_SIZE}x${MASK_SIZE}`,
-        "-r", String(FPS), "-i", "pipe:0", "-c:v", "ffv1", file],
+      limitThreads(["-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", `${MASK_SIZE}x${MASK_SIZE}`,
+        "-r", String(FPS), "-i", "pipe:0", "-c:v", "ffv1", file]),
       { stdio: ["pipe", "ignore", "pipe"] },
     );
     p.stderr.on("data", (d) => (encodeErr += d));

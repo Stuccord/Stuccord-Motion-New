@@ -57,6 +57,7 @@ import {
 } from "./motion.js";
 import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 import { CaptureError, capturePage } from "./capture.js";
+import { limitThreads } from "./threads.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -418,7 +419,10 @@ app.post("/transcribe", async (req, res) => {
 
 function run(cmd, args, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    // Every ffmpeg run is held to a few threads (see threads.js).
+    const child = spawn(cmd, cmd === ffmpegPath ? limitThreads(args) : args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       const s = chunk.toString();
@@ -1847,8 +1851,31 @@ async function runRender(job) {
         stage_message: "Adding graphics and captions",
       });
       const out = path.join(workdir, "final-graphics.mp4");
-      const compose = (pieces, withBehind) =>
-        run(ffmpegPath, composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind, split, grade, finish: filmFinish }));
+      // ffmpeg's "time=" lines say how far it got, so the page shows this
+      // pass moving (it's the longest one on a small server).
+      const lengthMs = (await probeDurationMs(composedOut)) ?? 0;
+      let lastStep = -1;
+      const onProgress = (text) => {
+        const m = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(text);
+        if (!m || lengthMs <= 0) return;
+        const ms = ((+m[1] * 60 + +m[2]) * 60 + +m[3]) * 1000;
+        const pct = Math.min(99, Math.floor((ms / lengthMs) * 100));
+        const step = Math.floor(pct / 10);
+        if (step <= lastStep) return;
+        lastStep = step;
+        void callback(job.callback_url, {
+          job_id: job.job_id, status: "rendering", progress: 85 + Math.floor(pct / 10),
+          stage_message: `Adding graphics and captions (${pct}%)`,
+        });
+      };
+      const compose = (pieces, withBehind) => {
+        lastStep = -1;
+        return run(
+          ffmpegPath,
+          composeArgs({ input: composedOut, pieces, zoom, textFilters, output: out, behind: withBehind, split, grade, finish: filmFinish }),
+          { onProgress },
+        );
+      };
       try {
         try {
           await compose(graphicPieces, behind);
