@@ -29,7 +29,10 @@ import {
   LogoContext,
   behindBand,
   clamp01,
+  easeIn,
+  easeInOut,
   easeOut,
+  easeOutBack,
   exitOpacity,
   splitWords,
   useStepFrame,
@@ -62,6 +65,12 @@ type Skin = {
   numberWeight: number;
   /** Words over the footage on white cards (instead of a dark wash). */
   cards: boolean;
+  /**
+   * Launch-video motion (SaaS): arrivals overshoot a little and settle,
+   * nothing ever fully stops (a slow push while it holds), exits are quick
+   * and ease in, counters take a full second.
+   */
+  lively: boolean;
 };
 
 const SHADOW = "0 1px 12px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.35)";
@@ -86,6 +95,7 @@ const MINIMAL_SKIN: Skin = {
   leaks: false,
   numberWeight: 200,
   cards: false,
+  lively: false,
 };
 
 const FILM_SKIN: Skin = {
@@ -108,6 +118,7 @@ const FILM_SKIN: Skin = {
   leaks: true,
   numberWeight: 400,
   cards: false,
+  lively: false,
 };
 
 const SAAS_SKIN: Skin = {
@@ -132,6 +143,7 @@ const SAAS_SKIN: Skin = {
   leaks: false,
   numberWeight: 700,
   cards: true,
+  lively: true,
 };
 
 /** Behind the speaker (a darkened room): the skin's light words. */
@@ -159,12 +171,21 @@ type Draw = (p: { g: PlacedGraphic; theme: MotionTheme }) => React.ReactElement;
 
 // ---------- shared pieces ----------
 
-/** A gentle arrival: fades in and rises a little, no blur; at the skin's speed. */
+/**
+ * A gentle arrival: fades in and rises a little, no blur; at the skin's speed.
+ * Lively skins rise a touch further, overshoot slightly and settle.
+ */
 function useFade() {
-  const { fadeFrames } = useSkin();
+  const { fadeFrames, lively } = useSkin();
   return (frame: number, delay: number, unit: number, frames = fadeFrames): React.CSSProperties => {
-    const p = easeOut((frame - delay) / frames);
-    return { opacity: p, transform: `translateY(${(1 - p) * unit * 1.4}px)` };
+    const t = (frame - delay) / frames;
+    const p = easeOut(t);
+    if (!lively) return { opacity: p, transform: `translateY(${(1 - p) * unit * 1.4}px)` };
+    const m = easeOutBack(t);
+    return {
+      opacity: p,
+      transform: `translateY(${(1 - m) * unit * 2}px) scale(${0.94 + 0.06 * m})`,
+    };
   };
 }
 
@@ -456,13 +477,14 @@ const MinimalKeyLine: Draw = ({ g, theme }) => {
 };
 
 const MinimalCounter: Draw = ({ g, theme }) => {
-  const { numberWeight } = useSkin();
+  const { numberWeight, lively } = useSkin();
   const frame = useStepFrame();
   const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
   const n = g.number ?? { value: 0, prefix: "", suffix: "" };
-  const value = format(n, n.value * easeOut((frame - 4) / 26));
+  // Counts up over about a second (lively) and never jumps in one frame.
+  const value = format(n, n.value * easeOut((frame - 4) / (lively ? 30 : 26)));
   const card = useCard(unit);
   const label = g.text && (
     <div
@@ -1692,18 +1714,47 @@ const MINIMAL_DRAW: Record<PlacedGraphic["type"], Draw> = {
   chapter: MinimalChapter,
   label: MinimalLabel,
   cta: MinimalCta,
-  screen: ({ g, theme }) => <ScreenGraphic g={g} theme={theme} background={PAGE} ink={INK} />,
+  screen: function Screen({ g, theme }) {
+    const { lively } = useSkin();
+    return <ScreenGraphic g={g} theme={theme} background={PAGE} ink={INK} lively={lively} />;
+  },
 };
 
-function Skinned({ skin, g, theme }: { skin: Skin; g: PlacedGraphic; theme: MotionTheme }) {
+/**
+ * Lively skins: the whole graphic is a camera that never stops - a slow
+ * micro-push while it holds (1 → 1.02, easy ease), then a quick ease-in
+ * push through as it fades out (exits are faster than arrivals).
+ */
+function useCamera(g: PlacedGraphic): React.CSSProperties | undefined {
+  const { lively } = useSkin();
+  const frame = useStepFrame();
+  if (!lively) return undefined;
+  const length = Math.max(1, g.to - g.from);
+  const hold = 1 + 0.02 * easeInOut(frame / length);
+  const out = 1 + 0.03 * easeIn((frame - (length - 8)) / 8);
+  return { transform: `scale(${hold * out})`, transformOrigin: "50% 50%" };
+}
+
+function Drawn({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   const Draw = MINIMAL_DRAW[g.type];
+  const camera = useCamera(g);
+  return camera ? (
+    <AbsoluteFill style={camera}>
+      <Draw g={g} theme={theme} />
+    </AbsoluteFill>
+  ) : (
+    <Draw g={g} theme={theme} />
+  );
+}
+
+function Skinned({ skin, g, theme }: { skin: Skin; g: PlacedGraphic; theme: MotionTheme }) {
   return (
     <SkinContext.Provider value={skin}>
       {/* No faux bold or italics: the serif has one weight and its own italic. */}
       <AbsoluteFill
         style={{ ...(skin.vars as React.CSSProperties), fontSynthesis: "none", color: INK }}
       >
-        <Draw g={g} theme={theme} />
+        <Drawn g={g} theme={theme} />
       </AbsoluteFill>
     </SkinContext.Provider>
   );

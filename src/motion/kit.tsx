@@ -15,6 +15,21 @@ export const LogoContext = React.createContext<string | null>(null);
 
 export const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
 export const easeOut = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
+export const easeIn = (t: number) => Math.pow(clamp01(t), 3);
+export const easeInOut = (t: number) => {
+  const x = clamp01(t);
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+};
+/** Ease out past the end and settle back: a slight overshoot (about 6% at 1.4). */
+export const easeOutBack = (t: number, s = 1.4) => {
+  const x = clamp01(t) - 1;
+  return 1 + (s + 1) * x * x * x + s * x * x;
+};
+/** A tiny press: scale 1 → 0.96 → 1 over `frames` from `at`. */
+export const press = (frame: number, at: number, frames = 8) => {
+  const t = (frame - at) / frames;
+  return t < 0 || t > 1 ? 1 : 1 - 0.04 * Math.sin(t * Math.PI);
+};
 
 /** Timings below are in frames at 30 fps. */
 export const BASE_FPS = 30;

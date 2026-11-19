@@ -15,9 +15,12 @@ import type { PlacedGraphic } from "@/motion/timing";
 import {
   ImagesContext,
   clamp01,
+  easeInOut,
   easeOut,
+  easeOutBack,
   exitOpacity,
   inkAccent,
+  press,
   rand,
   splitWords,
   useStepFrame,
@@ -29,11 +32,6 @@ const APP_INK = "#0F172A";
 const APP_SOFT = "#64748B";
 const APP_LINE = "#E2E8F0";
 const APP_FILL = "#F1F5F9";
-
-const easeInOut = (t: number) => {
-  const x = clamp01(t);
-  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
-};
 
 /** The host name to show in a browser bar ("stripe.com" from "https://www.stripe.com/x"). */
 function screenHost(url: string): string {
@@ -70,6 +68,7 @@ export function ScreenGraphic({
   theme,
   background,
   ink,
+  lively = false,
 }: {
   g: PlacedGraphic;
   theme: MotionTheme;
@@ -77,6 +76,12 @@ export function ScreenGraphic({
   background: string;
   /** Words on that page. */
   ink: string;
+  /**
+   * Launch-video motion (SaaS look): the device lands with a slight
+   * overshoot, the cursor travels on an arc like a hand and settles before
+   * it clicks, and the clicked button presses in.
+   */
+  lively?: boolean;
 }) {
   const frame = useStepFrame();
   const { unit, portrait, width, height } = useUnit();
@@ -100,21 +105,47 @@ export function ScreenGraphic({
   // It floats in tilted, settles at a slight angle with a gentle bob, then
   // flattens and moves closer as the camera eases in on the part to read.
   const enter = easeOut(frame / 18);
+  // Lively: it rises and grows a touch past its place, then settles.
+  const land = lively ? easeOutBack(frame / 18, 1.2) : enter;
   const zoom = easeInOut((frame - b.zoomFrom) / b.zoomFrames);
   const rx = (1 - enter) * 26 + 7 * (1 - zoom);
   const ry = (1 - enter) * -20 - 9 * (1 - zoom);
   const bob = Math.sin(frame / 22) * unit * 0.5 * (1 - zoom);
-  const scale = (0.86 + 0.14 * enter) * (1 + 0.35 * zoom);
+  const scale = (0.86 + 0.14 * land) * (1 + 0.35 * zoom);
   // Moves that part toward the middle as it zooms.
   const tx = (0.5 - focus.x) * dw * 0.35 * zoom;
   const ty = (0.5 - focus.y) * (dh - bar) * 0.35 * zoom;
 
   // The cursor: from the lower right to the click, pressing in on the click.
-  const glide = easeInOut((frame - b.cursorFrom) / 12);
-  const cx = dw * (1.05 + (target.x - 1.05) * glide);
-  const cy = bar + (dh - bar) * (1.08 + (target.y - 1.08) * glide);
+  // Lively: along an arc (control point 15% of the way off the straight
+  // line), easing in and out, overshooting a hair and settling just as it clicks.
+  const sx = dw * 1.05;
+  const sy = bar + (dh - bar) * 1.08;
+  const ex = dw * target.x;
+  const ey = bar + (dh - bar) * target.y;
+  let cx: number;
+  let cy: number;
+  if (lively) {
+    const raw = (frame - b.cursorFrom) / 10;
+    const u = easeInOut(raw) + 0.04 * Math.sin(Math.PI * clamp01((raw - 0.8) / 0.4));
+    const dist = Math.hypot(ex - sx, ey - sy);
+    // Bow the path off the straight line (up and out, coming from the lower right).
+    const nx = dist ? -(ey - sy) / dist : 0;
+    const ny = dist ? (ex - sx) / dist : 0;
+    const kx = (sx + ex) / 2 + nx * dist * 0.15;
+    const ky = (sy + ey) / 2 + ny * dist * 0.15;
+    const v = 1 - u;
+    cx = v * v * sx + 2 * v * u * kx + u * u * ex;
+    cy = v * v * sy + 2 * v * u * ky + u * u * ey;
+  } else {
+    const glide = easeInOut((frame - b.cursorFrom) / 12);
+    cx = sx + (ex - sx) * glide;
+    cy = sy + (ey - sy) * glide;
+  }
   const pressing = frame >= b.clickAt && frame < b.clickAt + 6;
   const clicked = frame >= b.clickAt;
+  // The clicked button presses in: 1 → 0.96 → 1 over 8 frames.
+  const buttonScale = lively ? press(frame, b.clickAt) : 1;
 
   const pictureUrl = g.scenes?.[0]?.image ? images[g.scenes[0].image] : undefined;
   const content = (() => {
@@ -130,6 +161,7 @@ export function ScreenGraphic({
             phone={phone}
             accent={accent}
             clickAt={b.clickAt}
+            buttonScale={buttonScale}
           />
         );
       case "dashboard":
@@ -144,6 +176,7 @@ export function ScreenGraphic({
             accent={accent}
             host={screenHost(s.url)}
             clicked={clicked}
+            buttonScale={buttonScale}
           />
         );
     }
@@ -379,6 +412,7 @@ function ChatScreen({
   phone,
   accent,
   clickAt,
+  buttonScale,
 }: {
   g: PlacedGraphic;
   frame: number;
@@ -386,6 +420,8 @@ function ChatScreen({
   phone: boolean;
   accent: string;
   clickAt: number;
+  /** The send button's press (1 when not pressing). */
+  buttonScale: number;
 }) {
   const size = unit * (phone ? 2.9 : 2.1);
   const typed = g.text.slice(
@@ -493,6 +529,7 @@ function ChatScreen({
             background: typed ? accent : APP_LINE,
             display: "grid",
             placeItems: "center",
+            transform: `scale(${buttonScale})`,
           }}
         >
           <ArrowUp size={size * 1.1} color="#FFFFFF" strokeWidth={2.6} />
@@ -667,6 +704,7 @@ function PageScreen({
   accent,
   host,
   clicked,
+  buttonScale,
 }: {
   g: PlacedGraphic;
   frame: number;
@@ -675,6 +713,8 @@ function PageScreen({
   accent: string;
   host: string;
   clicked: boolean;
+  /** The button's press (1 when not pressing). */
+  buttonScale: number;
 }) {
   const size = unit * (phone ? 2.7 : 1.9);
   const brand = host.split(".")[0] || "Brand";
@@ -778,6 +818,7 @@ function PageScreen({
             color: "#FFFFFF",
             fontWeight: 700,
             ...p(14),
+            transform: `${p(14).transform} scale(${buttonScale})`,
           }}
         >
           {clicked ? "You're in ✓" : "Get started"}
