@@ -10,7 +10,6 @@
 // placeGraphics and the zoom curve mirror src/motion/timing.ts (the
 // editor's preview), so the export matches what the editor shows.
 
-import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { behindFilters } from "./cutout.js";
@@ -536,7 +535,10 @@ export async function renderGraphics({
       frameRange: [a, b - 1],
       outputLocation: file,
       muted: true,
-      concurrency: Math.max(1, Math.min(8, os.cpus().length)),
+      // Remotion's own choice (half its core count, 1 to 8). It counts cores
+      // with nproc, which sees a container's CPU limit; os.cpus() sees the
+      // whole host, so a number from it can be more than Remotion allows.
+      concurrency: null,
       logLevel: "warn",
       onProgress: ({ renderedFrames }) => onProgress?.((drawn + renderedFrames) / totalToDraw),
     });

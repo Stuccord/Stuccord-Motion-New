@@ -72,7 +72,9 @@ const LOOKS: { id: MotionLook; label: string }[] = [
 
 const RUNNING_JOB = ["queued", "transcribing", "planning", "rendering"];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+/** An error's words, or the fallback when it has none (an empty message must still show). */
+const message = (e: unknown, fallback: string) =>
+  (e instanceof Error && e.message.trim()) || fallback;
 
 function MakePage() {
   const { projectId } = Route.useParams();
@@ -97,6 +99,8 @@ function MakePage() {
   const [progress, setProgress] = useState<{ pct: number; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  // The export finished but the graphics couldn't be drawn (the worker's reason).
+  const [graphicsError, setGraphicsError] = useState<string | null>(null);
   const [planState, setPlanState] = useState<MotionPlanState | null>(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
@@ -116,6 +120,7 @@ function MakePage() {
         progress?: number | null;
         stage_message?: string | null;
         error?: string | null;
+        edit_plan?: { graphics_error?: unknown } | null;
       } | null;
       if (
         r.project.status === "ready" &&
@@ -124,6 +129,8 @@ function MakePage() {
       ) {
         const { url } = await signFn({ data: { path: r.project.output_path } });
         setProgress(null);
+        const ge = job?.edit_plan?.graphics_error;
+        setGraphicsError(typeof ge === "string" ? ge : null);
         setVideoUrl(url);
         mark("render", "done");
         void qc.invalidateQueries({ queryKey: ["projects"] });
@@ -142,6 +149,8 @@ function MakePage() {
 
   /** Starts a render with the project's captions and music settings, then waits for it. */
   const render = useCallback(async () => {
+    // Active from the start, so a refused render shows as this step failing.
+    mark("render", "active");
     const r = await fetchProject({ data: { id: projectId } });
     const p = r.project as {
       captions_enabled?: boolean | null;
@@ -276,7 +285,10 @@ function MakePage() {
       // 4. Render.
       await render();
     } catch (e) {
-      const text = message(e, "Something went wrong.");
+      const text = message(
+        e,
+        "This step failed and the server gave no reason. Try again, or open the editor.",
+      );
       setError(text);
       setSteps((s) => {
         const active = (Object.keys(s) as StepId[]).find((k) => s[k] === "active");
@@ -360,6 +372,16 @@ function MakePage() {
               />
             </div>
             <div className="space-y-4">
+              {graphicsError && (
+                <div
+                  className="rounded-lg border border-amber-500/40 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900"
+                  data-graphics-error
+                >
+                  <div className="font-semibold">Made without graphics</div>
+                  The video was rendered, but the graphics couldn&apos;t be drawn this time (
+                  {graphicsError}). Change the look or redo the graphics to try again.
+                </div>
+              )}
               <a href={videoUrl ?? undefined} download className="block">
                 <Button className="w-full" disabled={busy}>
                   <Download /> Download

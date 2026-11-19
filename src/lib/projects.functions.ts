@@ -1554,8 +1554,8 @@ export async function exportAllowance(userId: string, teamId: string | null): Pr
       .eq("id", teamId)
       .maybeSingle();
     const plan = planFor(team?.plan);
-    const { count, error } = await q.eq("team_id", teamId);
-    if (error) throw new Error(error.message);
+    const { count, error, status } = await q.eq("team_id", teamId);
+    if (error) throw new Error(countError(error.message, status));
     return {
       used: count ?? 0,
       cap: plan.teamExports,
@@ -1565,9 +1565,22 @@ export async function exportAllowance(userId: string, teamId: string | null): Pr
   }
   const plan = planFor("free");
   q = q.eq("user_id", userId).is("team_id", null);
-  const { count, error } = await q;
-  if (error) throw new Error(error.message);
+  const { count, error, status } = await q;
+  if (error) throw new Error(countError(error.message, status));
   return { used: count ?? 0, cap: plan.personalExports, team: null, plan: plan.label };
+}
+
+/**
+ * A failed count's message. Counts ask with HEAD, so the database's answer
+ * has no body and the error no words: say what failed and the HTTP status
+ * (401/403 usually means the server's SUPABASE_SERVICE_ROLE_KEY is wrong).
+ */
+function countError(message: string | undefined, status: number): string {
+  if (message?.trim()) return message;
+  console.error(`[exportAllowance] Counting exports failed with HTTP ${status} and no message`);
+  return status === 401 || status === 403
+    ? `Couldn't check this month's exports: the server's database key was refused (HTTP ${status}).`
+    : `Couldn't check this month's exports (the database answered HTTP ${status}). Try again in a moment.`;
 }
 
 function assertAllowanceLeft(a: ExportAllowance) {
