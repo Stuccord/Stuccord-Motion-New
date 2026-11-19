@@ -180,15 +180,15 @@ function NewProject() {
         });
       }
 
-      // Clips are attached; user opens the editor and hits Export to render.
+      // Clips are attached: the app now makes the video by itself (the make page).
       return { project };
     },
     onSuccess: ({ project }) => {
-      toast.success("Project created — opening editor");
+      toast.success("Project created — making your video");
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["usage-stats"] });
       qc.invalidateQueries({ queryKey: ["all-clips"] });
-      navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
+      navigate({ to: "/projects/$projectId/make", params: { projectId: project.id } });
     },
     onError: (e: Error) => toast.error(e.message),
   });

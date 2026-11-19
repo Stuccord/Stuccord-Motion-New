@@ -41,6 +41,7 @@ import { Route as ApiV1ProjectsIndexRouteImport } from './routes/api/v1/projects
 import { Route as ApiV1ExportsExportIdRouteImport } from './routes/api/v1/exports.$exportId'
 import { Route as ApiAuthenticatedUploadsPresignRouteImport } from './routes/api/authenticated/uploads/presign'
 import { Route as AuthenticatedPublishingConnectPlatformRouteImport } from './routes/_authenticated/publishing.connect.$platform'
+import { Route as AuthenticatedProjectsProjectIdMakeRouteImport } from './routes/_authenticated/projects.$projectId_.make'
 import { Route as ApiV1ProjectsProjectIdIndexRouteImport } from './routes/api/v1/projects.$projectId.index'
 import { Route as ApiV1ProjectsProjectIdUploadsRouteImport } from './routes/api/v1/projects.$projectId.uploads'
 import { Route as ApiV1ProjectsProjectIdExportsRouteImport } from './routes/api/v1/projects.$projectId.exports'
@@ -216,6 +217,12 @@ const AuthenticatedPublishingConnectPlatformRoute =
     path: '/publishing/connect/$platform',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedProjectsProjectIdMakeRoute =
+  AuthenticatedProjectsProjectIdMakeRouteImport.update({
+    id: '/projects/$projectId_/make',
+    path: '/projects/$projectId/make',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const ApiV1ProjectsProjectIdIndexRoute =
   ApiV1ProjectsProjectIdIndexRouteImport.update({
     id: '/api/v1/projects/$projectId/',
@@ -269,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/api/public/transcribe-webhook': typeof ApiPublicTranscribeWebhookRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/publishing/': typeof AuthenticatedPublishingIndexRoute
+  '/projects/$projectId/make': typeof AuthenticatedProjectsProjectIdMakeRoute
   '/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
   '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
@@ -306,6 +314,7 @@ export interface FileRoutesByTo {
   '/api/public/transcribe-webhook': typeof ApiPublicTranscribeWebhookRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/publishing': typeof AuthenticatedPublishingIndexRoute
+  '/projects/$projectId/make': typeof AuthenticatedProjectsProjectIdMakeRoute
   '/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
   '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
@@ -345,6 +354,7 @@ export interface FileRoutesById {
   '/api/public/transcribe-webhook': typeof ApiPublicTranscribeWebhookRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/publishing/': typeof AuthenticatedPublishingIndexRoute
+  '/_authenticated/projects/$projectId_/make': typeof AuthenticatedProjectsProjectIdMakeRoute
   '/_authenticated/publishing/connect/$platform': typeof AuthenticatedPublishingConnectPlatformRoute
   '/api/authenticated/uploads/presign': typeof ApiAuthenticatedUploadsPresignRoute
   '/api/v1/exports/$exportId': typeof ApiV1ExportsExportIdRoute
@@ -384,6 +394,7 @@ export interface FileRouteTypes {
     | '/api/public/transcribe-webhook'
     | '/projects/'
     | '/publishing/'
+    | '/projects/$projectId/make'
     | '/publishing/connect/$platform'
     | '/api/authenticated/uploads/presign'
     | '/api/v1/exports/$exportId'
@@ -421,6 +432,7 @@ export interface FileRouteTypes {
     | '/api/public/transcribe-webhook'
     | '/projects'
     | '/publishing'
+    | '/projects/$projectId/make'
     | '/publishing/connect/$platform'
     | '/api/authenticated/uploads/presign'
     | '/api/v1/exports/$exportId'
@@ -459,6 +471,7 @@ export interface FileRouteTypes {
     | '/api/public/transcribe-webhook'
     | '/_authenticated/projects/'
     | '/_authenticated/publishing/'
+    | '/_authenticated/projects/$projectId_/make'
     | '/_authenticated/publishing/connect/$platform'
     | '/api/authenticated/uploads/presign'
     | '/api/v1/exports/$exportId'
@@ -720,6 +733,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPublishingConnectPlatformRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/projects/$projectId_/make': {
+      id: '/_authenticated/projects/$projectId_/make'
+      path: '/projects/$projectId/make'
+      fullPath: '/projects/$projectId/make'
+      preLoaderRoute: typeof AuthenticatedProjectsProjectIdMakeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/v1/projects/$projectId/': {
       id: '/api/v1/projects/$projectId/'
       path: '/api/v1/projects/$projectId'
@@ -765,6 +785,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedTeamsTeamIdRoute: typeof AuthenticatedTeamsTeamIdRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedPublishingIndexRoute: typeof AuthenticatedPublishingIndexRoute
+  AuthenticatedProjectsProjectIdMakeRoute: typeof AuthenticatedProjectsProjectIdMakeRoute
   AuthenticatedPublishingConnectPlatformRoute: typeof AuthenticatedPublishingConnectPlatformRoute
 }
 
@@ -782,6 +803,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedTeamsTeamIdRoute: AuthenticatedTeamsTeamIdRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedPublishingIndexRoute: AuthenticatedPublishingIndexRoute,
+  AuthenticatedProjectsProjectIdMakeRoute:
+    AuthenticatedProjectsProjectIdMakeRoute,
   AuthenticatedPublishingConnectPlatformRoute:
     AuthenticatedPublishingConnectPlatformRoute,
 }

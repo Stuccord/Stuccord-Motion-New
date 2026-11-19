@@ -1,0 +1,531 @@
+// Auto edit (docs/auto-edit-plan.md): right after upload, the app makes the
+// video by itself and shows the result; the editor is there for changes.
+// The steps run here, in order, and each one checks whether it's already
+// done, so coming back carries on where it was: transcribe (worker), plan
+// the graphics (Claude), make the first story pictures (Higgsfield), render
+// (worker). If the graphics can't be planned, the video is still made with
+// captions.
+
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import {
+  AudioLines,
+  CheckCircle2,
+  Circle,
+  Download,
+  Film,
+  ImageIcon,
+  Loader2,
+  MinusCircle,
+  PenTool,
+  RefreshCw,
+  Wand2,
+  XCircle,
+} from "lucide-react";
+import { AppShell } from "@/components/app-shell";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { getProject, getRenderSignedUrl, submitRender } from "@/lib/projects.functions";
+import {
+  getMotionPlan,
+  planMotionGraphics,
+  saveMotionPlan,
+  transcribeForPlan,
+  type MotionPlanState,
+} from "@/lib/motion-plan.functions";
+import { makeSceneImage } from "@/lib/story-images.functions";
+import type { MotionLook, MotionPlan } from "@/lib/motion-plan";
+import {
+  AUTO_PICTURES,
+  finishAutoPlan,
+  needsAutoPictures,
+  pictureJobs,
+  prepareAutoPlan,
+  withPicture,
+} from "@/lib/auto-edit";
+import { motionAccent } from "@/motion/theme";
+
+export const Route = createFileRoute("/_authenticated/projects/$projectId_/make")({
+  head: () => ({ meta: [{ title: "Making your video — Stuccord Motion" }] }),
+  component: MakePage,
+});
+
+type StepId = "transcribe" | "plan" | "pictures" | "render";
+type StepState = "waiting" | "active" | "done" | "skipped" | "failed";
+
+const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
+  { id: "transcribe", label: "Transcribing what you say", icon: AudioLines },
+  { id: "plan", label: "Planning the graphics (Claude)", icon: Wand2 },
+  { id: "pictures", label: "Making the story pictures (Higgsfield)", icon: ImageIcon },
+  { id: "render", label: "Rendering your video", icon: Film },
+];
+
+const LOOKS: { id: MotionLook; label: string }[] = [
+  { id: "glass", label: "Motion Explainer" },
+  { id: "minimal", label: "Minimal" },
+  { id: "film", label: "Cinematic" },
+  { id: "saas", label: "SaaS" },
+  { id: "paper", label: "Paper" },
+];
+
+const RUNNING_JOB = ["queued", "transcribing", "planning", "rendering"];
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+
+function MakePage() {
+  const { projectId } = Route.useParams();
+  const qc = useQueryClient();
+  const fetchProject = useServerFn(getProject);
+  const fetchPlan = useServerFn(getMotionPlan);
+  const transcribeFn = useServerFn(transcribeForPlan);
+  const planFn = useServerFn(planMotionGraphics);
+  const saveFn = useServerFn(saveMotionPlan);
+  const makeFn = useServerFn(makeSceneImage);
+  const renderFn = useServerFn(submitRender);
+  const signFn = useServerFn(getRenderSignedUrl);
+
+  const [title, setTitle] = useState("");
+  const [steps, setSteps] = useState<Record<StepId, StepState>>({
+    transcribe: "waiting",
+    plan: "waiting",
+    pictures: "waiting",
+    render: "waiting",
+  });
+  const [notes, setNotes] = useState<Partial<Record<StepId, string>>>({});
+  const [progress, setProgress] = useState<{ pct: number; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [planState, setPlanState] = useState<MotionPlanState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+
+  const mark = (id: StepId, state: StepState, note?: string) => {
+    setSteps((s) => ({ ...s, [id]: state }));
+    if (note !== undefined) setNotes((n) => ({ ...n, [id]: note }));
+  };
+
+  /** Waits for the render job to finish, then shows the video. */
+  const waitForRender = useCallback(async () => {
+    mark("render", "active");
+    for (;;) {
+      const r = await fetchProject({ data: { id: projectId } });
+      const job = r.latestJob as {
+        status: string;
+        progress?: number | null;
+        stage_message?: string | null;
+        error?: string | null;
+      } | null;
+      if (
+        r.project.status === "ready" &&
+        r.project.output_path &&
+        !RUNNING_JOB.includes(job?.status ?? "")
+      ) {
+        const { url } = await signFn({ data: { path: r.project.output_path } });
+        setProgress(null);
+        setVideoUrl(url);
+        mark("render", "done");
+        void qc.invalidateQueries({ queryKey: ["projects"] });
+        return;
+      }
+      if (job?.status === "failed") {
+        throw new Error(job.error || "The render failed.");
+      }
+      setProgress({
+        pct: job?.progress ?? 0,
+        text: job?.stage_message ?? "Waiting for the renderer…",
+      });
+      await sleep(4000);
+    }
+  }, [fetchProject, projectId, qc, signFn]);
+
+  /** Starts a render with the project's captions and music settings, then waits for it. */
+  const render = useCallback(async () => {
+    const r = await fetchProject({ data: { id: projectId } });
+    const p = r.project as {
+      captions_enabled?: boolean | null;
+      music_enabled?: boolean | null;
+      music_volume?: number | null;
+    };
+    setVideoUrl(null);
+    await renderFn({
+      data: {
+        project_id: projectId,
+        captions: p.captions_enabled ?? true,
+        music: { enabled: p.music_enabled ?? true, volume: p.music_volume ?? 60 },
+      },
+    });
+    void qc.invalidateQueries({ queryKey: ["usage-stats"] });
+    await waitForRender();
+  }, [fetchProject, projectId, qc, renderFn, waitForRender]);
+
+  /** Makes the first story pictures and saves the plan as the automatic edit keeps it. */
+  const pictures = useCallback(
+    async (start: MotionPlan) => {
+      if (!needsAutoPictures(start)) {
+        mark("pictures", "skipped", "No story in this video.");
+        return start;
+      }
+      mark("pictures", "active");
+      let plan = prepareAutoPlan(start);
+      const jobs = pictureJobs(plan);
+      const accent = motionAccent(plan.colour, null).hex;
+      let made = 0;
+      let problem: string | null = null;
+      for (const job of jobs) {
+        const story = plan.elements.find((e) => e.id === job.elementId);
+        const reference =
+          job.matchIndex !== null ? (story?.scenes?.[job.matchIndex]?.image?.path ?? null) : null;
+        try {
+          const r = await makeFn({
+            data: {
+              project_id: projectId,
+              prompt: job.prompt,
+              reference_path: reference,
+              accent,
+              style: "cinematic",
+              with_speaker: false,
+            },
+          });
+          plan = withPicture(plan, job.elementId, job.index, r.path);
+          made++;
+        } catch (e) {
+          problem = message(e, "Couldn't make a picture.");
+          break;
+        }
+      }
+      plan = finishAutoPlan(plan);
+      await saveFn({ data: { project_id: projectId, plan } });
+      if (problem) {
+        mark("pictures", made ? "done" : "skipped", `${problem} The video is made without them.`);
+      } else {
+        mark(
+          "pictures",
+          jobs.length ? "done" : "skipped",
+          jobs.length
+            ? `${made} made (up to ${AUTO_PICTURES} a video).`
+            : "No story in this video.",
+        );
+      }
+      return plan;
+    },
+    [makeFn, projectId, saveFn],
+  );
+
+  /** Plans the graphics with Claude; null (and a note) when it can't, so the video gets captions only. */
+  const planGraphics = useCallback(async (): Promise<MotionPlan | null> => {
+    mark("plan", "active");
+    try {
+      const r = await planFn({ data: { project_id: projectId } });
+      const n = r.plan.elements.length;
+      mark("plan", "done", `${n} graphic${n === 1 ? "" : "s"} planned.`);
+      return r.plan;
+    } catch (e) {
+      mark(
+        "plan",
+        "skipped",
+        `${message(e, "Planning failed.")} The video is made with captions only.`,
+      );
+      return null;
+    }
+  }, [planFn, projectId]);
+
+  /** The whole automatic edit, carrying on from wherever it got to. */
+  const run = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    setError(null);
+    try {
+      const r = await fetchProject({ data: { id: projectId } });
+      setTitle(r.project.title);
+      const job = r.latestJob as { status: string } | null;
+      // Already made (or being rendered): just show it.
+      if (r.project.status === "ready" || RUNNING_JOB.includes(job?.status ?? "")) {
+        for (const id of ["transcribe", "plan", "pictures"] as StepId[]) mark(id, "done");
+        setPlanState(await fetchPlan({ data: { project_id: projectId } }));
+        await waitForRender();
+        return;
+      }
+
+      // 1. Transcribe (the worker), and wait until every clip has words.
+      mark("transcribe", "active");
+      let st = await fetchPlan({ data: { project_id: projectId } });
+      if (st.untranscribed > 0 && st.transcribe.status !== "running") {
+        await transcribeFn({ data: { project_id: projectId } });
+      }
+      while (st.untranscribed > 0) {
+        await sleep(4000);
+        st = await fetchPlan({ data: { project_id: projectId } });
+        if (st.untranscribed > 0 && st.transcribe.status === "failed") {
+          throw new Error(st.transcribe.error || "Transcribing failed.");
+        }
+      }
+      mark("transcribe", "done");
+
+      // 2. Plan the graphics (Claude), unless there's a plan already.
+      let plan = st.plan;
+      if (plan) mark("plan", "done", `${plan.elements.length} graphics planned.`);
+      else plan = await planGraphics();
+
+      // 3. The first story pictures (Higgsfield).
+      if (plan) plan = await pictures(plan);
+      else mark("pictures", "skipped", "No graphics to make pictures for.");
+      setPlanState(await fetchPlan({ data: { project_id: projectId } }));
+
+      // 4. Render.
+      await render();
+    } catch (e) {
+      const text = message(e, "Something went wrong.");
+      setError(text);
+      setSteps((s) => {
+        const active = (Object.keys(s) as StepId[]).find((k) => s[k] === "active");
+        return active ? { ...s, [active]: "failed" } : s;
+      });
+    } finally {
+      running.current = false;
+    }
+  }, [
+    fetchPlan,
+    fetchProject,
+    pictures,
+    planGraphics,
+    projectId,
+    render,
+    transcribeFn,
+    waitForRender,
+  ]);
+
+  useEffect(() => {
+    void run();
+  }, [run]);
+
+  /** A quick fix: runs `change`, then renders again. */
+  const fix = async (change: () => Promise<void>) => {
+    if (busy || running.current) return;
+    setBusy(true);
+    setError(null);
+    running.current = true;
+    try {
+      await change();
+      await render();
+    } catch (e) {
+      setError(message(e, "Something went wrong."));
+      mark("render", "failed");
+    } finally {
+      running.current = false;
+      setBusy(false);
+    }
+  };
+
+  const changeLook = (look: MotionLook) =>
+    fix(async () => {
+      const st = await fetchPlan({ data: { project_id: projectId } });
+      if (!st.plan) throw new Error("This video has no graphics to restyle.");
+      await saveFn({ data: { project_id: projectId, plan: { ...st.plan, look } } });
+      setPlanState({ ...st, plan: { ...st.plan, look } });
+    });
+
+  const redoGraphics = () =>
+    fix(async () => {
+      mark("render", "waiting");
+      const plan = await planGraphics();
+      if (plan) await pictures(plan);
+      setPlanState(await fetchPlan({ data: { project_id: projectId } }));
+    });
+
+  const done = steps.render === "done" && !!videoUrl;
+  const look = planState?.plan?.look ?? null;
+  const plansLeft = planState ? planState.allowance.cap - planState.allowance.used : null;
+
+  return (
+    <AppShell
+      title={done ? "Your video is ready" : "Making your video"}
+      subtitle={
+        done
+          ? title
+          : "The AI is editing your footage. This takes a few minutes — keep this page open."
+      }
+    >
+      <div className="max-w-3xl space-y-6">
+        {done ? (
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="rounded-2xl overflow-hidden bg-black border border-black/10">
+              <video
+                src={videoUrl ?? undefined}
+                controls
+                playsInline
+                className="w-full max-h-[70vh] bg-black"
+                data-auto-result
+              />
+            </div>
+            <div className="space-y-4">
+              <a href={videoUrl ?? undefined} download className="block">
+                <Button className="w-full" disabled={busy}>
+                  <Download /> Download
+                </Button>
+              </a>
+              <Link to="/projects/$projectId" params={{ projectId }} className="block">
+                <Button variant="outline" className="w-full" disabled={busy}>
+                  <PenTool /> Open in editor
+                </Button>
+              </Link>
+
+              {planState?.plan && (
+                <div className="rounded-xl border border-black/5 bg-white p-3 space-y-2">
+                  <div className="text-xs font-semibold">Change the look</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LOOKS.map((l) => (
+                      <button
+                        key={l.id}
+                        onClick={() => changeLook(l.id)}
+                        disabled={busy || l.id === look}
+                        className={cn(
+                          "px-2.5 h-7 rounded-md text-xs border transition-colors disabled:opacity-60",
+                          l.id === look
+                            ? "bg-neutral-900 text-white border-neutral-900"
+                            : "border-black/10 hover:border-black/30",
+                        )}
+                      >
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Re-renders the video (uses an export).
+                  </p>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-black/5 bg-white p-3 space-y-2">
+                <div className="text-xs font-semibold">Not quite right?</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={redoGraphics}
+                  disabled={busy || plansLeft === 0}
+                >
+                  <RefreshCw /> Redo the graphics
+                </Button>
+                <p className="text-[11px] text-neutral-500">
+                  Claude plans them again and the video is re-rendered
+                  {plansLeft !== null
+                    ? ` (${plansLeft} AI plan${plansLeft === 1 ? "" : "s"} left this month)`
+                    : ""}
+                  .
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {(!done || busy) && (
+          <ol className="rounded-2xl border border-black/5 bg-white divide-y divide-black/5">
+            {STEPS.map((s) => (
+              <StepRow
+                key={s.id}
+                label={s.label}
+                icon={s.icon}
+                state={steps[s.id]}
+                note={notes[s.id]}
+                progress={s.id === "render" && steps.render === "active" ? progress : null}
+              />
+            ))}
+          </ol>
+        )}
+
+        {done && !busy && (
+          <ul className="text-xs text-neutral-500 space-y-1">
+            {STEPS.map((s) =>
+              notes[s.id] ? (
+                <li key={s.id}>
+                  <span className="font-medium text-neutral-700">{s.label}:</span> {notes[s.id]}
+                </li>
+              ) : null,
+            )}
+          </ul>
+        )}
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 space-y-3">
+            <div>{error}</div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => void run()} disabled={busy}>
+                <RefreshCw /> Try again
+              </Button>
+              <Link to="/projects/$projectId" params={{ projectId }}>
+                <Button size="sm" variant="outline">
+                  Open in editor
+                </Button>
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+function StepRow({
+  label,
+  icon: Icon,
+  state,
+  note,
+  progress,
+}: {
+  label: string;
+  icon: typeof Film;
+  state: StepState;
+  note?: string;
+  progress: { pct: number; text: string } | null;
+}) {
+  const Mark =
+    state === "done"
+      ? CheckCircle2
+      : state === "active"
+        ? Loader2
+        : state === "failed"
+          ? XCircle
+          : state === "skipped"
+            ? MinusCircle
+            : Circle;
+  return (
+    <li className="flex items-start gap-3 p-4" data-step-state={state}>
+      <Mark
+        className={cn(
+          "w-5 h-5 shrink-0 mt-0.5",
+          state === "done" && "text-emerald-600",
+          state === "active" && "text-violet-600 animate-spin",
+          state === "failed" && "text-red-600",
+          (state === "skipped" || state === "waiting") && "text-neutral-300",
+        )}
+      />
+      <div className="flex-1 min-w-0">
+        <div
+          className={cn(
+            "flex items-center gap-2 text-sm",
+            state === "waiting" && "text-neutral-400",
+          )}
+        >
+          <Icon className="w-4 h-4 shrink-0" /> {label}
+        </div>
+        {note && <div className="text-xs text-neutral-500 mt-1">{note}</div>}
+        {progress && (
+          <div className="mt-2">
+            <div className="flex justify-between text-[11px] text-neutral-500 mb-1">
+              <span className="truncate">{progress.text}</span>
+              <span className="tabular-nums">{progress.pct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-700"
+                style={{ width: `${Math.max(4, progress.pct)}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
