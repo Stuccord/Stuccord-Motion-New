@@ -47,7 +47,7 @@ function PrivacyPage() {
           <li><strong>Render</strong>: hosting the app and the video rendering service, which downloads your files to edit them.</li>
           <li><strong>ElevenLabs</strong>: speech-to-text (your audio, to make captions and transcripts) and AI voiceovers (the text you ask it to read).</li>
           <li><strong>Anthropic (Claude)</strong>: planning the motion graphics and writing hook lines (your transcript, title, script and notes).</li>
-          <li><strong>Google (Gemini)</strong>: AI pictures for story scenes and cartoons (the picture descriptions and, for your speaker cartoon or scenes with you in them, a photo of you, only after you confirm you&rsquo;re that person or have their permission).</li>
+          <li><strong>Higgsfield</strong> (and the AI model provider it runs, such as xAI&rsquo;s Grok Image), or <strong>Google (Gemini)</strong> as a backup: AI pictures for story scenes and cartoons (the picture descriptions and, for your speaker cartoon or scenes with you in them, a photo of you, only after you confirm you&rsquo;re that person or have their permission).</li>
           <li><strong>YouTube, TikTok and Instagram</strong>: only when you connect an account and post to it.</li>
         </ul>
       </section>

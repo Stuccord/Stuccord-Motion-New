@@ -1,16 +1,45 @@
-// Makes story scenes' pictures with Google's Gemini image model (server
-// only: uses GEMINI_API_KEY). One cinematic house style for every video,
+// Makes story scenes' pictures with Higgsfield's image model (Grok Image 2.0,
+// server only: HF_API_KEY_ID / HF_API_KEY_SECRET), or Google's Gemini as the
+// fallback (GEMINI_API_KEY); IMAGE_PROVIDER=higgsfield|gemini picks one, else
+// Higgsfield whenever its key is set. One cinematic house style for every video,
 // tinted toward the video's colour (stage 5); later scenes of a story get
 // its first picture as a reference so the story looks like one series.
 // Stage 8: the speaker's cartoon (a 3D animated character made from a photo
 // of them, with consent) is sent along for scenes with the speaker in them,
 // and cartoon graphics are drawn in its 3D animated look.
 
+import {
+  HiggsfieldError,
+  fetchResult,
+  hasHiggsfieldKey,
+  submitGeneration,
+  uploadToHiggsfield,
+  waitForGeneration,
+} from "@/lib/higgsfield.server";
+
 /** Google's current image model (Nano Banana 2.1; Imagen was shut down in 2026). */
-export const IMAGE_MODEL = "gemini-nano-banana-2.1";
+export const GEMINI_IMAGE_MODEL = "gemini-nano-banana-2.1";
+/** Higgsfield's Grok Image 2.0: text-to-image and up to 10 reference pictures, 2K. */
+export const HF_IMAGE_ENDPOINT = "xai/grok-imagine-image-2.0";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
 // One picture can take a while; give up after this.
 const TIMEOUT_MS = 90_000;
+// Measured 2026-11-19: 53–121 s for a 2K Grok picture.
+const HF_TIMEOUT_MS = 240_000;
+
+type Provider = "higgsfield" | "gemini";
+
+/** Which service makes the pictures. */
+export function imageProvider(): Provider {
+  const chosen = process.env.IMAGE_PROVIDER?.trim().toLowerCase();
+  if (chosen === "gemini" || chosen === "higgsfield") return chosen;
+  return hasHiggsfieldKey() ? "higgsfield" : "gemini";
+}
+
+/** The model in use, as recorded with each picture made. */
+export function imageModel(): string {
+  return imageProvider() === "higgsfield" ? HF_IMAGE_ENDPOINT : GEMINI_IMAGE_MODEL;
+}
 
 /** A problem the user can act on; its message is shown as is. */
 export class ImageError extends Error {}
@@ -69,12 +98,17 @@ const responseFormat = (aspect: string) => ({
   image_size: "2K",
 });
 
-/** The request body for one picture (Gemini Interactions API). */
-export function imageRequestBody(req: ImageRequest) {
+/** The pictures sent along with a scene, in the order its words describe them. */
+export function sceneAttachments(req: ImageRequest): ImageBytes[] {
+  return [...(req.character ? [req.character] : []), ...(req.reference ? [req.reference] : [])];
+}
+
+/** A scene's full description: its own words, the house style and what the attachments are. */
+export function scenePromptText(req: ImageRequest): string {
   const style = req.style ?? "cinematic";
   // Attached pictures, in order: the speaker's cartoon, then the series' first shot.
   const character = req.character ?? null;
-  const text = [
+  return [
     req.prompt.trim(),
     houseStyle(req.accentHex, style),
     character
@@ -86,15 +120,73 @@ export function imageRequestBody(req: ImageRequest) {
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** The request body for one picture (Gemini Interactions API). */
+export function imageRequestBody(req: ImageRequest) {
   return {
-    model: IMAGE_MODEL,
-    input: [
-      { type: "text", text },
-      ...(character ? [imagePart(character)] : []),
-      ...(req.reference ? [imagePart(req.reference)] : []),
-    ],
+    model: GEMINI_IMAGE_MODEL,
+    input: [{ type: "text", text: scenePromptText(req) }, ...sceneAttachments(req).map(imagePart)],
     response_format: responseFormat(req.aspect),
   };
+}
+
+/** The request body for one picture (Higgsfield's Grok Image 2.0), given its attachments' links. */
+export function hfImageInput(prompt: string, aspect: string, imageUrls: string[]) {
+  return {
+    prompt,
+    ...(imageUrls.length ? { image_urls: imageUrls } : {}),
+    resolution: "2k",
+    quality: "medium",
+    aspect_ratio: ["9:16", "16:9", "1:1"].includes(aspect) ? aspect : "9:16",
+  };
+}
+
+/** What a picture's bytes are (the bucket takes JPEG, PNG and WebP). */
+export function sniffImageType(data: Uint8Array, given: string): string | null {
+  if (data[0] === 0xff && data[1] === 0xd8) return "image/jpeg";
+  if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47)
+    return "image/png";
+  if (
+    String.fromCharCode(...data.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...data.slice(8, 12)) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return ["image/jpeg", "image/png", "image/webp"].includes(given) ? given : null;
+}
+
+/** Makes one picture on Higgsfield; throws ImageError with a message the user can act on. */
+async function higgsfieldImage(
+  prompt: string,
+  aspect: string,
+  attachments: ImageBytes[],
+  fetchFn: typeof fetch,
+): Promise<ImageBytes> {
+  try {
+    const urls: string[] = [];
+    for (const a of attachments) urls.push(await uploadToHiggsfield(a, fetchFn));
+    const id = await submitGeneration(
+      HF_IMAGE_ENDPOINT,
+      hfImageInput(prompt, aspect, urls),
+      fetchFn,
+    );
+    const result = await waitForGeneration(id, HF_TIMEOUT_MS, fetchFn);
+    const url = result.images?.[0]?.url;
+    if (!url) {
+      throw new ImageError(
+        "The image service didn't return a picture for this description. Try describing it differently.",
+      );
+    }
+    const file = await fetchResult(url, fetchFn);
+    const mimeType = sniffImageType(file.data, file.mimeType);
+    if (!mimeType)
+      throw new ImageError("The image service returned a picture we can't use. Try again.");
+    return { data: file.data, mimeType };
+  } catch (e) {
+    if (e instanceof HiggsfieldError) throw new ImageError(e.message);
+    throw e;
+  }
 }
 
 /** What the speaker's cartoon looks like: one character, reused in every scene. */
@@ -109,7 +201,7 @@ export const CARTOON_PROMPT = [
 /** The request body for the speaker's cartoon, from a photo of them. */
 export function cartoonRequestBody(photo: ImageBytes) {
   return {
-    model: IMAGE_MODEL,
+    model: GEMINI_IMAGE_MODEL,
     input: [{ type: "text", text: CARTOON_PROMPT }, imagePart(photo)],
     response_format: responseFormat("1:1"),
   };
@@ -148,6 +240,9 @@ export function generateSceneImage(
   req: ImageRequest,
   fetchFn: typeof fetch = fetch,
 ): Promise<ImageBytes> {
+  if (imageProvider() === "higgsfield") {
+    return higgsfieldImage(scenePromptText(req), req.aspect, sceneAttachments(req), fetchFn);
+  }
   return requestImage(imageRequestBody(req), fetchFn);
 }
 
@@ -156,6 +251,9 @@ export function generateSpeakerCartoon(
   photo: ImageBytes,
   fetchFn: typeof fetch = fetch,
 ): Promise<ImageBytes> {
+  if (imageProvider() === "higgsfield") {
+    return higgsfieldImage(CARTOON_PROMPT, "1:1", [photo], fetchFn);
+  }
   return requestImage(cartoonRequestBody(photo), fetchFn);
 }
 

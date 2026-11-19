@@ -51,7 +51,8 @@ key; these are the ones to fill in.
 | `RENDER_WORKER_URL` | exports, captions, AI voice | the worker's address + `/jobs` |
 | `RENDER_WORKER_SECRET` | the same | any long random string, **the same on both services** |
 | `ANTHROPIC_API_KEY` | AI graphics planning | console.anthropic.com, API Keys (add credit under Billing) |
-| `GEMINI_API_KEY` | AI story pictures, speaker cartoon | aistudio.google.com, Get API key (**turn on billing** for its Google project) |
+| `HF_API_KEY_ID`, `HF_API_KEY_SECRET` | AI story pictures, speaker cartoon (Higgsfield, Grok Image 2.0, about $0.08 a picture) | console.higgsfield.ai, Model APIs, API Keys (**add funds** to the API balance) |
+| `GEMINI_API_KEY`, `IMAGE_PROVIDER` | fallback for the pictures (optional) | aistudio.google.com (turn on billing); set `IMAGE_PROVIDER=gemini` to use it instead of Higgsfield |
 | `VITE_MAX_UPLOAD_MB` | upload limit | 50 on Supabase Free |
 | `PUBLISHING_TOKEN_KEY` | posting to YouTube / TikTok / Instagram | 32 random bytes as base64 (optional) |
 | `YOUTUBE_*`, `TIKTOK_*`, `INSTAGRAM_*` | each platform's posting | its developer console (optional) |

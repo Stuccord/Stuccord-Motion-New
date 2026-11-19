@@ -34,9 +34,18 @@ services:
       # Motion Explainer: Claude plans the graphics (Anthropic API key)
       - key: ANTHROPIC_API_KEY
         sync: false
-      # Motion Explainer: AI story pictures and the speaker's cartoon (Google
-      # Gemini API key; its Google project needs billing turned on)
+      # Motion Explainer: AI story pictures and the speaker's cartoon, made on
+      # Higgsfield (console.higgsfield.ai, Model APIs: key ID and secret; add
+      # funds to its API balance)
+      - key: HF_API_KEY_ID
+        sync: false
+      - key: HF_API_KEY_SECRET
+        sync: false
+      # Fallback for the pictures: Google Gemini (its project needs billing);
+      # IMAGE_PROVIDER=gemini forces it, else Higgsfield is used when its key is set
       - key: GEMINI_API_KEY
+        sync: false
+      - key: IMAGE_PROVIDER
         sync: false
       # Publishing: encrypts connected accounts' sign-ins (32 random bytes, base64)
       - key: PUBLISHING_TOKEN_KEY

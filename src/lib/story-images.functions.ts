@@ -3,7 +3,7 @@
 // The editor asks for one picture at a time (so it can show progress, and
 // later scenes can use the story's first picture as a style reference). The
 // server checks edit rights and the monthly allowance, makes the picture
-// with Gemini (story-images.server.ts), stores it in the private
+// with Higgsfield or Gemini (story-images.server.ts), stores it in the private
 // motion-images bucket in the project's folder, and returns its path; the
 // editor puts the path in the plan, which saveMotionPlan checks. Uploaded
 // pictures go straight to that folder through a one-time upload link.
@@ -129,7 +129,7 @@ export const makeSceneImage = createServerFn({ method: "POST" })
     const character = cartoon ? await downloadImage(admin, cartoon.image) : null;
     if (cartoon && !character) throw new Error("The speaker's cartoon is missing. Make it again.");
 
-    const { generateSceneImage, IMAGE_MODEL, ImageError } =
+    const { generateSceneImage, imageModel, ImageError } =
       await import("@/lib/story-images.server");
     let image;
     try {
@@ -150,7 +150,7 @@ export const makeSceneImage = createServerFn({ method: "POST" })
         userId: context.userId,
         teamId: project.team_id,
         projectId: project.id,
-        model: IMAGE_MODEL,
+        model: imageModel(),
       },
       folder,
       image,
@@ -187,7 +187,7 @@ export const makeSpeakerCartoon = createServerFn({ method: "POST" })
     const photo = await downloadImage(admin, data.photo_path);
     if (!photo) throw new Error("The photo didn't upload. Try again.");
 
-    const { generateSpeakerCartoon, IMAGE_MODEL, ImageError } =
+    const { generateSpeakerCartoon, imageModel, ImageError } =
       await import("@/lib/story-images.server");
     let image;
     try {
@@ -201,7 +201,7 @@ export const makeSpeakerCartoon = createServerFn({ method: "POST" })
         userId: context.userId,
         teamId: project.team_id,
         projectId: project.id,
-        model: IMAGE_MODEL,
+        model: imageModel(),
       },
       folder,
       image,
