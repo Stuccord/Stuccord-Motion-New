@@ -26,6 +26,13 @@ const MASK_SIZE = 256;
 // unblurred room show around the speaker.
 const MASK_LOW = 0.5;
 const MASK_HIGH = 0.8;
+// How the small mask is fitted to the full-size picture (see behindFilters).
+// radius and blur are shares of the frame's height; eps is the guided
+// filter's smoothing (lower follows the picture's edges more closely, but
+// below about 0.02 the fabric's texture punched holes in the edge); lo/hi
+// tighten the refined edge (mask values below lo are room, above hi the
+// speaker); inPx is how far the edge is pulled in, in pixels at 1920.
+export const EDGE = { radius: 0.004, eps: 0.04, lo: 96, hi: 224, inPx: 2, blur: 0.0004 };
 
 /** Frame stretches with a behind graphic on screen (touching ones joined). */
 export function behindRanges(graphics) {
@@ -159,7 +166,7 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
  * `firstInput` the index of the first extra input. Returns the graph lines,
  * the inputs to add, and the label of the result.
  */
-export function behindFilters({ picture, pieces, masks, w, h, firstInput }) {
+export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge = EDGE }) {
   const inputs = [];
   const graph = [];
   const n = masks.length;
@@ -195,20 +202,33 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput }) {
     last = `bg${i}`;
   });
 
-  // The speaker on top: the picture through its mask (softened over three
-  // frames, scaled up smoothly, then blurred a little so the small mask's
-  // steps don't show at full size).
-  const edgeBlur = Math.max(1, h * 0.0025).toFixed(2);
+  // The speaker on top: the picture through its mask. The model's mask is
+  // 256 px, so at full size its edge is a staircase of 4x7.5 px blocks a
+  // few pixels off the speaker (a blurred version left a ring of the bright
+  // room round them). So the mask is softened over three frames (no
+  // flicker), scaled up, then fitted to the full-size picture with a guided
+  // filter: its edge snaps to the real edges (cap against the wall), the
+  // standard way to refine a coarse matte. Then pulled in a pixel or two and
+  // softened by about one, so no room shows and the edge isn't hard.
+  const radius = Math.min(20, Math.max(2, Math.round(h * edge.radius)));
+  const edgeIn = Math.max(0, Math.round((edge.inPx * h) / 1920));
+  const edgeBlur = Math.max(0.5, h * edge.blur).toFixed(2);
+  const erode = edgeIn ? `${Array(edgeIn).fill("erosion").join(",")},` : "";
+  const tighten = `lut=y='clip((val-${edge.lo})*255/${edge.hi - edge.lo},0,255)'`;
   masks.forEach((m, i) => {
     const input = firstInput + pieces.length + i;
     inputs.push("-i", m.file);
     const start = (m.from / FPS).toFixed(4);
     graph.push(
-      `[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic,` +
-        `gblur=sigma=${edgeBlur}[mk${i}]`,
+      `[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`,
     );
     graph.push(
-      `[ps${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS[pt${i}]`,
+      `[ps${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split[pt${i}][pg${i}]`,
+    );
+    graph.push(`[pg${i}]format=gray[gd${i}]`);
+    graph.push(
+      `[gd${i}][mu${i}]guided=radius=${radius}:eps=${edge.eps}:mode=fast:sub=4:guidance=on,` +
+        `${tighten},${erode}gblur=sigma=${edgeBlur}[mk${i}]`,
     );
     graph.push(`[pt${i}][mk${i}]alphamerge,setpts=PTS+${start}/TB[po${i}]`);
     graph.push(`[${last}][po${i}]overlay=0:0:eof_action=pass:format=auto[sp${i}]`);
