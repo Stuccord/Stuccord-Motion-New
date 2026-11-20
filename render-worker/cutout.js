@@ -191,14 +191,16 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
         `fade=t=in:st=0:d=${fade}:alpha=1,fade=t=out:st=${(len - Number(fade)).toFixed(4)}:d=${fade}:alpha=1,` +
         `setpts=PTS+${start}/TB[dko${i}]`,
     );
-    graph.push(`[${last}][dko${i}]overlay=0:0:eof_action=pass:format=auto[dr${i}]`);
+    graph.push(`[${last}][dko${i}]overlay=0:0:eof_action=pass:format=yuv420[dr${i}]`);
     last = `dr${i}`;
   });
 
   // The behind graphics.
   pieces.forEach((p, i) => {
     inputs.push("-itsoffset", p.startS.toFixed(4), "-i", p.file);
-    graph.push(`[${last}][${firstInput + i}:v]overlay=0:0:eof_action=pass:format=auto[bg${i}]`);
+    // In the video's own format first (see composeArgs in motion.js): faster.
+    graph.push(`[${firstInput + i}:v]format=yuva420p[bp${i}]`);
+    graph.push(`[${last}][bp${i}]overlay=0:0:eof_action=pass:format=yuv420[bg${i}]`);
     last = `bg${i}`;
   });
 
@@ -231,7 +233,7 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
         `${tighten},${erode}gblur=sigma=${edgeBlur}[mk${i}]`,
     );
     graph.push(`[pt${i}][mk${i}]alphamerge,setpts=PTS+${start}/TB[po${i}]`);
-    graph.push(`[${last}][po${i}]overlay=0:0:eof_action=pass:format=auto[sp${i}]`);
+    graph.push(`[${last}][po${i}]overlay=0:0:eof_action=pass:format=yuv420[sp${i}]`);
     last = `sp${i}`;
   });
   return { inputs, graph, last };

@@ -463,9 +463,10 @@ function aspectDims(ratio) {
   return { w: 1080, h: 1920 }; // 9:16 default
 }
 
-// Build a scale+crop filter that "covers" the target box (no letterboxing)
+// Build a scale+crop filter that "covers" the target box (no letterboxing).
+// Down to 30 fps first, so 60 fps phone footage is only scaled half as often.
 function coverFilter(w, h) {
-  return `scale=w=${w}:h=${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30`;
+  return `fps=30,scale=w=${w}:h=${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`;
 }
 
 // The whole clip in the middle of the frame, over a blurred, zoomed, slightly
@@ -475,7 +476,7 @@ function blurFillFilter(w, h) {
   const bw = Math.round(w / 20) * 2;
   const bh = Math.round(h / 20) * 2;
   return [
-    "split=2[bg][fg]",
+    "fps=30,split=2[bg][fg]",
     `[bg]scale=w=${bw}:h=${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},boxblur=6:2,scale=${w}:${h},eq=brightness=-0.08[bgb]`,
     `[fg]scale=w=${w}:h=${h}:force_original_aspect_ratio=decrease:force_divisible_by=2[fgs]`,
     "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30",
@@ -539,7 +540,7 @@ function transformedBox(w, h, src, t) {
 // The clip filling its box (cropped to the box's shape, which only trims a
 // clip of the frame's shape), an image slowly zooming inside it.
 function boxFillFilter(bw, bh, imageLengthS) {
-  let f = `scale=w=${bw}:h=${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},setsar=1,fps=30`;
+  let f = `fps=30,scale=w=${bw}:h=${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh},setsar=1`;
   if (imageLengthS != null) {
     const len = Math.max(0.1, imageLengthS).toFixed(3);
     f += `,scale=w='trunc(${bw}*(1+${IMAGE_ZOOM}*t/${len})/2)*2':h=-2:eval=frame,crop=${bw}:${bh}`;
@@ -562,8 +563,8 @@ function transformedMainFilter(w, h, src, t, imageLengthS) {
   const blurH = Math.round(h / 20) * 2;
   const fg = boxFillFilter(bw, bh, imageLengthS) + (t.rotation ? `,${rotateFilter(t.rotation)}` : "");
   return [
-    "split=2[bg][fg]",
-    `[bg]scale=w=${blurW}:h=${blurH}:force_original_aspect_ratio=increase,crop=${blurW}:${blurH},boxblur=6:2,scale=${w}:${h},eq=brightness=-0.08,fps=30[bgb]`,
+    "fps=30,split=2[bg][fg]",
+    `[bg]scale=w=${blurW}:h=${blurH}:force_original_aspect_ratio=increase,crop=${blurW}:${blurH},boxblur=6:2,scale=${w}:${h},eq=brightness=-0.08[bgb]`,
     `[fg]${fg}[fgb]`,
     `[bgb][fgb]overlay=x='${cx.toFixed(2)}-w/2':y='${cy.toFixed(2)}-h/2',setsar=1,fps=30,format=yuv420p`,
   ].join(";");
