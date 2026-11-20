@@ -39,7 +39,30 @@ type PendingFile = {
   url: string;
   storagePath?: string;
   error?: string;
+  /** The video type sent to storage (from the file, or its extension when the browser doesn't say). */
+  contentType: string;
 };
+
+/** Video types the uploader takes (the server's upload rules), by file extension too. */
+const VIDEO_BY_EXT: Record<string, string> = {
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mov: "video/quicktime",
+  qt: "video/quicktime",
+  webm: "video/webm",
+};
+const VIDEO_TYPES = new Set(Object.values(VIDEO_BY_EXT));
+
+/** A file's video type, or null when it isn't an MP4, MOV or WebM. */
+function videoType(file: File): string | null {
+  if (VIDEO_TYPES.has(file.type)) return file.type;
+  // Windows often reports no type (or an odd one) for MOV and MP4 files.
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return VIDEO_BY_EXT[ext] ?? null;
+}
+
+const sameFile = (a: File, b: File) =>
+  a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
 
 function NewProject() {
   const navigate = useNavigate();
@@ -68,19 +91,34 @@ function NewProject() {
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
+  /** Adds clips, any number at once; says which ones it can't take and why. */
   function addFiles(list: FileList | File[]) {
-    const arr = Array.from(list).filter((f) => f.type.startsWith("video/"));
-    setFiles((prev) => [
-      ...prev,
-      ...arr.map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        role: "auto" as const,
-        progress: 0,
-        uploaded: false,
-        url: URL.createObjectURL(file),
-      })),
-    ]);
+    const wrongType: string[] = [];
+    const tooBig: string[] = [];
+    const added: PendingFile[] = [];
+    for (const file of Array.from(list)) {
+      const contentType = videoType(file);
+      if (!contentType) wrongType.push(file.name);
+      else if (file.size > MAX_UPLOAD_BYTES) tooBig.push(file.name);
+      else if (files.some((f) => sameFile(f.file, file)) || added.some((f) => sameFile(f.file, file))) continue;
+      else
+        added.push({
+          id: crypto.randomUUID(),
+          file,
+          contentType,
+          role: "auto",
+          progress: 0,
+          uploaded: false,
+          url: URL.createObjectURL(file),
+        });
+    }
+    if (wrongType.length) {
+      toast.error(`${wrongType.join(", ")}: only MP4, MOV or WebM videos can be added.`);
+    }
+    if (tooBig.length) {
+      toast.error(`${tooBig.join(", ")}: over the ${MAX_UPLOAD_MB} MB limit for one clip.`);
+    }
+    if (added.length) setFiles((prev) => [...prev, ...added]);
   }
 
   function removeFile(id: string) {
@@ -117,7 +155,7 @@ function NewProject() {
       // Upload each file to storage via signed upload URL, then attach to project
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
-        const contentType = f.file.type || "video/mp4";
+        const contentType = f.contentType;
         const { data: authData } = await supabase.auth.getSession();
         const headers: Record<string, string> = { "content-type": "application/json" };
         if (authData?.session?.access_token) {
@@ -261,19 +299,26 @@ function NewProject() {
                 <UploadCloud className="h-6 w-6" />
               </span>
               <p className="mt-5 font-display text-xl font-bold tracking-tight">
-                {files.length ? "Add more clips" : "Drop your take here"}
+                {files.length ? "Add more clips" : "Drop your clips here"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                or click to browse · MP4, MOV or WebM · up to {MAX_UPLOAD_MB} MB a clip
+                One take or several clips (they play in order) · or click to browse
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground/80">
+                MP4, MOV or WebM · up to {MAX_UPLOAD_MB} MB a clip
               </p>
             </div>
             <input
               ref={inputRef}
               type="file"
               multiple
-              accept="video/*"
+              accept="video/mp4,video/quicktime,video/webm,.mp4,.m4v,.mov,.webm"
               className="hidden"
-              onChange={(e) => e.target.files && addFiles(e.target.files)}
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files);
+                // Cleared so the same file can be picked again after removing it.
+                e.target.value = "";
+              }}
             />
           </div>
 
