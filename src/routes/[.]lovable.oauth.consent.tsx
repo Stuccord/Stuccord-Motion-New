@@ -83,7 +83,7 @@ function Consent() {
 
   return (
     <main className="min-h-screen grid place-items-center bg-background p-6">
-      <div className="w-full max-w-md rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 text-primary">
           <ShieldCheck className="w-4 h-4" />
           <span className="text-xs font-semibold uppercase tracking-wider">Authorize access</span>
@@ -91,14 +91,14 @@ function Consent() {
         <h1 className="mt-3 text-xl font-semibold tracking-tight">
           Connect {clientName} to Stuccord Motion
         </h1>
-        <p className="mt-2 text-sm text-neutral-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           This lets {clientName} use Stuccord Motion as you — read your projects, clips and
           render jobs, and create new projects on your behalf. It won't bypass permissions
           or backend policies.
         </p>
 
         {details?.scopes && details.scopes.length > 0 && (
-          <ul className="mt-4 space-y-1 text-sm text-neutral-700">
+          <ul className="mt-4 space-y-1 text-sm text-foreground/80">
             {details.scopes.map((s: string) => (
               <li key={s} className="flex items-start gap-2">
                 <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
@@ -109,7 +109,7 @@ function Consent() {
         )}
 
         {error && (
-          <p role="alert" className="mt-4 text-sm text-red-600">
+          <p role="alert" className="mt-4 text-sm text-red-400">
             {error}
           </p>
         )}

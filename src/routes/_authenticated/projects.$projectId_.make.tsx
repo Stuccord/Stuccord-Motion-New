@@ -364,10 +364,10 @@ function MakePage() {
           : "The AI is editing your footage. This takes a few minutes — keep this page open."
       }
     >
-      <div className="max-w-3xl space-y-6">
+      <div className="max-w-5xl space-y-6">
         {done ? (
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_260px]">
-            <div className="rounded-2xl overflow-hidden bg-black border border-black/10">
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="rounded-2xl overflow-hidden bg-black border border-border shadow-[0_30px_80px_-30px_color-mix(in_oklab,var(--color-primary)_45%,transparent)]">
               <video
                 src={videoUrl ?? undefined}
                 controls
@@ -379,7 +379,7 @@ function MakePage() {
             <div className="space-y-4">
               {graphicsError && (
                 <div
-                  className="rounded-lg border border-amber-500/40 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900"
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-300"
                   data-graphics-error
                 >
                   <div className="font-semibold">Made without graphics</div>
@@ -388,19 +388,19 @@ function MakePage() {
                 </div>
               )}
               <a href={videoUrl ?? undefined} download className="block">
-                <Button className="w-full" disabled={busy}>
+                <Button size="lg" className="w-full rounded-full" disabled={busy}>
                   <Download /> Download
                 </Button>
               </a>
               <Link to="/projects/$projectId" params={{ projectId }} className="block">
-                <Button variant="outline" className="w-full" disabled={busy}>
+                <Button size="lg" variant="outline" className="w-full rounded-full" disabled={busy}>
                   <PenTool /> Open in editor
                 </Button>
               </Link>
 
               {planState?.plan && (
-                <div className="rounded-xl border border-black/5 bg-white p-3 space-y-2">
-                  <div className="text-xs font-semibold">Change the look</div>
+                <div className="rounded-xl border border-border bg-card p-4 space-y-2.5">
+                  <div className="caps-label text-[11px] text-muted-foreground">Change the look</div>
                   <div className="flex flex-wrap gap-1.5">
                     {LOOKS.map((l) => (
                       <button
@@ -410,22 +410,22 @@ function MakePage() {
                         className={cn(
                           "px-2.5 h-7 rounded-md text-xs border transition-colors disabled:opacity-60",
                           l.id === look
-                            ? "bg-neutral-900 text-white border-neutral-900"
-                            : "border-black/10 hover:border-black/30",
+                            ? "bg-primary text-primary-foreground border-primary disabled:opacity-100"
+                            : "border-border bg-surface hover:border-white/20",
                         )}
                       >
                         {l.label}
                       </button>
                     ))}
                   </div>
-                  <p className="text-[11px] text-neutral-500">
+                  <p className="text-[11px] text-muted-foreground">
                     Re-renders the video (uses an export).
                   </p>
                 </div>
               )}
 
-              <div className="rounded-xl border border-black/5 bg-white p-3 space-y-2">
-                <div className="text-xs font-semibold">Not quite right?</div>
+              <div className="rounded-xl border border-border bg-card p-4 space-y-2.5">
+                <div className="caps-label text-[11px] text-muted-foreground">Not quite right?</div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -436,7 +436,7 @@ function MakePage() {
                 >
                   <Film /> Render again
                 </Button>
-                <p className="text-[11px] text-neutral-500">
+                <p className="text-[11px] text-muted-foreground">
                   The same edit, rendered fresh (uses an export).
                 </p>
                 <Button
@@ -448,7 +448,7 @@ function MakePage() {
                 >
                   <RefreshCw /> Redo the graphics
                 </Button>
-                <p className="text-[11px] text-neutral-500">
+                <p className="text-[11px] text-muted-foreground">
                   Claude plans them again and the video is re-rendered
                   {plansLeft !== null
                     ? ` (${plansLeft} AI plan${plansLeft === 1 ? "" : "s"} left this month)`
@@ -461,7 +461,7 @@ function MakePage() {
         ) : null}
 
         {(!done || busy) && (
-          <ol className="rounded-2xl border border-black/5 bg-white divide-y divide-black/5">
+          <ol className="max-w-3xl rounded-2xl border border-border bg-card divide-y divide-border overflow-hidden">
             {STEPS.map((s) => (
               <StepRow
                 key={s.id}
@@ -476,11 +476,11 @@ function MakePage() {
         )}
 
         {done && !busy && (
-          <ul className="text-xs text-neutral-500 space-y-1">
+          <ul className="text-xs text-muted-foreground space-y-1">
             {STEPS.map((s) =>
               notes[s.id] ? (
                 <li key={s.id}>
-                  <span className="font-medium text-neutral-700">{s.label}:</span> {notes[s.id]}
+                  <span className="font-medium text-foreground/80">{s.label}:</span> {notes[s.id]}
                 </li>
               ) : null,
             )}
@@ -488,7 +488,7 @@ function MakePage() {
         )}
 
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 space-y-3">
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300 space-y-3">
             <div>{error}</div>
             <div className="flex gap-2">
               <Button size="sm" onClick={() => void run()} disabled={busy}>
@@ -531,35 +531,41 @@ function StepRow({
             ? MinusCircle
             : Circle;
   return (
-    <li className="flex items-start gap-3 p-4" data-step-state={state}>
+    <li
+      className={cn(
+        "flex items-start gap-3 p-4 transition-colors",
+        state === "active" && "bg-primary/[0.08]",
+      )}
+      data-step-state={state}
+    >
       <Mark
         className={cn(
           "w-5 h-5 shrink-0 mt-0.5",
-          state === "done" && "text-emerald-600",
-          state === "active" && "text-violet-600 animate-spin",
-          state === "failed" && "text-red-600",
-          (state === "skipped" || state === "waiting") && "text-neutral-300",
+          state === "done" && "text-emerald-400",
+          state === "active" && "text-primary-glow animate-spin",
+          state === "failed" && "text-red-400",
+          (state === "skipped" || state === "waiting") && "text-muted-foreground/40",
         )}
       />
       <div className="flex-1 min-w-0">
         <div
           className={cn(
             "flex items-center gap-2 text-sm",
-            state === "waiting" && "text-neutral-400",
+            state === "waiting" && "text-muted-foreground/70",
           )}
         >
           <Icon className="w-4 h-4 shrink-0" /> {label}
         </div>
-        {note && <div className="text-xs text-neutral-500 mt-1">{note}</div>}
+        {note && <div className="text-xs text-muted-foreground mt-1">{note}</div>}
         {progress && (
           <div className="mt-2">
-            <div className="flex justify-between text-[11px] text-neutral-500 mb-1">
+            <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
               <span className="truncate">{progress.text}</span>
               <span className="tabular-nums">{progress.pct}%</span>
             </div>
-            <div className="h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-700"
+                className="h-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-700"
                 style={{ width: `${Math.max(4, progress.pct)}%` }}
               />
             </div>

@@ -56,7 +56,7 @@ function Choice<T extends string>({
 }) {
   return (
     <div
-      className="inline-flex rounded-md border border-black/10 p-0.5 bg-white"
+      className="inline-flex rounded-md border border-border p-0.5 bg-card"
       role="radiogroup"
       aria-label={label}
     >
@@ -69,7 +69,7 @@ function Choice<T extends string>({
           onClick={() => onChange(o.id)}
           className={cn(
             "px-2.5 h-7 text-xs rounded",
-            value === o.id ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100",
+            value === o.id ? "bg-foreground text-background" : "text-muted-foreground hover:bg-surface-2",
           )}
         >
           {o.label}
@@ -98,7 +98,7 @@ function ColorField({
           type="color"
           value={value}
           onChange={(e) => onChange(e.target.value.toUpperCase())}
-          className="w-9 h-9 rounded border border-black/10 cursor-pointer bg-white p-0.5"
+          className="w-9 h-9 rounded border border-border cursor-pointer bg-card p-0.5"
           aria-label={label}
         />
         <input
@@ -108,7 +108,7 @@ function ColorField({
             if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) onChange(e.target.value.toUpperCase());
           }}
           onBlur={() => setText(value)}
-          className="w-24 h-9 px-2 text-xs font-mono rounded-md border border-black/10"
+          className="w-24 h-9 px-2 text-xs font-mono rounded-md border border-border"
           aria-label={`${label} (hex)`}
         />
       </div>
@@ -210,7 +210,7 @@ export function BrandKitSettings({ source = PERSONAL_KIT }: { source?: BrandKitS
     }
   }
 
-  if (!saved) return <div className="text-sm text-neutral-500 py-3">Loading…</div>;
+  if (!saved) return <div className="text-sm text-muted-foreground py-3">Loading…</div>;
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_220px]">
       {/* A fieldset turns every control off at once for read-only kits. */}
@@ -227,8 +227,8 @@ export function BrandKitSettings({ source = PERSONAL_KIT }: { source?: BrandKitS
                 className={cn(
                   "h-10 rounded-md border text-[15px] px-2 truncate",
                   kit.font === f.id
-                    ? "border-violet-500 bg-violet-50 text-violet-900"
-                    : "border-black/10 hover:bg-neutral-50",
+                    ? "border-violet-500 bg-violet-500/10 text-violet-300"
+                    : "border-border hover:bg-surface",
                 )}
                 style={{
                   fontFamily: fontCss(f.id) || undefined,
@@ -305,7 +305,7 @@ export function BrandKitSettings({ source = PERSONAL_KIT }: { source?: BrandKitS
           {kit.logo ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="w-14 h-14 rounded-md border border-black/10 bg-[conic-gradient(#eee_0_25%,#fff_0_50%,#eee_0_75%,#fff_0)] bg-[length:12px_12px] grid place-items-center overflow-hidden">
+                <div className="w-14 h-14 rounded-md border border-border bg-[conic-gradient(#eee_0_25%,#fff_0_50%,#eee_0_75%,#fff_0)] bg-[length:12px_12px] grid place-items-center overflow-hidden">
                   {logoUrl && (
                     <img src={logoUrl} alt="Your logo" className="max-w-full max-h-full" />
                   )}
@@ -382,14 +382,14 @@ export function BrandKitSettings({ source = PERSONAL_KIT }: { source?: BrandKitS
               Upload a logo
             </Button>
           )}
-          <p className="text-[11px] text-neutral-500">
+          <p className="text-[11px] text-muted-foreground">
             PNG with a transparent background works best. Shown on every export; browser exports get
             the logo too (they don&apos;t include captions).
           </p>
         </div>
 
         {!readOnly && (
-          <div className="flex items-center gap-2 pt-2 border-t border-black/5">
+          <div className="flex items-center gap-2 pt-2 border-t border-border">
             <Button type="button" onClick={() => void save()} disabled={!changed || busy !== null}>
               {busy === "save" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save brand kit"}
             </Button>
@@ -400,14 +400,14 @@ export function BrandKitSettings({ source = PERSONAL_KIT }: { source?: BrandKitS
             >
               <RotateCcw className="w-4 h-4" /> Standard look
             </Button>
-            {changed && <span className="text-xs text-neutral-500">Unsaved changes</span>}
+            {changed && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
           </div>
         )}
       </fieldset>
 
       {/* Live preview: drawn like the editor's preview. */}
       <div className="space-y-1.5">
-        <div className="text-xs text-neutral-500">Preview</div>
+        <div className="text-xs text-muted-foreground">Preview</div>
         <div className="relative w-full max-w-[220px] aspect-[9/16] rounded-lg overflow-hidden bg-gradient-to-br from-slate-500 via-slate-700 to-slate-900">
           <PreviewOverlay
             timeMs={SAMPLE_AT_MS}

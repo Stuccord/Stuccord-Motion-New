@@ -65,8 +65,8 @@ function BillingPage() {
 
   return (
     <AppShell title="Billing" subtitle="Your plan and how much of it you've used this month.">
-      <Card className="bg-gradient-to-br from-neutral-900 via-neutral-900 to-violet-950 text-white p-6 mb-6 relative overflow-hidden border-0 shadow-lg">
-        <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full bg-violet-500/20 blur-3xl pointer-events-none" />
+      <Card className="bg-[radial-gradient(ellipse_70%_120%_at_100%_0%,color-mix(in_oklab,var(--color-primary)_35%,transparent),transparent_60%),linear-gradient(180deg,var(--color-card),var(--color-background))] text-white p-6 sm:p-8 mb-6 relative overflow-hidden border border-primary/30">
+        <div className="absolute inset-0 bg-grid opacity-30 [mask-image:radial-gradient(ellipse_at_top_right,black,transparent_70%)] pointer-events-none" />
         <div className="relative">
           <Badge
             variant="outline"
@@ -74,7 +74,7 @@ function BillingPage() {
           >
             Current plan
           </Badge>
-          <div className="text-2xl font-semibold">{allowances?.personal.plan ?? "Free"}</div>
+          <div className="caps-label text-3xl sm:text-4xl">{allowances?.personal.plan ?? "Free"}</div>
           <div className="text-sm text-white/70 mt-1">
             {isLoading ? (
               "Loading your usage…"
@@ -108,8 +108,8 @@ function BillingPage() {
 
       {(allowances?.teams.length ?? 0) > 0 && (
         <Card className="p-6 mb-6" data-team-allowances>
-          <div className="text-sm font-semibold">Teams</div>
-          <p className="text-xs text-neutral-500 mt-0.5">
+          <div className="caps-label text-sm">Teams</div>
+          <p className="text-xs text-muted-foreground mt-0.5">
             Exports of a team&apos;s projects use the team&apos;s allowance, shared by everyone in
             it, not your own.
           </p>
@@ -118,7 +118,7 @@ function BillingPage() {
               <div key={t.team!.id}>
                 <div className="flex items-baseline justify-between text-[13px]">
                   <span className="font-medium">{t.team!.name}</span>
-                  <span className="text-neutral-500 tabular-nums">
+                  <span className="text-muted-foreground tabular-nums">
                     {t.used} of {t.cap} exports · {t.plan} plan
                   </span>
                 </div>
@@ -134,29 +134,29 @@ function BillingPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <Card className="p-6">
-          <div className="text-sm font-semibold">What's included</div>
+          <div className="caps-label text-sm">What's included</div>
           <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
             {INCLUDED.map((f) => (
               <li key={f} className="flex items-start gap-2 text-[13px]">
-                <Check className="w-3.5 h-3.5 text-emerald-600 mt-1 shrink-0" /> {f}
+                <Check className="w-3.5 h-3.5 text-emerald-400 mt-1 shrink-0" /> {f}
               </li>
             ))}
           </ul>
-          <p className="mt-5 text-xs text-neutral-500 leading-relaxed">
+          <p className="mt-5 text-xs text-muted-foreground leading-relaxed">
             Exports that fail don&apos;t count. When you&apos;ve used all {cap}, exporting pauses
             until the 1st of next month; you can keep editing meanwhile.
           </p>
         </Card>
 
         <Card className="p-6">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Clock className="w-4 h-4 text-violet-600" /> Paid plans
+          <div className="flex items-center gap-2 caps-label text-sm">
+            <Clock className="w-4 h-4 text-primary-glow" /> Paid plans
           </div>
-          <p className="mt-3 text-[13px] text-neutral-600 leading-relaxed">
+          <p className="mt-3 text-[13px] text-muted-foreground leading-relaxed">
             Paid plans aren&apos;t available yet, so there&apos;s nothing to pay and no card needed.
             Everyone is on the free plan for now.
           </p>
-          <p className="mt-3 text-[13px] text-neutral-600 leading-relaxed">
+          <p className="mt-3 text-[13px] text-muted-foreground leading-relaxed">
             Need more than {cap} exports a month? Tell us what you&apos;re making.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">

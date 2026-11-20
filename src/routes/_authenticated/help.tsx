@@ -240,13 +240,13 @@ function HelpPage() {
           <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">How can we help?</h2>
           <p className="text-sm text-white/70 mt-2">Search the guides and questions below.</p>
           <div className="mt-6 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search, e.g. captions, export, B-roll…"
               aria-label="Search help"
-              className="w-full h-12 pl-11 pr-4 text-sm bg-white text-neutral-900 rounded-full focus:outline-none focus:ring-2 focus:ring-white/30 shadow-xl"
+              className="w-full h-12 pl-11 pr-4 text-sm bg-card text-foreground rounded-full focus:outline-none focus:ring-2 focus:ring-white/30 shadow-xl"
             />
           </div>
         </div>
@@ -276,7 +276,7 @@ function HelpPage() {
       <section id="guides" className="mb-10 scroll-mt-24">
         <h3 className="text-sm font-semibold mb-3">Guides</h3>
         {guides.length === 0 ? (
-          <div className="rounded-xl border border-black/5 bg-white p-6 text-center text-sm text-neutral-500">
+          <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
             No guide matches &ldquo;{q}&rdquo;.
           </div>
         ) : (
@@ -285,18 +285,18 @@ function HelpPage() {
               <details
                 key={g.title}
                 open={!!needle}
-                className="group rounded-xl border border-black/5 bg-white p-4 open:border-black/15"
+                className="group rounded-xl border border-border bg-card p-4 open:border-border"
               >
                 <summary className="cursor-pointer list-none flex items-center gap-3">
-                  <span className="w-9 h-9 rounded-lg bg-violet-50 text-violet-700 grid place-items-center shrink-0">
+                  <span className="w-9 h-9 rounded-lg bg-violet-500/10 text-violet-300 grid place-items-center shrink-0">
                     <g.icon className="w-4 h-4" />
                   </span>
                   <span className="text-sm font-semibold flex-1">{g.title}</span>
-                  <span className="text-neutral-400 group-open:rotate-45 transition-transform text-xl leading-none">
+                  <span className="text-muted-foreground/70 group-open:rotate-45 transition-transform text-xl leading-none">
                     +
                   </span>
                 </summary>
-                <ol className="mt-3 ml-12 list-decimal space-y-1.5 text-[13px] text-neutral-600 leading-relaxed">
+                <ol className="mt-3 ml-12 list-decimal space-y-1.5 text-[13px] text-muted-foreground leading-relaxed">
                   {g.steps.map((s) => (
                     <li key={s}>{s}</li>
                   ))}
@@ -309,13 +309,13 @@ function HelpPage() {
 
       <section id="shortcuts" className="mb-10 scroll-mt-24">
         <h3 className="text-sm font-semibold mb-3">Keyboard shortcuts in the editor</h3>
-        <div className="rounded-2xl bg-white border border-black/5 divide-y divide-black/5">
+        <div className="rounded-2xl bg-card border border-border divide-y divide-border">
           {SHORTCUTS.map(([keys, what]) => (
             <div key={keys} className="flex items-center justify-between gap-4 px-4 py-2.5">
-              <kbd className="font-mono text-xs text-neutral-800 bg-neutral-100 rounded px-1.5 py-0.5">
+              <kbd className="font-mono text-xs text-foreground bg-surface-2 rounded px-1.5 py-0.5">
                 {keys}
               </kbd>
-              <span className="text-[13px] text-neutral-600 text-right">{what}</span>
+              <span className="text-[13px] text-muted-foreground text-right">{what}</span>
             </div>
           ))}
         </div>
@@ -325,22 +325,22 @@ function HelpPage() {
 
       <section>
         <h3 className="text-sm font-semibold mb-3">Frequently asked</h3>
-        <div className="rounded-2xl bg-white border border-black/5 divide-y divide-black/5">
+        <div className="rounded-2xl bg-card border border-border divide-y divide-border">
           {faqs.map((f) => (
             <details key={f.q} className="group">
               <summary className="cursor-pointer flex items-start justify-between gap-4 p-4 list-none">
                 <div className="text-sm font-medium">{f.q}</div>
-                <div className="text-neutral-400 group-open:rotate-45 transition-transform text-xl leading-none">
+                <div className="text-muted-foreground/70 group-open:rotate-45 transition-transform text-xl leading-none">
                   +
                 </div>
               </summary>
-              <div className="px-4 pb-4 text-sm text-neutral-600 leading-relaxed">{f.a}</div>
+              <div className="px-4 pb-4 text-sm text-muted-foreground leading-relaxed">{f.a}</div>
             </details>
           ))}
           {faqs.length === 0 && (
-            <div className="p-6 text-center text-sm text-neutral-500">
+            <div className="p-6 text-center text-sm text-muted-foreground">
               No questions matched &ldquo;{q}&rdquo;.{" "}
-              <a href={`mailto:${SUPPORT_EMAIL}`} className="text-violet-700 font-medium">
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="text-violet-300 font-medium">
                 Email us
               </a>{" "}
               instead.
@@ -349,14 +349,14 @@ function HelpPage() {
         </div>
       </section>
 
-      <div className="mt-10 rounded-2xl border border-black/5 bg-white p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="mt-10 rounded-2xl border border-border bg-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-neutral-900 text-white grid place-items-center">
+          <div className="w-10 h-10 rounded-full bg-foreground text-background grid place-items-center">
             <Mail className="w-4 h-4" />
           </div>
           <div>
             <div className="text-sm font-semibold">Still stuck?</div>
-            <div className="text-xs text-neutral-500">
+            <div className="text-xs text-muted-foreground">
               Email {SUPPORT_EMAIL}, or see your plan and usage in{" "}
               <Link to="/billing" className="underline">
                 Billing
@@ -380,9 +380,9 @@ function ApiGuide() {
   return (
     <section id="api" className="mb-10 scroll-mt-24">
       <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
-        <Code2 className="w-4 h-4 text-violet-700" /> API for your own scripts
+        <Code2 className="w-4 h-4 text-violet-300" /> API for your own scripts
       </h3>
-      <p className="text-[13px] text-neutral-600 mb-3 max-w-3xl leading-relaxed">
+      <p className="text-[13px] text-muted-foreground mb-3 max-w-3xl leading-relaxed">
         Make a key in{" "}
         <Link to="/settings" search={{ tab: "api" }} className="underline">
           Settings → API keys
@@ -395,8 +395,8 @@ function ApiGuide() {
         <code className="font-mono">{'{"error":{"code","message"}}'}</code>. Up to 120 requests a
         minute per key.
       </p>
-      <div className="rounded-2xl bg-white border border-black/5 divide-y divide-black/5">
-        <div className="p-4 text-[12px] text-neutral-600">
+      <div className="rounded-2xl bg-card border border-border divide-y divide-border">
+        <div className="p-4 text-[12px] text-muted-foreground">
           In the examples: <code className="font-mono">BASE={base}</code>,{" "}
           <code className="font-mono">KEY</code> is your key, and{" "}
           <code className="font-mono">PROJECT</code>, <code className="font-mono">UPLOAD_URL</code>{" "}
@@ -405,7 +405,7 @@ function ApiGuide() {
         {API_STEPS.map((s) => (
           <div key={s.title} className="p-4 space-y-2">
             <div className="text-sm font-medium">{s.title}</div>
-            <p className="text-[12.5px] text-neutral-600 leading-relaxed">{s.note}</p>
+            <p className="text-[12.5px] text-muted-foreground leading-relaxed">{s.note}</p>
             <pre className="text-[11.5px] leading-relaxed bg-neutral-950 text-neutral-100 rounded-lg p-3 overflow-x-auto">
               <code>{s.curl.replaceAll("$BASE", base)}</code>
             </pre>
@@ -428,12 +428,12 @@ function ContactCard({
   action: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl bg-white border border-black/5 p-5">
-      <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-700 grid place-items-center mb-3">
+    <div className="rounded-2xl bg-card border border-border p-5">
+      <div className="w-10 h-10 rounded-xl bg-violet-500/10 text-violet-300 grid place-items-center mb-3">
         <Icon className="w-4 h-4" />
       </div>
       <div className="text-sm font-semibold">{title}</div>
-      <div className="text-xs text-neutral-500 mt-1">{desc}</div>
+      <div className="text-xs text-muted-foreground mt-1">{desc}</div>
       <Button variant="ghost" size="sm" className="mt-3 -ml-2" asChild>
         {action}
       </Button>

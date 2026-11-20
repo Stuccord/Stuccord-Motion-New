@@ -38,10 +38,10 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 const STATUS_META: Record<string, { label: string; className: string; dot: string }> = {
   draft:      { label: "Draft",     className: "bg-muted text-muted-foreground border border-border",        dot: "bg-muted-foreground" },
-  queued:     { label: "Queued",    className: "bg-amber-50 text-amber-700 border border-amber-200",         dot: "bg-amber-500" },
-  processing: { label: "Rendering", className: "bg-blue-50 text-blue-700 border border-blue-200",            dot: "bg-blue-500 animate-pulse" },
-  ready:      { label: "Ready",     className: "bg-emerald-50 text-emerald-700 border border-emerald-200",   dot: "bg-emerald-500" },
-  failed:     { label: "Failed",    className: "bg-red-50 text-red-700 border border-red-200",               dot: "bg-red-500" },
+  queued:     { label: "Queued",    className: "bg-amber-500/10 text-amber-300 border border-amber-500/30",         dot: "bg-amber-500" },
+  processing: { label: "Rendering", className: "bg-blue-500/10 text-blue-300 border border-blue-500/30",            dot: "bg-blue-500 animate-pulse" },
+  ready:      { label: "Ready",     className: "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30",   dot: "bg-emerald-500" },
+  failed:     { label: "Failed",    className: "bg-red-500/10 text-red-300 border border-red-500/30",               dot: "bg-red-500" },
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -62,7 +62,7 @@ function ProjectThumb({ ratio, title, src }: { ratio: string; title: string; src
   const box = ratio === "9:16" ? "aspect-[9/16]" : ratio === "1:1" ? "aspect-square" : "aspect-video";
   return (
     <div
-      className={cn("relative w-full overflow-hidden rounded-lg bg-neutral-900", box)}
+      className={cn("relative w-full overflow-hidden rounded-lg bg-surface-2", box)}
       style={
         src
           ? undefined
@@ -116,20 +116,41 @@ function Home() {
     <AppShell>
       <div className="max-w-6xl mx-auto space-y-10">
 
-        {/* Page header */}
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-[26px] md:text-[30px] font-semibold tracking-tight text-foreground">
-            What would you like to create?
-          </h1>
-          <Link
-            to="/projects"
-            className="group inline-flex items-center gap-2 rounded-full bg-card border border-border pl-1 pr-3 py-1 text-[12px] font-medium text-foreground shadow-sm hover:border-primary/30 hover:bg-accent transition-all"
-          >
-            <span className="rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5">New</span>
-            Move, resize &amp; rotate clips in the preview
-            <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-          </Link>
-        </div>
+        {/* Hero: the one thing the app does — raw footage in, finished edit out */}
+        <section className="relative overflow-hidden rounded-3xl border border-primary/25 bg-[radial-gradient(ellipse_80%_120%_at_0%_0%,color-mix(in_oklab,var(--color-primary)_28%,transparent),transparent_60%),linear-gradient(180deg,var(--color-card),var(--color-background))] p-6 sm:p-10">
+          <div className="pointer-events-none absolute inset-0 bg-grid opacity-40 [mask-image:radial-gradient(ellipse_at_top_left,black,transparent_70%)]" />
+          <div className="relative grid gap-6 md:grid-cols-[1.2fr_1fr] md:items-center">
+            <div>
+              <div className="caps-label text-[11px] text-primary-glow">Motion Explainer · auto-edit</div>
+              <h1 className="mt-3 text-[30px] sm:text-[40px] leading-[1.02] font-bold tracking-[-0.03em] text-foreground">
+                What would you like to create?
+              </h1>
+              <p className="mt-3 max-w-md text-sm text-muted-foreground leading-relaxed">
+                Drop a raw take and your script. The AI plans the graphics, makes the story
+                pictures and renders the finished edit.
+              </p>
+              <Link
+                to="/projects"
+                className="group mt-5 inline-flex items-center gap-2 rounded-full bg-white/[0.06] border border-border pl-1 pr-3 py-1 text-[12px] font-medium text-foreground hover:border-primary/40 transition-all"
+              >
+                <span className="rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5">New</span>
+                Move, resize &amp; rotate clips in the preview
+                <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate({ to: "/projects/new" })}
+              className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-white/15 bg-black/30 px-6 py-8 sm:py-10 text-center transition-all hover:border-primary/70 hover:bg-primary/[0.06] cursor-pointer"
+            >
+              <span className="grid place-items-center w-12 h-12 rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_30px_-8px_color-mix(in_oklab,var(--color-primary)_80%,transparent)] group-hover:scale-105 transition-transform">
+                <Plus className="w-6 h-6" />
+              </span>
+              <span className="text-base font-semibold text-foreground">Make a video</span>
+              <span className="text-xs text-muted-foreground">MP4 · MOV · WebM — talking-head footage works best</span>
+            </button>
+          </div>
+        </section>
 
         {/* Primary create cards */}
         <div className="grid gap-4 md:grid-cols-3">
@@ -138,7 +159,7 @@ function Home() {
             desc="Drop your clips, edit them on the timeline, export with captions & music"
             onClick={() => navigate({ to: "/projects/new" })}
             visual={
-              <div className="relative h-full w-full bg-gradient-to-br from-surface to-muted p-4 grid place-items-center">
+              <div className="relative h-full w-full bg-gradient-to-br from-primary/20 via-surface to-black p-4 grid place-items-center">
                 <div className="relative w-[110px] rotate-[-6deg] rounded-[14px] overflow-hidden shadow-[0_20px_50px_-20px_rgba(0,0,0,0.25)] border border-border">
                   <img src={phoneShort} alt="" className="aspect-[9/16] w-full object-cover" />
                   <div className="absolute inset-x-0 bottom-0 p-1.5">
@@ -187,7 +208,7 @@ function Home() {
             desc="Your caption colours, font and logo on every export"
             onClick={() => navigate({ to: "/settings", search: { tab: "brand" } as never })}
             visual={
-              <div className="relative h-full w-full bg-gradient-to-br from-amber-50 via-card to-rose-50 p-4">
+              <div className="relative h-full w-full bg-gradient-to-br from-amber-500/15 via-card to-rose-500/15 p-4">
                 <div className="grid grid-cols-2 gap-2">
                   {["#0F172A", "#4F46E5", "#F59E0B", "#EC4899"].map((c) => (
                     <div key={c} className="rounded-lg shadow-sm border border-border overflow-hidden">
@@ -299,11 +320,11 @@ function Home() {
                 ))}
               </div>
             </div>
-            <div className="relative bg-foreground text-background p-6 md:p-8 flex flex-col justify-between overflow-hidden">
+            <div className="relative bg-primary/10 border-t md:border-t-0 md:border-l border-border text-foreground p-6 md:p-8 flex flex-col justify-between overflow-hidden">
               <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-primary/20 blur-3xl pointer-events-none" />
               <div className="relative">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-background/50 mb-2">Coming next</div>
-                <ul className="space-y-1 text-[12.5px] text-background/80">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground mb-2">Coming next</div>
+                <ul className="space-y-1 text-[12.5px] text-foreground/80">
                   {[
                     "Teams",
                   ].map((f) => (
@@ -313,7 +334,7 @@ function Home() {
               </div>
               <Button
                 size="sm"
-                className="relative mt-4 w-fit bg-background text-foreground hover:bg-background/90"
+                className="relative mt-4 w-fit"
                 onClick={() => navigate({ to: "/projects/new" })}
               >
                 Start a project <ArrowRight className="w-3.5 h-3.5" />
@@ -326,7 +347,7 @@ function Home() {
         <section>
           <div className="flex items-end justify-between mb-4">
             <div>
-              <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Recent projects</h2>
+              <h2 className="caps-label text-[15px] text-foreground">Recent projects</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Pick up where you left off.</p>
             </div>
             <Link
@@ -338,7 +359,7 @@ function Home() {
           </div>
 
           {isLoading ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-56 bg-card border border-border rounded-xl animate-pulse" />
               ))}
@@ -362,7 +383,7 @@ function Home() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
               {recent.map((p) => (
                 <Link
                   key={p.id}
@@ -370,7 +391,7 @@ function Home() {
                   params={{ projectId: p.id }}
                   className="group block"
                 >
-                  <Card className="p-3 hover:border-primary/20 hover:shadow-md transition-all duration-150 cursor-pointer">
+                  <Card className="p-2.5 hover:border-primary/40 hover:bg-surface transition-all duration-150 cursor-pointer">
                     <CardContent className="p-0">
                       <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
                       <div className="mt-3">
@@ -433,13 +454,13 @@ function CreateCard({
         "group relative overflow-hidden transition-all duration-150",
         soon
           ? "cursor-default opacity-75"
-          : "cursor-pointer hover:border-primary/25 hover:shadow-lg",
+          : "cursor-pointer hover:border-primary/40 hover:-translate-y-0.5",
       )}
     >
       <div className="h-[172px] overflow-hidden border-b border-border">{visual}</div>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="text-[14px] font-semibold tracking-tight text-foreground">{title}</div>
+          <div className="caps-label text-[14px] text-foreground">{title}</div>
           {soon ? (
             <SoonTag />
           ) : (

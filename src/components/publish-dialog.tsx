@@ -67,7 +67,7 @@ export function PublishDialog({
   onOpenChange,
   projectId,
   defaultTitle = "",
-  dark = false,
+  dark = true,
   workspace = "personal",
 }: {
   open: boolean;

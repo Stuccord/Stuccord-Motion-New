@@ -134,16 +134,16 @@ export function AppShell({
         className={cn(
           "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150",
           active
-            ? "bg-primary/10 text-primary font-semibold"
-            : "text-muted-foreground hover:text-foreground hover:bg-surface",
+            ? "bg-white/[0.07] text-foreground font-semibold before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-primary"
+            : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
         )}
       >
-        <Icon className={cn("w-4 h-4 shrink-0 transition-colors", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+        <Icon className={cn("w-4 h-4 shrink-0 transition-colors", active ? "text-primary-glow" : "text-muted-foreground group-hover:text-foreground")} />
         <span className="truncate">{item.label}</span>
         {item.badge && (
           <span className={cn(
             "ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded-full uppercase tracking-wider",
-            active ? "bg-primary/20 text-primary" : "bg-surface-2 text-muted-foreground",
+            active ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary-glow",
           )}>
             {item.badge}
           </span>
@@ -161,17 +161,17 @@ export function AppShell({
             alt=""
             width={28}
             height={28}
-            className="h-7 w-7 shrink-0 object-contain"
+            className="h-7 w-7 shrink-0 object-contain rounded-lg bg-white p-px"
           />
-          <span className="font-display text-[15px] font-semibold tracking-tight truncate text-foreground">
-            Stuccord <span className="text-primary">Motion</span>
+          <span className="font-display text-[15px] font-bold tracking-tight truncate text-foreground">
+            Stuccord <span className="text-primary-glow">Motion</span>
           </span>
         </Link>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         <div>
-          <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          <div className="px-2 pb-2 font-display text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">
             Workspace
           </div>
           <div className="px-1 pb-2">
@@ -185,7 +185,7 @@ export function AppShell({
         </div>
 
         <div>
-          <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          <div className="px-2 pb-2 font-display text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">
             Account
           </div>
           <ul className="space-y-0.5">
@@ -195,16 +195,16 @@ export function AppShell({
           </ul>
         </div>
 
-        <div className="mx-1 relative overflow-hidden rounded-xl border border-primary/20 bg-card p-3.5 shadow-sm">
+        <div className="mx-1 relative overflow-hidden rounded-xl border border-primary/25 bg-gradient-to-b from-primary/15 to-transparent p-3.5">
           <div className="relative">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-glow">
               <Gift className="w-3 h-3" /> {usage?.allowance.plan ?? "Free"} plan
             </div>
             <div className="mt-2 text-xs text-foreground leading-relaxed">
               <span className="font-semibold tabular-nums">{used} of {cap}</span>{" "}
               {ws.team ? `${ws.team.name} exports` : "exports"} used this month
             </div>
-            <div className="mt-2 h-1.5 rounded-full bg-surface overflow-hidden border border-border">
+            <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div className="h-full bg-primary transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]" style={{ width: `${usePct}%` }} />
             </div>
             <Button
@@ -239,21 +239,21 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-60 border-r border-border bg-card/80 backdrop-blur-xl z-30">
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-60 border-r border-border bg-[oklch(0.135_0.004_275)] z-30">
         {SidebarInner}
       </aside>
 
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
-          <div className="absolute inset-0 bg-foreground/30 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 bg-card border-r border-border shadow-xl">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 w-64 bg-[oklch(0.135_0.004_275)] border-r border-border shadow-2xl">
             {SidebarInner}
           </aside>
         </div>
       )}
 
       <div className="lg:pl-60">
-        <header className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur-xl">
+        <header className="sticky top-0 z-20 border-b border-border bg-background/75 backdrop-blur-xl">
           <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
             <button
               className="lg:hidden p-2 -ml-2 rounded-md hover:bg-surface text-foreground"
@@ -282,7 +282,7 @@ export function AppShell({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-surface cursor-pointer">
-                    <div className="w-7 h-7 rounded-full bg-foreground text-background text-[11px] font-semibold grid place-items-center">
+                    <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">
                       {initials}
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground hidden sm:block" />
@@ -317,7 +317,7 @@ export function AppShell({
               <div className="min-w-0">
                 {eyebrow && <div className="mb-1.5">{eyebrow}</div>}
                 {title && (
-                  <h1 className="font-display text-[26px] sm:text-[30px] leading-[1.1] font-semibold tracking-[-0.02em] text-foreground truncate">
+                  <h1 className="font-display text-[26px] sm:text-[32px] leading-[1.1] font-bold tracking-[-0.03em] text-foreground text-balance break-words">
                     {title}
                   </h1>
                 )}

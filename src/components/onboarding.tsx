@@ -127,28 +127,28 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-black/5 overflow-hidden">
+      <div className="relative w-full max-w-2xl bg-card rounded-2xl shadow-2xl border border-border overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-3 border-b border-black/5">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-3 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 grid place-items-center">
               <Sparkles className="w-3.5 h-3.5 text-white" />
             </div>
             <div className="text-[13px] font-semibold tracking-tight">Get started</div>
-            <div className="text-[11px] text-neutral-500 hidden sm:block">
+            <div className="text-[11px] text-muted-foreground hidden sm:block">
               · Step {step + 1} of {total}
             </div>
           </div>
           <button
             onClick={skip}
-            className="text-[12px] text-neutral-500 hover:text-neutral-900 inline-flex items-center gap-1"
+            className="text-[12px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
           >
             Skip <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Progress */}
-        <div className="h-1 bg-neutral-100">
+        <div className="h-1 bg-surface-2">
           <div
             className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-500"
             style={{ width: `${((step + 1) / total) * 100}%` }}
@@ -187,14 +187,14 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-t border-black/5 bg-neutral-50/50">
+        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-t border-border bg-surface/50">
           <div className="flex items-center gap-1.5">
             {steps.map((_, i) => (
               <div
                 key={i}
                 className={cn(
                   "h-1.5 rounded-full transition-all",
-                  i === step ? "w-6 bg-neutral-900" : i < step ? "w-1.5 bg-neutral-400" : "w-1.5 bg-neutral-200",
+                  i === step ? "w-6 bg-foreground" : i < step ? "w-1.5 bg-muted-foreground/60" : "w-1.5 bg-surface-2",
                 )}
               />
             ))}
@@ -236,16 +236,16 @@ function StepWelcome({ name, onName }: { name: string; onName: (v: string) => vo
       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 grid place-items-center mb-4 shadow-lg shadow-violet-500/30">
         <Sparkles className="w-6 h-6 text-white" />
       </div>
-      <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground">
         Welcome to Stuccord Motion
       </h2>
-      <p className="mt-2 text-[14px] text-neutral-600 leading-relaxed max-w-lg">
+      <p className="mt-2 text-[14px] text-muted-foreground leading-relaxed max-w-lg">
         We'll turn your raw footage into cinematic, motion-graphics-heavy edits — in minutes.
         Let's set up your studio in 4 quick steps.
       </p>
 
       <div className="mt-6 max-w-sm">
-        <label className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           What should we call you?
         </label>
         <input
@@ -253,7 +253,7 @@ function StepWelcome({ name, onName }: { name: string; onName: (v: string) => vo
           value={name}
           onChange={(e) => onName(e.target.value)}
           placeholder="Your first name (optional)"
-          className="mt-2 w-full h-11 px-3.5 text-[14px] bg-white border border-neutral-200 rounded-lg focus:border-neutral-900 focus:outline-none transition-colors"
+          className="mt-2 w-full h-11 px-3.5 text-[14px] bg-card border border-border rounded-lg focus:border-foreground focus:outline-none transition-colors"
         />
       </div>
 
@@ -263,9 +263,9 @@ function StepWelcome({ name, onName }: { name: string; onName: (v: string) => vo
           { icon: Captions, label: "Auto captions" },
           { icon: Music2, label: "Score + SFX" },
         ].map((f) => (
-          <div key={f.label} className="rounded-lg border border-black/5 bg-neutral-50 px-3 py-2.5">
-            <f.icon className="w-4 h-4 text-violet-600 mb-1" />
-            <div className="text-[11px] font-medium text-neutral-700">{f.label}</div>
+          <div key={f.label} className="rounded-lg border border-border bg-surface px-3 py-2.5">
+            <f.icon className="w-4 h-4 text-violet-400 mb-1" />
+            <div className="text-[11px] font-medium text-foreground/80">{f.label}</div>
           </div>
         ))}
       </div>
@@ -276,13 +276,13 @@ function StepWelcome({ name, onName }: { name: string; onName: (v: string) => vo
 function StepNiche({ niche, onNiche }: { niche: string; onNiche: (v: string) => void }) {
   return (
     <div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-600 mb-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-400 mb-2">
         Step 2 · About you
       </div>
-      <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground">
         What best describes you?
       </h2>
-      <p className="mt-2 text-[14px] text-neutral-600">
+      <p className="mt-2 text-[14px] text-muted-foreground">
         We'll tailor templates and recommendations to your workflow.
       </p>
 
@@ -296,8 +296,8 @@ function StepNiche({ niche, onNiche }: { niche: string; onNiche: (v: string) => 
               className={cn(
                 "text-left px-4 py-3.5 rounded-xl border transition-all",
                 active
-                  ? "border-neutral-900 bg-neutral-900 text-white shadow-sm"
-                  : "border-neutral-200 hover:border-neutral-400 bg-white",
+                  ? "border-foreground bg-foreground text-background shadow-sm"
+                  : "border-border hover:border-white/25 bg-card",
               )}
             >
               <div className="flex items-center justify-between gap-2">
@@ -326,13 +326,13 @@ function StepFormat({
   ];
   return (
     <div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-600 mb-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-400 mb-2">
         Step 3 · Format
       </div>
-      <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground">
         Where do you post most?
       </h2>
-      <p className="mt-2 text-[14px] text-neutral-600">
+      <p className="mt-2 text-[14px] text-muted-foreground">
         Sets your default aspect ratio. You can change it anytime per project.
       </p>
 
@@ -346,8 +346,8 @@ function StepFormat({
               className={cn(
                 "relative flex flex-col items-center gap-3 rounded-xl border p-5 transition-all",
                 active
-                  ? "border-neutral-900 bg-neutral-50 shadow-sm"
-                  : "border-neutral-200 hover:border-neutral-400 bg-white",
+                  ? "border-foreground bg-surface shadow-sm"
+                  : "border-border hover:border-white/25 bg-card",
               )}
             >
               <div
@@ -356,19 +356,19 @@ function StepFormat({
                   o.box,
                   active
                     ? "from-violet-500 to-fuchsia-500"
-                    : "from-neutral-200 to-neutral-300",
+                    : "from-white/10 to-white/5",
                 )}
               >
-                <o.icon className={cn("w-4 h-4", active ? "text-white" : "text-neutral-500")} />
+                <o.icon className={cn("w-4 h-4", active ? "text-white" : "text-muted-foreground")} />
               </div>
               <div className="text-center">
                 <div className="text-[13px] font-semibold">{o.label}</div>
-                <div className="text-[11px] text-neutral-500 mt-0.5">{o.desc}</div>
-                <div className="text-[10px] font-mono text-neutral-400 mt-1">{o.id}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{o.desc}</div>
+                <div className="text-[10px] font-mono text-muted-foreground/70 mt-1">{o.id}</div>
               </div>
               {active && (
-                <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-neutral-900 grid place-items-center">
-                  <Check className="w-3 h-3 text-white" />
+                <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-foreground grid place-items-center">
+                  <Check className="w-3 h-3 text-background" />
                 </div>
               )}
             </button>
@@ -395,13 +395,13 @@ function StepStyle({
 
   return (
     <div>
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-600 mb-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-400 mb-2">
         Step 4 · Style
       </div>
-      <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground">
         Pick a signature look
       </h2>
-      <p className="mt-2 text-[14px] text-neutral-600">
+      <p className="mt-2 text-[14px] text-muted-foreground">
         Your default preset. Turn features on for every new render.
       </p>
 
@@ -415,15 +415,15 @@ function StepStyle({
               className={cn(
                 "text-left rounded-xl border p-3.5 transition-all",
                 active
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-200 hover:border-neutral-400 bg-white",
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border hover:border-white/25 bg-card",
               )}
             >
               <div className="flex items-center justify-between">
                 <div className="text-[13px] font-semibold">{s.label}</div>
                 {active && <Check className="w-4 h-4" />}
               </div>
-              <div className={cn("text-[11.5px] mt-0.5", active ? "text-white/70" : "text-neutral-500")}>
+              <div className={cn("text-[11.5px] mt-0.5", active ? "text-white/70" : "text-muted-foreground")}>
                 {s.desc}
               </div>
             </button>
@@ -432,7 +432,7 @@ function StepStyle({
       </div>
 
       <div className="mt-5">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-2">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
           Enable by default
         </div>
         <div className="flex flex-wrap gap-2">
@@ -445,8 +445,8 @@ function StepStyle({
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium transition-all",
                   active
-                    ? "border-violet-500 bg-violet-50 text-violet-700"
-                    : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400",
+                    ? "border-violet-500 bg-violet-500/10 text-violet-300"
+                    : "border-border bg-card text-muted-foreground hover:border-white/25",
                 )}
               >
                 <g.icon className="w-3.5 h-3.5" />
@@ -467,14 +467,14 @@ function StepFinish({ profile }: { profile: Profile }) {
       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 grid place-items-center mb-4 shadow-lg shadow-emerald-500/30">
         <Check className="w-6 h-6 text-white" />
       </div>
-      <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground">
         {profile.name ? `You're set, ${profile.name}.` : "Your studio is set."}
       </h2>
-      <p className="mt-2 text-[14px] text-neutral-600 max-w-lg">
+      <p className="mt-2 text-[14px] text-muted-foreground max-w-lg">
         Everything below is saved as your defaults. You can change them anytime in Settings.
       </p>
 
-      <div className="mt-6 rounded-xl border border-black/5 bg-neutral-50 divide-y divide-black/5">
+      <div className="mt-6 rounded-xl border border-border bg-surface divide-y divide-border">
         <SummaryRow label="Profile" value={profile.niche || "—"} />
         <SummaryRow label="Default format" value={profile.aspect} />
         <SummaryRow label="Signature style" value={STYLES.find((s) => s.id === profile.style)?.label ?? profile.style} />
@@ -490,7 +490,7 @@ function StepFinish({ profile }: { profile: Profile }) {
         />
       </div>
 
-      <div className="mt-5 flex items-center gap-2 text-[12px] text-neutral-500">
+      <div className="mt-5 flex items-center gap-2 text-[12px] text-muted-foreground">
         <Film className="w-3.5 h-3.5" />
         Ready to ship? Create your first project or take a look around first.
       </div>
@@ -501,10 +501,10 @@ function StepFinish({ profile }: { profile: Profile }) {
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-2.5">
-      <span className="text-[11.5px] font-medium uppercase tracking-wider text-neutral-500">
+      <span className="text-[11.5px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
-      <span className="text-[13px] font-medium text-neutral-900 text-right truncate">{value}</span>
+      <span className="text-[13px] font-medium text-foreground text-right truncate">{value}</span>
     </div>
   );
 }

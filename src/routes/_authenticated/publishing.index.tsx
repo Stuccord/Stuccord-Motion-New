@@ -176,11 +176,11 @@ function PublishingPage() {
     >
       <div className="space-y-6">
         {/* Accounts */}
-        <section className="rounded-2xl bg-white border border-black/5 p-5">
+        <section className="rounded-2xl bg-card border border-border p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <div className="text-sm font-semibold">Connected accounts</div>
-              <div className="text-xs text-neutral-500 mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 {team
                   ? canConnect
                     ? `Stuccord posts ${team.name}'s projects as these accounts. Editors and up can post to them.`
@@ -209,7 +209,7 @@ function PublishingPage() {
           </div>
 
           {setup.isSuccess && platforms.length === 0 && (
-            <div className="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-[13px] text-amber-900 mb-3">
+            <div className="flex gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-[13px] text-amber-300 mb-3">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
                 Posting isn&apos;t switched on yet: the site owner still has to add the YouTube,
@@ -219,35 +219,35 @@ function PublishingPage() {
           )}
 
           {accounts.isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-neutral-500">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" /> Loading…
             </div>
           ) : accounts.error ? (
-            <p className="text-sm text-rose-600">
+            <p className="text-sm text-rose-400">
               {accounts.error instanceof Error
                 ? accounts.error.message
                 : "Couldn't load your accounts"}
             </p>
           ) : list.length === 0 ? (
-            <p className="text-sm text-neutral-500">No accounts connected yet.</p>
+            <p className="text-sm text-muted-foreground">No accounts connected yet.</p>
           ) : (
-            <div className="divide-y divide-black/5 rounded-xl border border-black/10">
+            <div className="divide-y divide-border rounded-xl border border-border">
               {list.map((a) => (
                 <div key={a.id} className="flex items-center gap-3 px-4 py-3">
                   {a.avatar_url ? (
                     <img src={a.avatar_url} alt="" className="w-8 h-8 rounded-full" />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-neutral-100 grid place-items-center">
+                    <div className="w-8 h-8 rounded-full bg-surface-2 grid place-items-center">
                       <PlatformIcon platform={a.platform} className="w-4 h-4" />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate">{a.name}</div>
-                    <div className="text-[11px] text-neutral-500 flex items-center gap-1">
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-1">
                       <PlatformIcon platform={a.platform} className="w-3 h-3" />
                       {PLATFORM_LABEL[a.platform]}
                       {a.status !== "active" && (
-                        <span className="text-amber-700">· needs reconnecting</span>
+                        <span className="text-amber-300">· needs reconnecting</span>
                       )}
                     </div>
                   </div>
@@ -260,7 +260,7 @@ function PublishingPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                      className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                       onClick={() => setDisconnecting(a)}
                     >
                       <Unplug className="w-3.5 h-3.5 mr-1" /> Disconnect
@@ -273,7 +273,7 @@ function PublishingPage() {
         </section>
 
         {/* Posts */}
-        <section className="rounded-2xl bg-white border border-black/5 p-5">
+        <section className="rounded-2xl bg-card border border-border p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div role="tablist" aria-label="Posts" className="flex gap-1">
               {VIEWS.map((v) => (
@@ -285,8 +285,8 @@ function PublishingPage() {
                   className={cn(
                     "px-3 py-1.5 rounded-lg text-[13px] font-medium transition",
                     view === v.id
-                      ? "bg-neutral-900 text-white"
-                      : "text-neutral-600 hover:bg-neutral-100",
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:bg-surface-2",
                   )}
                 >
                   {v.label}
@@ -304,15 +304,15 @@ function PublishingPage() {
           </div>
 
           {posts.isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-neutral-500">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" /> Loading…
             </div>
           ) : posts.error ? (
-            <p className="text-sm text-rose-600">
+            <p className="text-sm text-rose-400">
               {posts.error instanceof Error ? posts.error.message : "Couldn't load your posts"}
             </p>
           ) : grouped[view].length === 0 ? (
-            <p className="text-sm text-neutral-500 py-6 text-center">
+            <p className="text-sm text-muted-foreground py-6 text-center">
               {view === "waiting"
                 ? "Nothing scheduled. Use New post, or Publish in the editor."
                 : view === "posted"
@@ -320,7 +320,7 @@ function PublishingPage() {
                   : "Nothing here."}
             </p>
           ) : (
-            <div className="divide-y divide-black/5 rounded-xl border border-black/10">
+            <div className="divide-y divide-border rounded-xl border border-border">
               {grouped[view].map((p) => (
                 <PostRow
                   key={p.id}
@@ -342,17 +342,17 @@ function PublishingPage() {
 function StatusBadge({ post }: { post: SocialPost }) {
   if (post.status === "published" && isDraft(post)) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-pink-50 text-pink-700">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-300">
         Sent to TikTok drafts
       </span>
     );
   }
   const map: Record<SocialPost["status"], [string, string]> = {
-    scheduled: ["Scheduled", "bg-violet-50 text-violet-700"],
-    uploading: ["Uploading…", "bg-sky-50 text-sky-700"],
-    published: ["Posted", "bg-emerald-50 text-emerald-700"],
-    failed: ["Failed", "bg-rose-50 text-rose-700"],
-    canceled: ["Canceled", "bg-neutral-100 text-neutral-600"],
+    scheduled: ["Scheduled", "bg-violet-500/10 text-violet-300"],
+    uploading: ["Uploading…", "bg-sky-500/10 text-sky-300"],
+    published: ["Posted", "bg-emerald-500/10 text-emerald-300"],
+    failed: ["Failed", "bg-rose-500/10 text-rose-300"],
+    canceled: ["Canceled", "bg-surface-2 text-muted-foreground"],
   };
   const [label, cls] = map[post.status];
   return (
@@ -418,7 +418,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
           </span>
           <StatusBadge post={post} />
         </div>
-        <div className="text-[11px] text-neutral-500 mt-0.5 truncate">
+        <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
           {post.account_name}
           {post.by ? ` · by ${post.by}` : ""}
           {post.project_title ? ` · ${post.project_title}` : ""} · {timeLabel}
@@ -428,7 +428,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
           <div
             className={cn(
               "text-[12px] mt-1",
-              post.status === "failed" ? "text-rose-600" : "text-neutral-500",
+              post.status === "failed" ? "text-rose-400" : "text-muted-foreground",
             )}
           >
             {post.error}
@@ -437,7 +437,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
       </div>
 
       {post.status === "published" && !isDraft(post) && (
-        <div className="flex items-center gap-4 text-[12px] text-neutral-600 tabular-nums">
+        <div className="flex items-center gap-4 text-[12px] text-muted-foreground tabular-nums">
           <span className="flex items-center gap-1" title="Views">
             <Eye className="w-3.5 h-3.5" /> {fmtNum(post.views)}
           </span>
@@ -452,7 +452,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
               href={post.external_url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-violet-700 font-medium hover:underline"
+              className="inline-flex items-center gap-1 text-violet-300 font-medium hover:underline"
             >
               Open <ExternalLink className="w-3 h-3" />
             </a>
@@ -495,7 +495,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
             <Button
               variant="ghost"
               size="sm"
-              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+              className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
               onClick={() => act.mutate({ kind: "cancel" })}
               disabled={act.isPending}
             >
@@ -518,7 +518,7 @@ function PostRow({ post, onChanged }: { post: SocialPost; onChanged: () => void 
             variant="ghost"
             size="sm"
             aria-label="Remove"
-            className="text-neutral-500"
+            className="text-muted-foreground"
             onClick={() => act.mutate({ kind: "delete" })}
             disabled={act.isPending}
           >

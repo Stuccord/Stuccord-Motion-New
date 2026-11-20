@@ -230,7 +230,7 @@ function AuthPage() {
       <div className="flex flex-col min-h-screen lg:min-h-0">
         <header className="px-6 lg:px-10 py-5 flex items-center justify-between border-b border-border">
           <Link to="/" className="flex items-center gap-2">
-            <img src={logoUrl} alt="" width={28} height={28} className="h-7 w-7 object-contain" />
+            <img src={logoUrl} alt="" width={28} height={28} className="h-7 w-7 object-contain rounded-lg bg-white p-px" />
             <span className="text-sm font-semibold tracking-tight text-foreground">
               Stuccord <span className="text-primary">Motion</span>
             </span>
@@ -554,29 +554,29 @@ function AuthPage() {
       </div>
 
       {/* Right: brand panel */}
-      <div className="hidden lg:block relative overflow-hidden bg-foreground">
+      <div className="hidden lg:block relative overflow-hidden bg-black border-l border-border">
         <img
           src={editingDesk}
           alt=""
           className="absolute inset-0 h-full w-full object-cover opacity-55"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-foreground/90 via-foreground/60 to-primary/70" />
+        <div className="absolute inset-0 bg-gradient-to-br from-black/90 via-black/60 to-primary/50" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,color-mix(in_oklab,var(--color-primary)_30%,transparent),transparent_55%)]" />
 
-        <div className="relative h-full flex flex-col justify-between p-12 text-background">
-          <div className="text-background/60 text-xs font-medium">Stuccord Motion</div>
+        <div className="relative h-full flex flex-col justify-between p-12 text-white">
+          <div className="text-white/60 text-xs font-medium">Stuccord Motion</div>
 
           <div className="max-w-md space-y-8">
-            <p className="text-[24px] leading-[1.35] font-medium tracking-tight text-background/90">
+            <p className="text-[24px] leading-[1.35] font-medium tracking-tight text-white/90">
               Drop in your footage, shape it on the timeline, and export a short with captions
               and music.
             </p>
 
-            <ul className="space-y-3 pt-6 border-t border-background/15">
+            <ul className="space-y-3 pt-6 border-t border-white/15">
               {perks.map((p) => (
-                <li key={p} className="flex items-start gap-2.5 text-sm text-background/80">
+                <li key={p} className="flex items-start gap-2.5 text-sm text-white/80">
                   <span className="mt-0.5 w-4 h-4 rounded-full bg-primary/25 grid place-items-center shrink-0">
-                    <Check className="w-2.5 h-2.5 text-background" />
+                    <Check className="w-2.5 h-2.5 text-white" />
                   </span>
                   {p}
                 </li>
@@ -584,7 +584,7 @@ function AuthPage() {
             </ul>
           </div>
 
-          <div className="flex items-center gap-6 text-[11px] text-background/40 uppercase tracking-wider">
+          <div className="flex items-center gap-6 text-[11px] text-white/40 uppercase tracking-wider">
             <span>9:16 · 16:9 · 1:1</span>
             <span>Up to 4K in the browser</span>
           </div>

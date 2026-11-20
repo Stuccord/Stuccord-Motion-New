@@ -87,19 +87,19 @@ export function ApiKeySettings() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-neutral-600">
+      <p className="text-sm text-muted-foreground">
         Use a key in your own scripts to make projects, upload clips, start exports and download
         them. See the{" "}
-        <Link to="/help" hash="api" className="text-violet-700 font-medium underline">
+        <Link to="/help" hash="api" className="text-violet-300 font-medium underline">
           API guide in Help
         </Link>
         . Treat a key like a password: anyone with it can use your workspace.
       </p>
 
       {made && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 space-y-2">
-          <div className="text-sm font-semibold text-emerald-900">Your new key “{made.name}”</div>
-          <p className="text-[13px] text-emerald-900/80">
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-2">
+          <div className="text-sm font-semibold text-emerald-300">Your new key “{made.name}”</div>
+          <p className="text-[13px] text-emerald-300/80">
             Copy it now. It won&apos;t be shown again; if you lose it, revoke it and make a new one.
           </p>
           <div className="flex gap-2">
@@ -107,7 +107,7 @@ export function ApiKeySettings() {
               readOnly
               value={made.key}
               aria-label="Your new API key"
-              className="font-mono text-xs bg-white"
+              className="font-mono text-xs bg-card"
               onFocus={(e) => e.currentTarget.select()}
             />
             <Button variant="outline" onClick={() => void copy()} className="shrink-0">
@@ -118,7 +118,7 @@ export function ApiKeySettings() {
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-2 text-emerald-900"
+            className="-ml-2 text-emerald-300"
             onClick={() => setMade(null)}
           >
             I&apos;ve saved it
@@ -127,7 +127,7 @@ export function ApiKeySettings() {
       )}
 
       <form
-        className="rounded-xl border border-black/10 p-4 space-y-3"
+        className="rounded-xl border border-border p-4 space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
           if (name.trim() && !full) create.mutate();
@@ -161,12 +161,12 @@ export function ApiKeySettings() {
                 className={cn(
                   "rounded-lg border px-3 py-2 text-left transition",
                   scope === value
-                    ? "border-violet-500 bg-violet-50"
-                    : "border-black/10 hover:border-black/20",
+                    ? "border-violet-500 bg-violet-500/10"
+                    : "border-border hover:border-white/15",
                 )}
               >
                 <div className="text-[13px] font-medium">{label}</div>
-                <div className="text-[11px] text-neutral-500">{hint}</div>
+                <div className="text-[11px] text-muted-foreground">{hint}</div>
               </button>
             ))}
           </div>
@@ -180,7 +180,7 @@ export function ApiKeySettings() {
           Make key
         </Button>
         {full && (
-          <p className="text-[12px] text-neutral-500">
+          <p className="text-[12px] text-muted-foreground">
             You have {API_KEY_LIMIT} keys, the most allowed. Revoke one to make another.
           </p>
         )}
@@ -189,22 +189,22 @@ export function ApiKeySettings() {
       <div className="space-y-2">
         <div className="text-sm font-semibold">Your keys</div>
         {keys.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-neutral-500">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
         ) : keys.error ? (
-          <p className="text-sm text-rose-600">
+          <p className="text-sm text-rose-400">
             {keys.error instanceof Error ? keys.error.message : "Couldn't load your keys"}
           </p>
         ) : list.length === 0 ? (
-          <p className="text-sm text-neutral-500">No keys yet.</p>
+          <p className="text-sm text-muted-foreground">No keys yet.</p>
         ) : (
-          <div className="rounded-xl border border-black/10 divide-y divide-black/5">
+          <div className="rounded-xl border border-border divide-y divide-border">
             {list.map((k) => (
               <div key={k.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">{k.name}</div>
-                  <div className="text-[11px] text-neutral-500">
+                  <div className="text-[11px] text-muted-foreground">
                     <span className="font-mono">{k.prefix}…</span> ·{" "}
                     {k.scope === "full" ? "Full access" : "Read only"} · made {when(k.created_at)} ·
                     last used {when(k.last_used_at)}
@@ -213,7 +213,7 @@ export function ApiKeySettings() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                  className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                   onClick={() => setRevoking(k)}
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1" /> Revoke

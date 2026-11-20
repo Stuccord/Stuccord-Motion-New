@@ -44,7 +44,7 @@ function Section({
   return (
     <div className="py-5 first:pt-0">
       <div className="text-sm font-medium">{title}</div>
-      <div className="text-xs text-neutral-500 mt-0.5 mb-3">{desc}</div>
+      <div className="text-xs text-muted-foreground mt-0.5 mb-3">{desc}</div>
       {children}
     </div>
   );
@@ -78,7 +78,7 @@ function PasswordForm() {
   }
   return (
     <form onSubmit={save} className="space-y-3 max-w-sm">
-      {error && <div className="text-xs text-red-700 bg-red-50 rounded-md p-2">{error}</div>}
+      {error && <div className="text-xs text-red-300 bg-red-500/10 rounded-md p-2">{error}</div>}
       <div className="space-y-1">
         <Label htmlFor="pw-current" className="text-xs">
           Current password
@@ -203,15 +203,15 @@ function TwoFactor() {
     }
   }
 
-  if (state === "loading") return <div className="text-xs text-neutral-500">Loading…</div>;
+  if (state === "loading") return <div className="text-xs text-muted-foreground">Loading…</div>;
   return (
     <div className="space-y-3">
       {error && (
-        <div className="text-xs text-red-700 bg-red-50 rounded-md p-2 max-w-sm">{error}</div>
+        <div className="text-xs text-red-300 bg-red-500/10 rounded-md p-2 max-w-sm">{error}</div>
       )}
       {state === "on" && (
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700">
+          <span className="inline-flex items-center gap-1.5 text-sm text-emerald-300">
             <ShieldCheck className="w-4 h-4" /> On: sign-in asks for a code from your app
           </span>
           <AlertDialog>
@@ -242,7 +242,7 @@ function TwoFactor() {
       )}
       {state === "setup" && qr && (
         <form onSubmit={confirm} className="space-y-3 max-w-sm">
-          <ol className="list-decimal ml-4 space-y-1 text-xs text-neutral-600">
+          <ol className="list-decimal ml-4 space-y-1 text-xs text-muted-foreground">
             <li>Open an authenticator app (Google Authenticator, 1Password, Authy…).</li>
             <li>Scan this code, or type in the key below.</li>
             <li>Enter the 6-digit code it shows.</li>
@@ -250,11 +250,11 @@ function TwoFactor() {
           <img
             src={qr.image}
             alt="QR code for your authenticator app"
-            className="w-40 h-40 rounded-md border border-black/10 bg-white p-1"
+            className="w-40 h-40 rounded-md border border-border bg-card p-1"
           />
-          <div className="text-[11px] text-neutral-500">
+          <div className="text-[11px] text-muted-foreground">
             Key:{" "}
-            <code className="font-mono text-neutral-800 break-all select-all">{qr.secret}</code>
+            <code className="font-mono text-foreground break-all select-all">{qr.secret}</code>
           </div>
           <Input
             inputMode="numeric"
@@ -307,7 +307,7 @@ function DeleteAccount() {
 
   return (
     <div className="space-y-3 max-w-sm">
-      <p className="text-xs text-neutral-600 leading-relaxed">
+      <p className="text-xs text-muted-foreground leading-relaxed">
         This deletes all your projects, clips, uploaded files, thumbnails, exports and captions,
         then your account. It can&apos;t be undone.
       </p>
@@ -328,7 +328,7 @@ function DeleteAccount() {
           <Button
             variant="outline"
             size="sm"
-            className="text-red-700 border-red-200 hover:bg-red-50"
+            className="text-red-300 border-red-500/30 hover:bg-red-500/10"
             disabled={!matches || busy}
           >
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete my account"}
@@ -355,7 +355,7 @@ function DeleteAccount() {
 
 export function SecuritySettings() {
   return (
-    <div className="divide-y divide-black/5">
+    <div className="divide-y divide-border">
       <Section title="Password" desc="Change the password you sign in with.">
         <PasswordForm />
       </Section>

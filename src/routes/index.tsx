@@ -121,7 +121,7 @@ function LogoMark({ className = "h-10 w-10" }: { className?: string }) {
       alt="Stuccord Motion logo"
       width={80}
       height={80}
-      className={`${className} object-contain drop-shadow-[0_6px_16px_rgba(124,58,237,0.4)]`}
+      className={`${className} object-contain rounded-xl bg-white p-0.5 shadow-[0_6px_20px_-6px_rgba(124,58,237,0.6)]`}
     />
   );
 }
@@ -464,7 +464,7 @@ function ShortsViewer() {
 /* Vertical 9:16 phone-style preview inside the editor */
 function VerticalShort() {
   return (
-    <div className="relative aspect-[9/16] w-full max-w-[280px] overflow-hidden rounded-2xl border border-foreground/20 bg-foreground shadow-[0_20px_60px_-20px_rgba(0,0,0,0.4)]">
+    <div className="relative aspect-[9/16] w-full max-w-[280px] overflow-hidden rounded-2xl border border-foreground/20 bg-black shadow-[0_20px_60px_-20px_rgba(0,0,0,0.8)]">
       {/* Real talking-head footage */}
       <img
         src={creatorPortrait}
@@ -568,7 +568,7 @@ function FramesWall() {
   return (
     <section
       aria-hidden
-      className="relative overflow-hidden border-b border-hairline bg-foreground"
+      className="relative overflow-hidden border-b border-hairline bg-black"
     >
       <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-b from-background via-transparent to-background" />
       <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-24 bg-gradient-to-r from-background to-transparent md:w-40" />
@@ -645,8 +645,8 @@ function Features() {
                 </h3>
               </div>
               {/* Visualization — animated caption strip */}
-              <div className="mt-8 rounded-md border border-hairline bg-foreground p-6 text-background">
-                <div className="mb-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-background/50">
+              <div className="mt-8 rounded-md border border-hairline bg-black p-6 text-white">
+                <div className="mb-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-white/50">
                   <span>Track · Captions</span>
                   <span>00:04.20 → 00:04.62</span>
                 </div>
@@ -666,7 +666,7 @@ function Features() {
                         "rounded px-1.5 py-0.5 font-mono text-[9px] " +
                         (i === 3
                           ? "bg-primary text-primary-foreground"
-                          : "bg-background/10 text-background/70")
+                          : "bg-white/10 text-white/70")
                       }
                     >
                       {w}
@@ -683,7 +683,7 @@ function Features() {
             <h3 className="mt-5 font-display text-lg font-semibold tracking-tight text-foreground">
               Punch-ins on the words that matter, eased back out.
             </h3>
-            <div className="mt-5 relative aspect-video overflow-hidden rounded-md border border-hairline bg-foreground">
+            <div className="mt-5 relative aspect-video overflow-hidden rounded-md border border-hairline bg-black">
               <div className="absolute inset-0 bg-[radial-gradient(300px_200px_at_50%_40%,rgba(124,58,237,0.4),transparent_60%),linear-gradient(180deg,#0a0a0a,#1a1a20)]" />
               <div className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20" />
               <div className="absolute inset-6 rounded border border-primary/70">
@@ -769,13 +769,13 @@ function Features() {
             <div className="mt-5 relative flex h-10 items-end gap-[2px]">
               {Array.from({ length: 32 }).map((_, i) => {
                 const ducked = i > 8 && i < 24;
-                const h = 20 + Math.abs(Math.sin(i * 0.6)) * 70;
+                const h = Math.round(20 + Math.abs(Math.sin(i * 0.6)) * 70);
                 return (
                   <span
                     key={i}
                     className="block w-full origin-bottom rounded-sm bg-foreground/60"
                     style={{
-                      height: `${ducked ? h * 0.3 : h}%`,
+                      height: `${ducked ? Math.round(h * 0.3) : h}%`,
                       opacity: ducked ? 0.35 : 1,
                     }}
                   />
@@ -1100,7 +1100,7 @@ function Compare() {
 
         <div className="mt-14 grid gap-6 md:grid-cols-[1fr_320px] md:items-center">
           {/* Slider */}
-          <div className="relative aspect-video overflow-hidden rounded-xl border border-hairline bg-foreground">
+          <div className="relative aspect-video overflow-hidden rounded-xl border border-hairline bg-black">
             {/* RAW side (base) — real footage, flat */}
             <img src={creatorPortrait} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover grayscale-[35%] brightness-90" />
             <div className="absolute inset-0 bg-black/25" />
@@ -1248,8 +1248,8 @@ function Pricing() {
               className={
                 "relative flex flex-col rounded-xl border p-7 " +
                 (p.featured
-                  ? "border-foreground bg-foreground text-background shadow-[0_30px_80px_-30px_rgba(0,0,0,0.4)]"
-                  : "border-hairline bg-background")
+                  ? "border-primary/60 bg-gradient-to-b from-primary/25 via-card to-card text-foreground shadow-[0_30px_80px_-30px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
+                  : "border-hairline bg-card")
               }
             >
               {p.featured && (
@@ -1260,7 +1260,7 @@ function Pricing() {
               <div
                 className={
                   "font-mono text-[11px] uppercase tracking-widest " +
-                  (p.featured ? "text-background/60" : "text-muted-foreground")
+                  (p.featured ? "text-foreground/60" : "text-muted-foreground")
                 }
               >
                 {p.name}
@@ -1272,7 +1272,7 @@ function Pricing() {
                 {p.price !== "$0" && (
                   <span
                     className={
-                      "text-sm " + (p.featured ? "text-background/60" : "text-muted-foreground")
+                      "text-sm " + (p.featured ? "text-foreground/60" : "text-muted-foreground")
                     }
                   >
                     / month
@@ -1281,7 +1281,7 @@ function Pricing() {
               </div>
               <p
                 className={
-                  "mt-2 text-sm " + (p.featured ? "text-background/70" : "text-muted-foreground")
+                  "mt-2 text-sm " + (p.featured ? "text-foreground/75" : "text-muted-foreground")
                 }
               >
                 {p.tag}
@@ -1411,7 +1411,7 @@ function CTA() {
   return (
     <section id="cta" className="border-b border-hairline">
       <div className="mx-auto max-w-7xl px-5 py-16 md:py-24">
-        <div className="relative overflow-hidden rounded-2xl border border-hairline bg-foreground p-10 text-background md:p-16">
+        <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-[linear-gradient(135deg,oklch(0.32_0.14_290),oklch(0.17_0.03_280)_70%)] p-10 text-white md:p-16">
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.06]"
             style={{
@@ -1429,13 +1429,13 @@ function CTA() {
           />
           <div className="relative grid gap-10 md:grid-cols-[1.4fr_1fr] md:items-end">
             <div className="max-w-2xl">
-              <div className="font-mono text-[11px] uppercase tracking-widest text-background/50">
+              <div className="font-mono text-[11px] uppercase tracking-widest text-white/50">
                 Beta · free while in beta
               </div>
               <h2 className="mt-4 font-display text-4xl font-semibold leading-[1.02] tracking-tight md:text-6xl">
                 Your next post is one upload away.
               </h2>
-              <p className="mt-5 max-w-lg text-background/70">
+              <p className="mt-5 max-w-lg text-white/70">
                 Drop a raw take. Get an edited, captioned short with motion
                 graphics back in minutes. No card, no watermark.
               </p>
@@ -1449,20 +1449,20 @@ function CTA() {
                 </a>
                 <a
                   href="#compare"
-                  className="inline-flex items-center gap-2 rounded-md border border-background/25 px-5 py-3 text-sm font-medium text-background transition-colors hover:bg-background/10"
+                  className="inline-flex items-center gap-2 rounded-md border border-white/25 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/10"
                 >
                   See before and after
                 </a>
               </div>
             </div>
-            <ul className="space-y-3 border-t border-background/15 pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
+            <ul className="space-y-3 border-t border-white/15 pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
               {[
                 "Free while in beta, no card",
                 "MP4 exports with no watermark",
                 "Your footage is never used to train AI",
                 "Edit every AI decision before you export",
               ].map((l) => (
-                <li key={l} className="flex items-center gap-2.5 text-sm text-background/80">
+                <li key={l} className="flex items-center gap-2.5 text-sm text-white/80">
                   <Check className="h-4 w-4 text-primary" strokeWidth={2.5} />
                   {l}
                 </li>

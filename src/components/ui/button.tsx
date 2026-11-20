@@ -10,15 +10,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md",
+          "bg-primary text-primary-foreground shadow-[0_8px_24px_-10px_color-mix(in_oklab,var(--color-primary)_90%,transparent)] hover:bg-primary/90 hover:shadow-[0_10px_30px_-8px_color-mix(in_oklab,var(--color-primary)_90%,transparent)]",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
         outline:
-          "border border-border bg-card shadow-sm hover:bg-surface hover:border-border/80",
+          "border border-white/12 bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/20",
         secondary:
-          "bg-surface text-foreground shadow-sm hover:bg-surface-2",
+          "bg-surface-2 text-foreground hover:bg-white/10",
         ghost:
-          "text-foreground hover:bg-surface",
+          "text-foreground hover:bg-white/[0.06]",
         link:
           "text-primary underline-offset-4 hover:underline p-0 h-auto",
       },

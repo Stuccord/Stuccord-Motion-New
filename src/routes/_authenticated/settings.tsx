@@ -49,8 +49,8 @@ function SettingsPage() {
 
   return (
     <AppShell title="Settings" subtitle="Personalise your workspace, brand and notifications.">
-      <Tabs defaultValue={tab ?? "profile"} className="flex flex-col lg:flex-row gap-6">
-        <TabsList className="flex flex-row lg:flex-col h-auto bg-transparent gap-1 lg:w-52 shrink-0 justify-start p-0">
+      <Tabs defaultValue={tab ?? "profile"} className="flex flex-col lg:flex-row gap-6 min-w-0">
+        <TabsList className="flex flex-row lg:flex-col h-auto bg-transparent gap-1 lg:w-52 shrink-0 justify-start p-0 max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[
             { value: "profile", label: "Profile", icon: User },
             { value: "brand", label: "Brand kit", icon: Palette },
@@ -62,7 +62,7 @@ function SettingsPage() {
             <TabsTrigger
               key={t.value}
               value={t.value}
-              className="w-full justify-start gap-2.5 px-3 py-2 text-[13px] font-medium rounded-lg data-[state=active]:bg-neutral-900 data-[state=active]:text-white data-[state=inactive]:text-neutral-600 data-[state=inactive]:hover:bg-neutral-100 data-[state=inactive]:hover:text-neutral-900"
+              className="w-full justify-start gap-2.5 px-3 py-2 text-[13px] font-medium rounded-lg data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-surface-2 data-[state=inactive]:hover:text-foreground"
             >
               <t.icon className="w-4 h-4 shrink-0" /> {t.label}
             </TabsTrigger>
@@ -79,21 +79,21 @@ function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="display-name" className="text-xs font-medium text-neutral-700">Display name</Label>
+                  <Label htmlFor="display-name" className="text-xs font-medium text-foreground/80">Display name</Label>
                   <Input
                     id="display-name"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="bg-white border-black/10 focus:border-black/30"
+                    className="bg-card border-border focus:border-white/15"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-xs font-medium text-neutral-700">Email</Label>
+                  <Label htmlFor="email" className="text-xs font-medium text-foreground/80">Email</Label>
                   <Input
                     id="email"
                     value={email}
                     disabled
-                    className="bg-neutral-50 border-black/10 text-neutral-500"
+                    className="bg-surface border-border text-muted-foreground"
                   />
                 </div>
                 <div className="flex justify-end pt-2">
@@ -216,7 +216,7 @@ function NotificationSettings() {
     await change({ ...prefs, desktop: on });
   }
 
-  if (!prefs) return <div className="text-sm text-neutral-500 py-3">Loading…</div>;
+  if (!prefs) return <div className="text-sm text-muted-foreground py-3">Loading…</div>;
   const rows: { label: string; desc: string; on: boolean; set: (v: boolean) => void; disabled?: boolean }[] = [
     {
       label: "Export finished",
@@ -244,17 +244,17 @@ function NotificationSettings() {
     },
   ];
   return (
-    <div className="divide-y divide-black/5">
+    <div className="divide-y divide-border">
       {rows.map((r) => (
         <div key={r.label} className="flex items-center justify-between gap-4 py-3">
           <div>
             <div className="text-sm font-medium">{r.label}</div>
-            <div className="text-xs text-neutral-500 mt-0.5">{r.desc}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{r.desc}</div>
           </div>
           <Switch checked={r.on} onCheckedChange={r.set} disabled={r.disabled} aria-label={r.label} />
         </div>
       ))}
-      <p className="pt-3 text-xs text-neutral-500">
+      <p className="pt-3 text-xs text-muted-foreground">
         Email notifications aren&apos;t available yet.
       </p>
     </div>

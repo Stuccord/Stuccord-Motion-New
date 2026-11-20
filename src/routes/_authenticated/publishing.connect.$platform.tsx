@@ -59,19 +59,19 @@ function ConnectReturn() {
 
   return (
     <AppShell title="Publishing" subtitle={`Connecting ${label}`}>
-      <div className="max-w-md mx-auto rounded-2xl bg-white border border-black/5 p-6 text-center space-y-3">
+      <div className="max-w-md mx-auto rounded-2xl bg-card border border-border p-6 text-center space-y-3">
         {problem ? (
           <>
             <AlertTriangle className="w-6 h-6 text-amber-500 mx-auto" />
-            <p className="text-sm text-neutral-700">{problem}</p>
+            <p className="text-sm text-foreground/80">{problem}</p>
             <Button asChild size="sm">
               <Link to="/publishing">Back to Publishing</Link>
             </Button>
           </>
         ) : (
           <>
-            <Loader2 className="w-6 h-6 animate-spin text-violet-600 mx-auto" />
-            <p className="text-sm text-neutral-600">Connecting your {label} account…</p>
+            <Loader2 className="w-6 h-6 animate-spin text-violet-400 mx-auto" />
+            <p className="text-sm text-muted-foreground">Connecting your {label} account…</p>
           </>
         )}
       </div>

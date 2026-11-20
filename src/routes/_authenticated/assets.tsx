@@ -106,16 +106,16 @@ function AssetsPage() {
       actions={<Button onClick={() => navigate({ to: "/projects/new" })}><Upload className="w-4 h-4" /> New project</Button>}
     >
       <div className="grid gap-4 grid-cols-3 mb-5">
-        <div className="bg-white border border-black/5 rounded-xl p-4">
-          <div className="text-xs font-medium text-neutral-500">Total clips</div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-xs font-medium text-muted-foreground">Total clips</div>
           <div className="mt-2 text-2xl font-semibold tabular-nums">{clips?.length ?? 0}</div>
         </div>
-        <div className="bg-white border border-black/5 rounded-xl p-4">
-          <div className="text-xs font-medium text-neutral-500">Storage used</div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-xs font-medium text-muted-foreground">Storage used</div>
           <div className="mt-2 text-2xl font-semibold tabular-nums">{formatBytes(totalBytes)}</div>
         </div>
-        <div className="bg-white border border-black/5 rounded-xl p-4">
-          <div className="text-xs font-medium text-neutral-500">Latest upload</div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="text-xs font-medium text-muted-foreground">Latest upload</div>
           <div className="mt-2 text-sm font-medium truncate">
             {clips?.[0] ? formatDistanceToNow(new Date(clips[0].created_at), { addSuffix: true }) : "—"}
           </div>
@@ -125,23 +125,23 @@ function AssetsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="text-sm font-semibold">Clip library</div>
         <div className="relative w-full sm:w-64">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search clips or projects…"
-            className="w-full h-9 pl-8 pr-3 text-sm bg-white border border-black/5 rounded-md focus:border-black/20 focus:outline-none" />
+            className="w-full h-9 pl-8 pr-3 text-sm bg-card border border-border rounded-md focus:border-white/15 focus:outline-none" />
         </div>
       </div>
 
       {isLoading ? (
-        <div className="rounded-2xl bg-white border border-black/5 p-10 text-center text-sm text-neutral-500">
+        <div className="rounded-2xl bg-card border border-border p-10 text-center text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 mx-auto animate-spin mb-2" /> Loading your clips…
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-black/10 bg-white/50 p-12 text-center">
-          <div className="mx-auto w-12 h-12 rounded-full bg-violet-50 text-violet-600 grid place-items-center mb-3">
+        <div className="rounded-2xl border-2 border-dashed border-border bg-white/50 p-12 text-center">
+          <div className="mx-auto w-12 h-12 rounded-full bg-violet-500/10 text-violet-400 grid place-items-center mb-3">
             <Upload className="w-5 h-5" />
           </div>
           <div className="text-sm font-semibold">No clips yet</div>
-          <div className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto">
+          <div className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
             Start a project and upload your footage — every clip you add there shows up here for reuse.
           </div>
           <div className="mt-5">
@@ -151,27 +151,27 @@ function AssetsPage() {
           </div>
         </div>
       ) : (
-        <ul className="rounded-2xl bg-white border border-black/5 divide-y divide-black/5 overflow-hidden">
+        <ul className="rounded-2xl bg-card border border-border divide-y divide-border overflow-hidden">
           {filtered.map((c) => (
-            <li key={c.id} className="flex items-center gap-3 p-3 hover:bg-neutral-50">
-              <div className="w-10 h-10 grid place-items-center rounded-lg bg-neutral-100 shrink-0 overflow-hidden">
+            <li key={c.id} className="flex items-center gap-3 p-3 hover:bg-surface">
+              <div className="w-10 h-10 grid place-items-center rounded-lg bg-surface-2 shrink-0 overflow-hidden">
                 {c.thumbnail_url ? (
                   <img src={c.thumbnail_url} alt="" loading="lazy" className="w-full h-full object-cover" />
                 ) : isAudioRole(c.role) ? (
-                  <Music2 className="w-4 h-4 text-neutral-500" />
+                  <Music2 className="w-4 h-4 text-muted-foreground" />
                 ) : isImageFilename(c.filename) ? (
-                  <ImageIcon className="w-4 h-4 text-neutral-500" />
+                  <ImageIcon className="w-4 h-4 text-muted-foreground" />
                 ) : (
-                  <Film className="w-4 h-4 text-neutral-500" />
+                  <Film className="w-4 h-4 text-muted-foreground" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{c.filename}</div>
-                <div className="text-[11px] text-neutral-500 flex items-center gap-2 mt-0.5">
+                <div className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
                   <Link
                     to="/projects/$projectId"
                     params={{ projectId: c.project_id }}
-                    className="hover:text-neutral-900 hover:underline truncate"
+                    className="hover:text-foreground hover:underline truncate"
                   >
                     {c.project_title}
                   </Link>
@@ -181,15 +181,15 @@ function AssetsPage() {
                   <span>{formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}</span>
                 </div>
               </div>
-              <span className="text-[10px] font-mono uppercase tracking-wider bg-neutral-100 rounded px-1.5 py-0.5 text-neutral-600">
+              <span className="text-[10px] font-mono uppercase tracking-wider bg-surface-2 rounded px-1.5 py-0.5 text-muted-foreground">
                 {c.aspect_ratio}
               </span>
               <button
                 onClick={() => preview(c.storage_path)}
-                className="p-1.5 rounded-md hover:bg-black/5"
+                className="p-1.5 rounded-md hover:bg-white/5"
                 title="Preview"
               >
-                <ExternalLink className="w-3.5 h-3.5 text-neutral-500" />
+                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
               <button
                 onClick={() => {
@@ -197,7 +197,7 @@ function AssetsPage() {
                     del.mutate(c.id);
                   }
                 }}
-                className="p-1.5 rounded-md hover:bg-red-50 text-neutral-500 hover:text-red-600"
+                className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-400"
                 title="Delete"
               >
                 <Trash2 className="w-3.5 h-3.5" />

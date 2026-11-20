@@ -186,7 +186,7 @@ function TeamPage() {
   if (q.isLoading) {
     return (
       <AppShell title="Team">
-        <div className="flex items-center gap-2 text-sm text-neutral-500">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       </AppShell>
@@ -195,8 +195,8 @@ function TeamPage() {
   if (q.error || !q.data) {
     return (
       <AppShell title="Team">
-        <div className="rounded-2xl bg-white border border-black/5 p-6 text-center space-y-3">
-          <p className="text-sm text-neutral-600">
+        <div className="rounded-2xl bg-card border border-border p-6 text-center space-y-3">
+          <p className="text-sm text-muted-foreground">
             {q.error instanceof Error ? q.error.message : "Team not found"}
           </p>
           <Button asChild size="sm" variant="outline">
@@ -240,13 +240,13 @@ function TeamPage() {
         <Link
           to="/settings"
           search={{ tab: "teams" }}
-          className="inline-flex items-center gap-1 text-[13px] text-neutral-500 hover:text-neutral-800"
+          className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Your teams
         </Link>
 
         {/* Name */}
-        <section className="rounded-2xl bg-white border border-black/5 p-5">
+        <section className="rounded-2xl bg-card border border-border p-5">
           {editing ? (
             <form
               className="flex gap-2"
@@ -273,7 +273,7 @@ function TeamPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold">{team.name}</div>
-                <div className="text-xs text-neutral-500 mt-0.5">
+                <div className="text-xs text-muted-foreground mt-0.5">
                   {seats.used} of {seats.limit} people on the {team.planLabel} plan
                 </div>
               </div>
@@ -294,9 +294,9 @@ function TeamPage() {
         </section>
 
         {/* Members */}
-        <section className="rounded-2xl bg-white border border-black/5 p-5 space-y-3">
+        <section className="rounded-2xl bg-card border border-border p-5 space-y-3">
           <div className="text-sm font-semibold">People</div>
-          <div className="rounded-xl border border-black/10 divide-y divide-black/5">
+          <div className="rounded-xl border border-border divide-y divide-border">
             {members.map((m) => {
               const options = rolesFor(m);
               return (
@@ -305,15 +305,15 @@ function TeamPage() {
                   className="flex items-center gap-3 px-4 py-3"
                   data-member={m.user_id}
                 >
-                  <div className="w-8 h-8 rounded-full bg-neutral-100 grid place-items-center text-xs font-semibold text-neutral-600">
+                  <div className="w-8 h-8 rounded-full bg-surface-2 grid place-items-center text-xs font-semibold text-muted-foreground">
                     {m.name.slice(0, 1).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate">
                       {m.name}
-                      {m.you && <span className="text-neutral-400 font-normal"> (you)</span>}
+                      {m.you && <span className="text-muted-foreground/70 font-normal"> (you)</span>}
                     </div>
-                    <div className="text-[11px] text-neutral-500 truncate">
+                    <div className="text-[11px] text-muted-foreground truncate">
                       {m.email ?? ""} · joined {fmtDate(m.joined_at)}
                     </div>
                   </div>
@@ -339,7 +339,7 @@ function TeamPage() {
                       </SelectContent>
                     </Select>
                   ) : (
-                    <span className="text-xs text-neutral-600 inline-flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
                       {m.role === "owner" && <Crown className="w-3 h-3 text-amber-500" />}
                       {ROLE_LABEL[m.role]}
                     </span>
@@ -362,7 +362,7 @@ function TeamPage() {
                         {role === "owner" && canRemove(m) && <DropdownMenuSeparator />}
                         {canRemove(m) && (
                           <DropdownMenuItem
-                            className="text-rose-600"
+                            className="text-rose-400"
                             onClick={() => setConfirm({ kind: "remove", member: m })}
                           >
                             <Trash2 className="w-3.5 h-3.5 mr-2" /> Remove from team
@@ -375,10 +375,10 @@ function TeamPage() {
               );
             })}
           </div>
-          <ul className="text-[11px] text-neutral-500 grid sm:grid-cols-2 gap-x-4 gap-y-0.5">
+          <ul className="text-[11px] text-muted-foreground grid sm:grid-cols-2 gap-x-4 gap-y-0.5">
             {(Object.keys(ROLE_HINT) as TeamRole[]).map((r) => (
               <li key={r}>
-                <span className="font-medium text-neutral-700">{ROLE_LABEL[r]}:</span>{" "}
+                <span className="font-medium text-foreground/80">{ROLE_LABEL[r]}:</span>{" "}
                 {ROLE_HINT[r]}
               </li>
             ))}
@@ -387,17 +387,17 @@ function TeamPage() {
 
         {/* Invites */}
         {manage && (
-          <section className="rounded-2xl bg-white border border-black/5 p-5 space-y-3">
+          <section className="rounded-2xl bg-card border border-border p-5 space-y-3">
             <div>
               <div className="text-sm font-semibold">Invite people</div>
-              <div className="text-xs text-neutral-500 mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 Make a link and send it however you like. Anyone signed in who opens it can join
                 with the role you pick, until it expires in {INVITE_DAYS} days or you revoke it.
               </div>
             </div>
 
             {full ? (
-              <p className="text-[13px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-[13px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
                 The team is full ({seats.limit} people on the {team.planLabel} plan). Remove someone
                 to make room.
               </p>
@@ -436,11 +436,11 @@ function TeamPage() {
             )}
 
             {link && (
-              <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 space-y-2">
-                <div className="text-[13px] font-medium text-emerald-900">
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-2">
+                <div className="text-[13px] font-medium text-emerald-300">
                   Invite link for an {link.role}
                 </div>
-                <p className="text-[12px] text-emerald-900/80">
+                <p className="text-[12px] text-emerald-300/80">
                   Copy it now: it won&apos;t be shown again. You can revoke it below.
                 </p>
                 <div className="flex gap-2">
@@ -448,7 +448,7 @@ function TeamPage() {
                     readOnly
                     value={link.url}
                     aria-label="Invite link"
-                    className="font-mono text-xs bg-white"
+                    className="font-mono text-xs bg-card"
                     onFocus={(e) => e.currentTarget.select()}
                   />
                   <Button variant="outline" onClick={() => void copy()} className="shrink-0">
@@ -464,13 +464,13 @@ function TeamPage() {
             )}
 
             {invites.length > 0 && (
-              <div className="rounded-xl border border-black/10 divide-y divide-black/5">
+              <div className="rounded-xl border border-border divide-y divide-border">
                 {invites.map((i) => (
                   <div key={i.id} className="flex items-center gap-3 px-4 py-2.5">
-                    <Link2 className="w-4 h-4 text-neutral-400" />
+                    <Link2 className="w-4 h-4 text-muted-foreground/70" />
                     <div className="flex-1 text-[13px]">
                       {ROLE_LABEL[i.role]} link
-                      <span className="text-[11px] text-neutral-500">
+                      <span className="text-[11px] text-muted-foreground">
                         {" "}
                         · made {fmtDate(i.created_at)} · expires {fmtDate(i.expires_at)} · used{" "}
                         {i.uses} {i.uses === 1 ? "time" : "times"}
@@ -479,7 +479,7 @@ function TeamPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                      className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                       onClick={() => doRevoke.mutate(i.id)}
                       disabled={doRevoke.isPending}
                     >
@@ -494,12 +494,12 @@ function TeamPage() {
 
         {/* Brand kit */}
         <section
-          className="rounded-2xl bg-white border border-black/5 p-5 space-y-3"
+          className="rounded-2xl bg-card border border-border p-5 space-y-3"
           data-team-brand-kit
         >
           <div>
             <div className="text-sm font-semibold">Brand kit</div>
-            <div className="text-xs text-neutral-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               Caption font and colours, the hook&apos;s style and the logo for all of this
               team&apos;s projects, whoever edits or exports them.
               {!canEditKit && " Only the owner and admins can change it."}
@@ -509,18 +509,18 @@ function TeamPage() {
         </section>
 
         {/* Leave / delete */}
-        <section className="rounded-2xl bg-white border border-rose-200 p-5 flex flex-wrap items-center justify-between gap-3">
+        <section className="rounded-2xl bg-card border border-rose-500/30 p-5 flex flex-wrap items-center justify-between gap-3">
           {role === "owner" ? (
             <>
               <div>
                 <div className="text-sm font-semibold">Delete team</div>
-                <div className="text-xs text-neutral-500 mt-0.5">
+                <div className="text-xs text-muted-foreground mt-0.5">
                   Everyone loses access to it. This can&apos;t be undone.
                 </div>
               </div>
               <Button
                 variant="outline"
-                className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                className="text-rose-400 border-rose-500/30 hover:bg-rose-500/10"
                 onClick={() => setConfirm({ kind: "delete" })}
               >
                 <Trash2 className="w-4 h-4 mr-1.5" /> Delete team
@@ -530,13 +530,13 @@ function TeamPage() {
             <>
               <div>
                 <div className="text-sm font-semibold">Leave team</div>
-                <div className="text-xs text-neutral-500 mt-0.5">
+                <div className="text-xs text-muted-foreground mt-0.5">
                   You lose access until someone invites you again.
                 </div>
               </div>
               <Button
                 variant="outline"
-                className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                className="text-rose-400 border-rose-500/30 hover:bg-rose-500/10"
                 onClick={() => setConfirm({ kind: "leave" })}
               >
                 <LogOut className="w-4 h-4 mr-1.5" /> Leave team

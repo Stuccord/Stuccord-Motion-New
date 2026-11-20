@@ -196,7 +196,8 @@ function NewProject() {
   return (
     <AppShell>
       <div className="max-w-3xl">
-        <h1 className="text-2xl font-semibold tracking-tight">New project</h1>
+        <div className="caps-label text-[11px] text-primary-glow mb-2">Motion Explainer · auto-edit</div>
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">New project</h1>
         {ws.team && (
           <p className="text-sm text-muted-foreground mt-1" data-new-in-team>
             {ws.canEdit
@@ -204,36 +205,36 @@ function NewProject() {
               : `You're a Viewer in ${ws.team.name}, so you can't make projects there. Switch to Personal or ask an admin.`}
           </p>
         )}
-        <p className="text-sm text-neutral-500 mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           Drop your clips, add your script if you have one, and the AI plans the graphics from
           what you say.
         </p>
 
         {template && (
-          <div className="mt-5 flex items-start gap-3 rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-fuchsia-50 p-4">
-            <div className="w-9 h-9 rounded-lg bg-white grid place-items-center shrink-0 shadow-sm">
-              <Sparkles className="w-4 h-4 text-violet-600" />
+          <div className="mt-5 flex items-start gap-3 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/15 to-fuchsia-500/10 p-4">
+            <div className="w-9 h-9 rounded-lg bg-card grid place-items-center shrink-0 shadow-sm">
+              <Sparkles className="w-4 h-4 text-violet-400" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold uppercase tracking-wider text-violet-700">Using template</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-violet-300">Using template</div>
               <div className="text-sm font-semibold mt-0.5">{template.title}</div>
-              <div className="text-xs text-neutral-600 mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 Look, shape and brief pre-filled — change anything below.
               </div>
             </div>
             <button
               onClick={() => navigate({ to: "/projects/new", search: {} as never })}
-              className="text-xs text-neutral-500 hover:text-neutral-900 shrink-0"
+              className="text-xs text-muted-foreground hover:text-foreground shrink-0"
             >
               Clear
             </button>
           </div>
         )}
 
-        <div className="mt-8 space-y-8">
-          <section className="bg-white border border-black/5 rounded-2xl p-6">
-            <h2 className="text-sm font-semibold">1. Title & format</h2>
-            <div className="grid gap-4 mt-4 sm:grid-cols-2">
+        <div className="mt-8 space-y-5 pb-24 sm:pb-0">
+          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">1</span>Title & format</h2>
+            <div className="grid grid-cols-1 gap-4 mt-4 sm:grid-cols-2 [&>*]:min-w-0">
               <div className="sm:col-span-2 space-y-1.5">
                 <Label htmlFor="title">Project title</Label>
                 <Input
@@ -274,15 +275,15 @@ function NewProject() {
             </div>
           </section>
 
-          <section className="bg-white border border-black/5 rounded-2xl p-6">
-            <h2 className="text-sm font-semibold">2. Upload your clips</h2>
-            <p className="text-xs text-neutral-500 mt-1">
+          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">2</span>Upload your clips</h2>
+            <p className="text-xs text-muted-foreground mt-1">
               Your talking clips (A-roll) and any B-roll. They go on the timeline in the order
               you add them; mark each one or leave it on auto-detect.
             </p>
             <div
-              className={`mt-4 border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-                dragOver ? "border-[#7C3AED] bg-violet-50" : "border-black/10 hover:border-black/25"
+              className={`mt-4 border-2 border-dashed rounded-2xl px-6 py-10 sm:py-12 text-center cursor-pointer transition-colors ${
+                dragOver ? "border-primary bg-primary/10" : "border-white/15 bg-white/[0.02] hover:border-primary/60 hover:bg-primary/[0.04]"
               }`}
               onClick={() => inputRef.current?.click()}
               onDragOver={(e) => {
@@ -296,9 +297,11 @@ function NewProject() {
                 addFiles(e.dataTransfer.files);
               }}
             >
-              <UploadCloud className="mx-auto w-8 h-8 text-neutral-400" />
-              <p className="mt-3 text-sm font-medium">Drop videos or click to browse</p>
-              <p className="text-xs text-neutral-500 mt-1">
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-primary/15 border border-primary/30 grid place-items-center">
+                <UploadCloud className="w-6 h-6 text-primary-glow" />
+              </div>
+              <p className="mt-4 text-base font-semibold">Drop videos or click to browse</p>
+              <p className="text-xs text-muted-foreground mt-1">
                 MP4, MOV, WebM · up to {MAX_UPLOAD_MB} MB per clip
               </p>
               <input
@@ -312,17 +315,17 @@ function NewProject() {
             </div>
 
             {files.length > 0 && (
-              <ul className="mt-4 divide-y divide-black/5 border border-black/5 rounded-xl">
+              <ul className="mt-4 divide-y divide-border border border-border rounded-xl">
                 {files.map((f) => (
                   <li key={f.id} className="flex items-center gap-3 p-3">
-                    <div className="w-9 h-9 grid place-items-center rounded-md bg-neutral-100">
-                      <Film className="w-4 h-4 text-neutral-500" />
+                    <div className="w-9 h-9 grid place-items-center rounded-md bg-surface-2">
+                      <Film className="w-4 h-4 text-muted-foreground" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{f.file.name}</div>
-                      <div className="text-xs text-neutral-500">
+                      <div className="text-xs text-muted-foreground">
                         {(f.file.size / 1024 / 1024).toFixed(1)} MB
-                        {f.error && <span className="text-red-600 ml-2">· {f.error}</span>}
+                        {f.error && <span className="text-red-400 ml-2">· {f.error}</span>}
                       </div>
                     </div>
                     <Select value={f.role} onValueChange={(v) => setRole(f.id, v as PendingFile["role"])}>
@@ -337,9 +340,9 @@ function NewProject() {
                     </Select>
                     <button
                       onClick={() => removeFile(f.id)}
-                      className="p-1.5 rounded-md hover:bg-black/5"
+                      className="p-1.5 rounded-md hover:bg-white/5"
                     >
-                      <X className="w-4 h-4 text-neutral-500" />
+                      <X className="w-4 h-4 text-muted-foreground" />
                     </button>
                   </li>
                 ))}
@@ -347,9 +350,9 @@ function NewProject() {
             )}
           </section>
 
-          <section className="bg-white border border-black/5 rounded-2xl p-6">
-            <h2 className="text-sm font-semibold">3. Script (optional)</h2>
-            <p className="text-xs text-neutral-500 mt-1">
+          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">3</span>Script (optional)</h2>
+            <p className="text-xs text-muted-foreground mt-1">
               Paste the script if you have one. The AI reads it alongside what you actually say
               when it plans the graphics and writes your opening hook.
             </p>
@@ -361,9 +364,9 @@ function NewProject() {
             />
           </section>
 
-          <section className="bg-white border border-black/5 rounded-2xl p-6">
-            <h2 className="text-sm font-semibold">4. Brief the edit (optional)</h2>
-            <p className="text-xs text-neutral-500 mt-1">
+          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
+            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">4</span>Brief the edit (optional)</h2>
+            <p className="text-xs text-muted-foreground mt-1">
               Tell the AI which graphics you want and how fast. Captions, music and cuts are
               set in the editor.
             </p>
@@ -375,12 +378,12 @@ function NewProject() {
             />
           </section>
 
-          <div className="flex justify-end gap-3">
+          <div className="fixed sm:static inset-x-0 bottom-0 z-20 flex justify-end gap-3 border-t sm:border-0 border-border bg-background/90 sm:bg-transparent backdrop-blur-xl sm:backdrop-blur-none px-4 py-3 sm:p-0">
             <Button variant="ghost" onClick={() => navigate({ to: "/dashboard" })}>
               Cancel
             </Button>
-            <Button onClick={() => submit.mutate()} disabled={submit.isPending || !ws.canEdit}>
-              {submit.isPending && <Loader2 className="animate-spin" />}
+            <Button size="lg" className="rounded-full px-6 flex-1 sm:flex-none" onClick={() => submit.mutate()} disabled={submit.isPending || !ws.canEdit}>
+              {submit.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
               Create project
             </Button>
           </div>

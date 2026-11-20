@@ -51,11 +51,11 @@ export const Route = createFileRoute("/_authenticated/projects/")({
 type StatusKey = "draft" | "queued" | "processing" | "ready" | "failed";
 
 const STATUS_META: Record<StatusKey, { label: string; className: string; dot: string }> = {
-  draft: { label: "Draft", className: "bg-neutral-100 text-neutral-600", dot: "bg-neutral-400" },
-  queued: { label: "Queued", className: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
-  processing: { label: "Rendering", className: "bg-blue-50 text-blue-700", dot: "bg-blue-500 animate-pulse" },
-  ready: { label: "Ready", className: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
-  failed: { label: "Failed", className: "bg-red-50 text-red-700", dot: "bg-red-500" },
+  draft: { label: "Draft", className: "bg-surface-2 text-muted-foreground", dot: "bg-muted-foreground/60" },
+  queued: { label: "Queued", className: "bg-amber-500/10 text-amber-300", dot: "bg-amber-500" },
+  processing: { label: "Rendering", className: "bg-blue-500/10 text-blue-300", dot: "bg-blue-500 animate-pulse" },
+  ready: { label: "Ready", className: "bg-emerald-500/10 text-emerald-300", dot: "bg-emerald-500" },
+  failed: { label: "Failed", className: "bg-red-500/10 text-red-300", dot: "bg-red-500" },
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -75,7 +75,7 @@ function ProjectThumb({ ratio, title, src }: { ratio: string; title: string; src
   const hue2 = (hue1 + 60) % 360;
   const box = ratio === "9:16" ? "aspect-[9/16]" : ratio === "1:1" ? "aspect-square" : "aspect-video";
   return (
-    <div className={cn("relative w-full overflow-hidden rounded-lg bg-neutral-900", box)}
+    <div className={cn("relative w-full overflow-hidden rounded-lg bg-surface-2", box)}
       style={src ? undefined : { background: `linear-gradient(135deg, hsl(${hue1} 70% 55%), hsl(${hue2} 65% 40%))` }}>
       {src ? (
         <img src={src} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
@@ -154,11 +154,11 @@ function ProjectsPage() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="p-1.5 rounded-md hover:bg-black/5"
+            className="p-1.5 rounded-md hover:bg-white/5"
             onClick={(e) => e.stopPropagation()}
             aria-label={`More for ${p.title}`}
           >
-            <MoreHorizontal className="w-4 h-4 text-neutral-500" />
+            <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -186,7 +186,7 @@ function ProjectsPage() {
           {(intoTeams.length > 0 || outOfTeam) && p.can_delete && <DropdownMenuSeparator />}
           {p.can_delete && (
             <DropdownMenuItem
-              className="text-red-600"
+              className="text-red-400"
               onClick={(e) => {
                 e.stopPropagation();
                 if (confirm(`Delete "${p.title}"?`)) onDelete();
@@ -252,14 +252,14 @@ function ProjectsPage() {
       actions={<Button onClick={() => navigate({ to: "/projects/new" })} disabled={!ws.canEdit}><Plus className="w-4 h-4" /> New project</Button>}
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <div className="flex flex-wrap items-center gap-1 bg-white border border-black/5 rounded-lg p-1">
+        <div className="flex flex-wrap items-center gap-1 bg-card border border-border rounded-lg p-1">
           {filterTabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setFilter(t.key)}
               className={cn(
                 "px-3 h-8 text-xs font-medium rounded-md transition-colors",
-                filter === t.key ? "bg-neutral-900 text-white" : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100",
+                filter === t.key ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground hover:bg-surface-2",
               )}
             >{t.label}</button>
           ))}
@@ -267,70 +267,70 @@ function ProjectsPage() {
 
         <div className="flex items-center gap-2">
           <div className="relative flex-1 sm:w-64">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Filter by title…"
-              className="pl-8 h-9 text-sm bg-white border-black/10 focus:border-black/30"
+              className="pl-8 h-9 text-sm bg-card border-border focus:border-white/15"
             />
           </div>
-          <div className="hidden sm:flex items-center bg-white border border-black/5 rounded-md p-0.5">
+          <div className="hidden sm:flex items-center bg-card border border-border rounded-md p-0.5">
             <button onClick={() => setView("grid")}
-              className={cn("w-8 h-8 grid place-items-center rounded", view === "grid" ? "bg-neutral-900 text-white" : "text-neutral-500")}
+              className={cn("w-8 h-8 grid place-items-center rounded", view === "grid" ? "bg-foreground text-background" : "text-muted-foreground")}
               aria-label="Grid view"><LayoutGrid className="w-4 h-4" /></button>
             <button onClick={() => setView("list")}
-              className={cn("w-8 h-8 grid place-items-center rounded", view === "list" ? "bg-neutral-900 text-white" : "text-neutral-500")}
+              className={cn("w-8 h-8 grid place-items-center rounded", view === "list" ? "bg-foreground text-background" : "text-muted-foreground")}
               aria-label="List view"><Rows3 className="w-4 h-4" /></button>
           </div>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-44 bg-white border border-black/5 rounded-2xl animate-pulse" />
+            <div key={i} className="h-44 bg-card border border-border rounded-2xl animate-pulse" />
           ))}
         </div>
       ) : !data || data.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-black/10 bg-white p-12 text-center">
-          <div className="mx-auto w-11 h-11 rounded-full bg-violet-50 text-violet-600 grid place-items-center mb-3">
+        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
+          <div className="mx-auto w-11 h-11 rounded-full bg-violet-500/10 text-violet-400 grid place-items-center mb-3">
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="text-sm font-medium">No projects yet.</div>
-          <div className="text-xs text-neutral-500 mt-1">Start your first short — usually done in under 5 minutes.</div>
+          <div className="text-xs text-muted-foreground mt-1">Start your first short — usually done in under 5 minutes.</div>
           <Button className="mt-5" onClick={() => navigate({ to: "/projects/new" })}>
             <Plus className="w-4 h-4" /> New project
           </Button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="border border-dashed border-black/10 rounded-2xl p-12 text-center bg-white">
-          <div className="mx-auto w-10 h-10 grid place-items-center rounded-full bg-neutral-100 mb-3">
-            <Search className="w-4 h-4 text-neutral-500" />
+        <div className="border border-dashed border-border rounded-2xl p-12 text-center bg-card">
+          <div className="mx-auto w-10 h-10 grid place-items-center rounded-full bg-surface-2 mb-3">
+            <Search className="w-4 h-4 text-muted-foreground" />
           </div>
           <div className="text-sm font-medium">No matching projects</div>
-          <div className="text-xs text-neutral-500 mt-1">Try a different filter or search term.</div>
+          <div className="text-xs text-muted-foreground mt-1">Try a different filter or search term.</div>
         </div>
       ) : view === "grid" ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((p) => (
-            <div key={p.id} className="group relative bg-white border border-black/5 rounded-2xl p-4 hover:border-black/20 hover:shadow-[0_4px_20px_-8px_rgba(0,0,0,0.1)] transition-all">
+            <div key={p.id} className="group relative bg-card border border-border rounded-2xl p-2.5 sm:p-3 hover:border-primary/40 hover:bg-surface transition-all">
               <Link to="/projects/$projectId" params={{ projectId: p.id }} className="absolute inset-0 rounded-2xl" aria-label={p.title} />
               <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
-              <div className="mt-4 flex items-start justify-between gap-2">
+              <div className="mt-3 flex items-start justify-between gap-2 px-0.5">
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-sm truncate">{p.title}</div>
-                  <div className="text-[11px] text-neutral-500 mt-0.5 flex items-center gap-1.5">
+                  <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
                     <Clock className="w-3 h-3" />
                     {formatDistanceToNow(new Date(p.created_at), { addSuffix: true })}
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <ArrowUpRight className="w-4 h-4 text-muted-foreground/70 opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5 px-0.5">
                 <StatusPill status={p.status} />
                 <div className="relative z-10 flex items-center gap-1">
-                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-medium">{presetLabel(p.style_preset)}</span>
+                  <span className="hidden sm:inline text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">{presetLabel(p.style_preset)}</span>
                   <ProjectMenu p={p} onDelete={() => del.mutate(p.id)} onMove={(to) => move.mutate({ id: p.id, to })} />
                 </div>
               </div>
@@ -338,24 +338,24 @@ function ProjectsPage() {
           ))}
         </div>
       ) : (
-        <div className="bg-white border border-black/5 rounded-2xl overflow-hidden">
-          <div className="hidden md:grid grid-cols-[1fr_120px_120px_140px_40px] gap-4 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-neutral-500 border-b border-black/5 bg-neutral-50">
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="hidden md:grid grid-cols-[1fr_120px_120px_140px_40px] gap-4 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground border-b border-border bg-surface">
             <div>Project</div><div>Status</div><div>Format</div><div>Created</div><div />
           </div>
-          <ul className="divide-y divide-black/5">
+          <ul className="divide-y divide-border">
             {filtered.map((p) => (
-              <li key={p.id} className="group relative grid grid-cols-[1fr_auto] md:grid-cols-[1fr_120px_120px_140px_40px] gap-3 md:gap-4 items-center px-4 py-3 hover:bg-neutral-50 transition-colors">
+              <li key={p.id} className="group relative grid grid-cols-[1fr_auto] md:grid-cols-[1fr_120px_120px_140px_40px] gap-3 md:gap-4 items-center px-4 py-3 hover:bg-surface transition-colors">
                 <Link to="/projects/$projectId" params={{ projectId: p.id }} className="absolute inset-0" aria-label={p.title} />
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-md overflow-hidden shrink-0"><ProjectThumb ratio="1:1" title={p.title} src={p.thumbnail_signed_url} /></div>
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{p.title}</div>
-                    <div className="text-[11px] text-neutral-500 truncate">{presetLabel(p.style_preset)}</div>
+                    <div className="text-[11px] text-muted-foreground truncate">{presetLabel(p.style_preset)}</div>
                   </div>
                 </div>
                 <div className="hidden md:block"><StatusPill status={p.status} /></div>
-                <div className="hidden md:block text-xs text-neutral-500">{p.aspect_ratio}</div>
-                <div className="hidden md:block text-xs text-neutral-500">{formatDistanceToNow(new Date(p.created_at), { addSuffix: true })}</div>
+                <div className="hidden md:block text-xs text-muted-foreground">{p.aspect_ratio}</div>
+                <div className="hidden md:block text-xs text-muted-foreground">{formatDistanceToNow(new Date(p.created_at), { addSuffix: true })}</div>
                 <div className="relative z-10 justify-self-end">
                   <ProjectMenu p={p} onDelete={() => del.mutate(p.id)} onMove={(to) => move.mutate({ id: p.id, to })} />
                 </div>

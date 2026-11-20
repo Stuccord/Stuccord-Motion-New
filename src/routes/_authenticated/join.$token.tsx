@@ -50,32 +50,32 @@ function JoinPage() {
 
   return (
     <AppShell title="Join a team">
-      <div className="max-w-md mx-auto rounded-2xl bg-white border border-black/5 p-6 text-center space-y-4">
+      <div className="max-w-md mx-auto rounded-2xl bg-card border border-border p-6 text-center space-y-4">
         {q.isLoading ? (
-          <div className="flex items-center justify-center gap-2 text-sm text-neutral-500 py-4">
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
             <Loader2 className="w-4 h-4 animate-spin" /> Opening the invite…
           </div>
         ) : problem || !inv?.valid ? (
           <>
             <AlertTriangle className="w-6 h-6 text-amber-500 mx-auto" />
-            <p className="text-sm text-neutral-700">{problem}</p>
+            <p className="text-sm text-foreground/80">{problem}</p>
             <Button asChild size="sm" variant="outline">
               <Link to="/dashboard">Go home</Link>
             </Button>
           </>
         ) : (
           <>
-            <div className="w-12 h-12 rounded-xl bg-violet-100 text-violet-700 grid place-items-center mx-auto">
+            <div className="w-12 h-12 rounded-xl bg-violet-500/15 text-violet-300 grid place-items-center mx-auto">
               <Users className="w-6 h-6" />
             </div>
             <div>
               <div className="text-lg font-semibold">{inv.teamName}</div>
-              <p className="text-sm text-neutral-600 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {inv.invitedBy ? `${inv.invitedBy} invited you` : "You're invited"} to join as{" "}
                 {/^[AEIOU]/.test(ROLE_LABEL[inv.role]) ? "an" : "a"}{" "}
                 <span className="font-medium">{ROLE_LABEL[inv.role]}</span>.
               </p>
-              <p className="text-xs text-neutral-500 mt-1">{ROLE_HINT[inv.role]}.</p>
+              <p className="text-xs text-muted-foreground mt-1">{ROLE_HINT[inv.role]}.</p>
             </div>
             {inv.alreadyMember ? (
               <Button asChild>
@@ -84,7 +84,7 @@ function JoinPage() {
                 </Link>
               </Button>
             ) : inv.full ? (
-              <p className="text-sm text-amber-700">
+              <p className="text-sm text-amber-300">
                 This team is full on its plan. Ask one of its admins to make room.
               </p>
             ) : (
