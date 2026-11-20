@@ -332,6 +332,9 @@ function MakePage() {
     }
   };
 
+  /** Renders the same edit again (after an app update, or if a render came out wrong). */
+  const renderAgain = () => fix(async () => {});
+
   const changeLook = (look: MotionLook) =>
     fix(async () => {
       const st = await fetchPlan({ data: { project_id: projectId } });
@@ -423,6 +426,19 @@ function MakePage() {
 
               <div className="rounded-xl border border-black/5 bg-white p-3 space-y-2">
                 <div className="text-xs font-semibold">Not quite right?</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={renderAgain}
+                  disabled={busy}
+                  data-render-again
+                >
+                  <Film /> Render again
+                </Button>
+                <p className="text-[11px] text-neutral-500">
+                  The same edit, rendered fresh (uses an export).
+                </p>
                 <Button
                   variant="outline"
                   size="sm"
