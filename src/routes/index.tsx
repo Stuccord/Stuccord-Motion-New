@@ -15,7 +15,6 @@ import {
   Minus,
   Sparkles,
   Upload,
-  MousePointer2,
   Layers,
 } from "lucide-react";
 import logoUrl from "@/assets/logo.png";
@@ -26,12 +25,6 @@ import creatorPortrait from "@/assets/creator-portrait.jpg";
 import editingDesk from "@/assets/editing-desk.jpg";
 import btsStudio from "@/assets/bts-studio.jpg";
 import phoneShort from "@/assets/phone-short.jpg";
-import creator2 from "@/assets/creator-2.jpg";
-import creator3 from "@/assets/creator-3.jpg";
-import deskOverhead from "@/assets/desk-overhead.jpg";
-import phoneCaptions from "@/assets/phone-captions.jpg";
-import studioMics from "@/assets/studio-mics.jpg";
-import cameraLens from "@/assets/camera-lens.jpg";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -135,97 +128,75 @@ function Hero() {
       <div className="pointer-events-none absolute inset-0 bg-aurora opacity-70" />
       <div className="pointer-events-none absolute inset-0 bg-grid opacity-25 [mask-image:radial-gradient(ellipse_at_top,black_20%,transparent_70%)]" />
       <div className="pointer-events-none absolute -top-32 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-primary/25 blur-[120px]" />
-      <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-16 md:pb-24 md:pt-24">
-        {/* Top badge */}
-        <div className="animate-fade-up">
-          <a
-            href="#workflow"
-            className="group inline-flex items-center gap-2 rounded-full border border-primary/25 bg-surface/70 px-1 py-1 pr-3 text-xs text-foreground/80 shadow-[0_1px_0_0_rgb(255_255_255/0.04),0_0_24px_-8px_color-mix(in_oklab,var(--color-primary)_60%,transparent)] backdrop-blur-md transition-colors hover:bg-surface"
-          >
-            <span className="rounded-full bg-gradient-to-r from-primary to-primary-glow px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-primary-foreground">
-              New
-            </span>
-            <span className="text-foreground">Script-aware edits are live</span>
-            <ArrowUpRight className="h-3 w-3 text-primary-glow transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-          </a>
-        </div>
-
-        {/* Headline */}
-        <h1 className="mt-8 max-w-5xl text-balance font-display text-[44px] font-semibold leading-[0.98] tracking-[-0.035em] text-foreground sm:text-6xl md:text-[88px]">
-          Talking-head footage in.{" "}
-          <span className="relative inline-block">
-            <span className="relative z-10">Edited like the pros</span>
-            <svg
-              className="absolute -bottom-1 left-0 h-2.5 w-full text-primary md:-bottom-2 md:h-4"
-              viewBox="0 0 300 12"
-              preserveAspectRatio="none"
-              fill="none"
+      <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-12 md:pb-24 md:pt-20">
+        <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-10">
+          <div className="animate-fade-up">
+            <a
+              href="#workflow"
+              className="group inline-flex items-center gap-2 rounded-full border border-primary/25 bg-surface/70 px-1 py-1 pr-3 text-xs text-foreground/80 backdrop-blur-md transition-colors hover:bg-surface"
             >
-              <path
-                d="M2 8 Q 75 2, 150 6 T 298 4"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>{" "}
-          <span className="text-gradient-violet">out.</span>
-        </h1>
+              <span className="rounded-full bg-gradient-to-r from-primary to-primary-glow px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-primary-foreground">
+                New
+              </span>
+              <span className="text-foreground">The edit now makes itself</span>
+              <ArrowUpRight className="h-3 w-3 text-primary-glow transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </a>
 
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <div className="hairline flex items-center gap-2 rounded-md bg-surface px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
-            <Upload className="h-3 w-3" />
-            <span>Drop a .mp4</span>
-            <span className="text-hairline">·</span>
-            <span>first edit in minutes</span>
+            <h1 className="mt-7 font-display text-[50px] font-bold leading-[0.95] tracking-[-0.04em] text-foreground sm:text-7xl lg:text-[84px]">
+              Upload the take.
+              <br />
+              <span className="text-gradient-violet">Get the edit.</span>
+            </h1>
+
+            <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-muted-foreground">
+              Stuccord turns a raw talking-head video into a finished motion-graphics edit:
+              captions, graphics on your words, AI story scenes, zooms and studio sound. Made for
+              you, automatically. Download it, or change anything first.
+            </p>
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <a
+                href="/auth"
+                className="group inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-primary-glow px-7 py-3.5 text-[15px] font-semibold text-primary-foreground shadow-[0_10px_40px_-10px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] transition-all hover:-translate-y-px hover:shadow-[0_16px_50px_-10px_color-mix(in_oklab,var(--color-primary)_85%,transparent)]"
+              >
+                <Sparkles className="h-4 w-4" />
+                Make my first video, free
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </a>
+              <a
+                href="#compare"
+                className="group inline-flex items-center justify-center gap-2 rounded-full border border-hairline bg-surface/60 px-6 py-3.5 text-[15px] font-medium text-foreground backdrop-blur-md transition-colors hover:border-primary/40 hover:bg-surface"
+              >
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground">
+                  <Play className="h-2.5 w-2.5 translate-x-px" fill="currentColor" />
+                </span>
+                See before and after
+              </a>
+            </div>
+
+            <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-muted-foreground">
+              {["No card", "No watermark", "Your footage never trains AI"].map((t) => (
+                <li key={t} className="flex items-center gap-1.5">
+                  <Check className="h-3.5 w-3.5 text-primary-glow" />
+                  {t}
+                </li>
+              ))}
+            </ul>
           </div>
+
+          <AutoEditDemo />
         </div>
 
-
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <a
-            href="/auth"
-            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-gradient-to-r from-primary to-primary-glow px-6 py-3 text-sm font-medium text-primary-foreground shadow-[0_10px_40px_-10px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] transition-all hover:-translate-y-px hover:shadow-[0_16px_50px_-10px_color-mix(in_oklab,var(--color-primary)_85%,transparent)]"
-          >
-            <Sparkles className="relative z-10 h-4 w-4" />
-            <span className="relative z-10">Edit my first short — free</span>
-            <ArrowRight className="relative z-10 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-          </a>
-          <a
-            href="#compare"
-            className="group inline-flex items-center gap-2 rounded-full border border-hairline bg-surface/60 px-6 py-3 text-sm font-medium text-foreground backdrop-blur-md transition-colors hover:bg-surface hover:border-primary/40"
-          >
-            <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_0_16px_-2px_color-mix(in_oklab,var(--color-primary)_80%,transparent)]">
-              <Play className="h-2.5 w-2.5 translate-x-px" fill="currentColor" />
-            </span>
-            Watch raw vs. edited
-          </a>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary-glow shadow-[0_0_8px_color-mix(in_oklab,var(--color-primary-glow)_80%,transparent)]" />
-            No card · No watermark · Own every export
-          </div>
-        </div>
-
-        {/* Signature product mock */}
-        <div className="mt-16">
-          <ShortsViewer />
-        </div>
-
-        {/* Micro stats strip */}
-        <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-hairline bg-hairline text-center md:grid-cols-4">
+        <dl className="mt-16 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-hairline bg-hairline text-center md:grid-cols-4">
           {[
-            ["9:16 · 1:1 · 16:9", "video shapes"],
-            ["Word by word", "captions"],
+            ["Automatic", "upload to finished edit"],
             ["16", "motion graphic types"],
-            ["100%", "editable before export"],
+            ["Word by word", "captions"],
+            ["Studio", "voice cleanup & mastering"],
           ].map(([v, l]) => (
-            <div key={l} className="bg-background px-4 py-4">
-              <dt className="font-display text-xl font-semibold tracking-tight text-foreground">
-                {v}
-              </dt>
-              <dd className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                {l}
-              </dd>
+            <div key={l} className="bg-background px-4 py-5">
+              <dt className="font-display text-xl font-bold tracking-tight text-foreground">{v}</dt>
+              <dd className="mt-1 text-[12px] text-muted-foreground">{l}</dd>
             </div>
           ))}
         </dl>
@@ -235,231 +206,92 @@ function Hero() {
 }
 
 /* ============================================================
-   Shorts viewer — 9:16 creator-style short mock
+   Auto-edit demo: the make page's checklist ending in a video
    ============================================================ */
-function ShortsViewer() {
+const AUTO_STEPS = [
+  { label: "Transcribing what you say", icon: FileText },
+  { label: "Planning the graphics", icon: Layers },
+  { label: "Making the story scenes", icon: Film },
+  { label: "Mixing and mastering the sound", icon: Volume2 },
+  { label: "Rendering your video", icon: Zap },
+];
+
+function AutoEditDemo() {
+  // The steps light up one by one, the video arrives, then it starts over.
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setStep((s) => (s + 1) % (AUTO_STEPS.length + 4)), 1100);
+    return () => clearInterval(id);
+  }, []);
+  const done = step >= AUTO_STEPS.length;
+
   return (
-    <div className="relative">
-      {/* Floating cursor accent */}
-      <div className="pointer-events-none absolute -left-6 top-[8%] hidden md:block">
-        <div className="flex items-center gap-1.5 rounded-md bg-primary px-2 py-1 font-mono text-[10px] font-medium text-primary-foreground shadow-lg">
-          <MousePointer2 className="h-3 w-3" fill="currentColor" />
-          stuccord AI
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-hairline bg-background shadow-[0_30px_80px_-30px_rgba(0,0,0,0.2),0_1px_0_0_rgba(0,0,0,0.04)]">
-        {/* Chrome */}
-        <div className="flex items-center justify-between border-b border-hairline bg-surface px-3.5 py-2">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-hairline" />
-            <span className="h-2.5 w-2.5 rounded-full bg-hairline" />
-            <span className="h-2.5 w-2.5 rounded-full bg-hairline" />
+    <div className="relative mx-auto w-full max-w-[460px] animate-fade-up">
+      <div className="pointer-events-none absolute -inset-8 rounded-[40px] bg-primary/20 blur-3xl" />
+      <div className="relative grid grid-cols-1 items-end gap-5 sm:grid-cols-[1fr_auto] sm:gap-4">
+        <div className="relative z-10 rounded-2xl border border-hairline bg-surface/90 p-4 shadow-2xl backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-display text-[15px] font-bold tracking-tight text-foreground">
+              {done ? "Your video is ready" : "Making your video"}
+            </span>
+            <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary-glow">
+              {done ? "Done" : "Automatic"}
+            </span>
           </div>
-          <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
-            <span>hook_v2.short</span>
-            <span className="text-hairline">·</span>
-            <span className="text-foreground">saved 2s ago</span>
-          </div>
-          <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-            <span className="h-1.5 w-1.5 animate-blink rounded-full bg-primary" />
-            <span>edit 00:37 / 00:58</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-12">
-          {/* Left — transcript / script */}
-          <aside className="col-span-12 hidden border-r border-hairline bg-surface/60 p-4 md:col-span-3 md:block">
-            <div className="mb-3 flex items-center justify-between font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-              <span>Script · read by AI</span>
-              <span className="rounded-sm bg-primary/12 px-1 py-0.5 text-primary">
-                live
-              </span>
-            </div>
-            <div className="space-y-2.5 font-mono text-[11px] leading-relaxed">
-              <p className="text-muted-foreground">
-                <span className="text-foreground">Everyone tells you to</span>{" "}
-                <span className="rounded bg-foreground px-1 text-background">
-                  post more
-                </span>
-                .
-              </p>
-              <p className="text-muted-foreground">
-                <span className="text-foreground">That&rsquo;s not the problem.</span>
-              </p>
-              <p className="rounded-sm border border-primary/40 bg-primary/8 p-2 text-foreground">
-                The problem is you&rsquo;re editing your{" "}
-                <span className="text-primary">own</span> content.
-                <span className="ml-0.5 inline-block h-3 w-[2px] translate-y-0.5 animate-blink bg-primary" />
-              </p>
-              <p className="text-muted-foreground/60">
-                And every hour you spend in Premiere is an hour you&rsquo;re not…
-              </p>
-            </div>
-
-            <div className="mt-5 space-y-2">
-              <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-                AI is placing
-              </div>
-              {[
-                ["Zoom punch", "on \u201cpost more\u201d"],
-                ["Key line", "on \u201cyour own content\u201d"],
-                ["SFX · whoosh", "at 00:04.2"],
-                ["Music dip", "under your voice"],
-              ].map(([k, v]) => (
-                <div
-                  key={k}
-                  className="flex items-start gap-2 rounded border border-hairline bg-background px-2 py-1.5"
-                >
-                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-medium text-foreground">
-                      {k}
-                    </div>
-                    <div className="truncate font-mono text-[10px] text-muted-foreground">
-                      {v}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </aside>
-
-          {/* Center — 9:16 vertical preview */}
-          <div className="relative col-span-12 flex items-center justify-center bg-surface p-5 md:col-span-6 md:p-8">
-            <VerticalShort />
-          </div>
-
-          {/* Right — asset drawer */}
-          <aside className="col-span-12 hidden border-l border-hairline bg-surface/60 p-4 md:col-span-3 md:block">
-            <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-              Graphics planned
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                "linear-gradient(135deg,#1a1a1a,#3a3a3a)",
-                "linear-gradient(135deg,#7c3aed,#3a1a5a)",
-                "linear-gradient(135deg,#c67b5c,#3a2a2a)",
-                "linear-gradient(135deg,#0a0a0a,#2a2a4a)",
-              ].map((g, i) => (
-                <div
-                  key={i}
-                  className="relative aspect-video overflow-hidden rounded-sm border border-hairline"
-                  style={{ background: g }}
-                >
-                  <span className="absolute bottom-1 left-1 rounded bg-black/50 px-1 font-mono text-[8px] text-white backdrop-blur">
-                    0{i + 1}
-                  </span>
-                  {i === 1 && (
-                    <span className="absolute right-1 top-1 rounded-sm bg-primary px-1 font-mono text-[8px] text-primary-foreground">
-                      picked
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5 mb-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-              Music · ducked
-            </div>
-            <div className="rounded-sm border border-hairline bg-background p-2">
-              <div className="mb-1.5 flex items-center justify-between text-[11px]">
-                <span className="text-foreground">Neon Streets</span>
-                <span className="font-mono text-[9px] text-muted-foreground">
-                  118 bpm
-                </span>
-              </div>
-              <div className="flex h-8 items-center gap-[2px]">
-                {Array.from({ length: 32 }).map((_, i) => {
-                  const ducked = i > 8 && i < 24;
-                  const h = +(20 + Math.abs(Math.sin(i * 0.6)) * 70).toFixed(2);
-                  return (
-                    <span
-                      key={i}
-                      className="block w-full origin-bottom animate-waveform bg-foreground/50"
-                      style={{
-                        height: `${+(ducked ? h * 0.35 : h).toFixed(2)}%`,
-                        opacity: ducked ? 0.4 : 1,
-                        animationDelay: `${(i % 8) * 0.09}s`,
-                      }}
-                    />
-                  );
-                })}
-              </div>
-              <div className="mt-1 flex justify-between font-mono text-[9px] text-muted-foreground">
-                <span>VO in</span>
-                <span>VO out</span>
-              </div>
-            </div>
-
-            <div className="mt-5 mb-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-              Style preset
-            </div>
-            <div className="space-y-1 text-[11px]">
-              {[
-                ["Motion Explainer · glass", true],
-                ["Motion Explainer · paper", false],
-                ["Notes · split screen", false],
-              ].map(([n, active]) => (
-                <div
-                  key={n as string}
-                  className={
-                    "flex items-center gap-2 rounded px-1.5 py-1 " +
-                    (active
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground hover:bg-background")
-                  }
-                >
+          <ul className="mt-4 space-y-2.5">
+            {AUTO_STEPS.map((s, i) => {
+              const state = i < step ? "done" : i === step ? "active" : "waiting";
+              const Icon = s.icon;
+              return (
+                <li key={s.label} className="flex items-center gap-2.5 text-[13px]">
                   <span
                     className={
-                      "h-1.5 w-1.5 rounded-full " +
-                      (active ? "bg-primary" : "bg-hairline")
+                      "grid h-6 w-6 shrink-0 place-items-center rounded-full border transition-colors " +
+                      (state === "done"
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : state === "active"
+                          ? "border-primary/60 text-primary-glow"
+                          : "border-hairline text-muted-foreground/60")
                     }
-                  />
-                  <span className="truncate">{n as string}</span>
-                </div>
-              ))}
-            </div>
-          </aside>
+                  >
+                    {state === "done" ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Icon className="h-3 w-3" />
+                    )}
+                  </span>
+                  <span
+                    className={state === "waiting" ? "text-muted-foreground/70" : "text-foreground"}
+                  >
+                    {s.label}
+                  </span>
+                  {state === "active" && (
+                    <span className="ml-auto h-1.5 w-1.5 shrink-0 animate-blink rounded-full bg-primary-glow" />
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-4 h-1 overflow-hidden rounded-full bg-hairline">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-700"
+              style={{ width: `${Math.min(100, (step / AUTO_STEPS.length) * 100)}%` }}
+            />
+          </div>
         </div>
-
-        {/* Bottom transport */}
-        <div className="flex items-center justify-between gap-4 border-t border-hairline bg-surface px-4 py-3">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-foreground text-background">
-              <Play className="h-2.5 w-2.5 translate-x-px" fill="currentColor" />
-            </span>
-            <span className="font-mono text-[10px] tabular-nums text-foreground">
-              00:04.2 / 00:58.0
-            </span>
-          </div>
-          <div className="relative hidden h-1 flex-1 rounded-full bg-hairline sm:block">
-            <div className="absolute inset-y-0 left-0 w-[38%] rounded-full bg-foreground" />
-            {/* AI edit markers */}
-            {[12, 28, 46, 64, 82].map((p) => (
-              <span
-                key={p}
-                className="absolute top-1/2 -translate-y-1/2 h-2 w-[2px] bg-primary"
-                style={{ left: `${p}%` }}
-              />
-            ))}
-            <div className="absolute left-[38%] top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-[0_0_10px_2px_rgba(124,58,237,0.6)]" />
-          </div>
-          <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-            <span className="rounded border border-hairline bg-background px-1.5 py-0.5">
-              9:16
-            </span>
-            <span className="rounded border border-hairline bg-background px-1.5 py-0.5">
-              1080p
-            </span>
-            <span className="text-hairline">·</span>
-            <span>Ready to export</span>
-          </div>
+        <div
+          className={
+            "relative z-0 mx-auto w-[160px] transition-all duration-700 sm:mx-0 sm:w-[170px] " +
+            (done ? "translate-y-0 opacity-100" : "translate-y-3 opacity-60 blur-[1px]")
+          }
+        >
+          <VerticalShort />
         </div>
       </div>
     </div>
   );
 }
+
 
 /* Vertical 9:16 phone-style preview inside the editor */
 function VerticalShort() {
@@ -550,62 +382,6 @@ function VerticalShort() {
   );
 }
 
-/* ============================================================
-   FramesWall — full-bleed motion mosaic (parallax columns)
-   ============================================================ */
-function FramesWall() {
-  const colA = [creatorPortrait, editingDesk, phoneCaptions, studioMics, creator3];
-  const colB = [creator2, btsStudio, cameraLens, phoneShort, deskOverhead];
-  const colC = [creator3, phoneShort, creatorPortrait, editingDesk, studioMics];
-  const colD = [deskOverhead, phoneCaptions, btsStudio, creator2, cameraLens];
-  const cols = [
-    { imgs: colA, dir: "up", dur: 40 },
-    { imgs: colB, dir: "down", dur: 55 },
-    { imgs: colC, dir: "up", dur: 48 },
-    { imgs: colD, dir: "down", dur: 62 },
-  ] as const;
-
-  return (
-    <section
-      aria-hidden
-      className="relative overflow-hidden border-b border-hairline bg-black"
-    >
-      <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-b from-background via-transparent to-background" />
-      <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-24 bg-gradient-to-r from-background to-transparent md:w-40" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-24 bg-gradient-to-l from-background to-transparent md:w-40" />
-
-      <div className="relative grid h-[70vh] min-h-[520px] grid-cols-2 gap-2 p-2 md:grid-cols-4 md:gap-3 md:p-3">
-        {cols.map((c, idx) => (
-          <div key={idx} className="relative overflow-hidden rounded-md">
-            <div
-              className={c.dir === "up" ? "animate-scroll-up" : "animate-scroll-down"}
-              style={{ animationDuration: `${c.dur}s` }}
-            >
-              {[...c.imgs, ...c.imgs].map((src, i) => (
-                <div key={i} className="mb-2 md:mb-3">
-                  <img
-                    src={src}
-                    alt=""
-                    loading="lazy"
-                    className="h-[280px] w-full rounded-md object-cover md:h-[360px]"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Overlay type badge */}
-      <div className="pointer-events-none absolute inset-x-0 top-1/2 z-30 flex -translate-y-1/2 justify-center">
-        <div className="rounded-full border border-white/20 bg-black/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-white/80 backdrop-blur-md">
-          <span className="mr-2 inline-block h-1.5 w-1.5 animate-blink rounded-full bg-primary align-middle" />
-          live preview
-        </div>
-      </div>
-    </section>
-  );
-}
 
 
 
@@ -971,27 +747,21 @@ function Workflow() {
   const steps = [
     {
       k: "01",
-      title: "Drop your clips",
-      body: "One take or several. Videos, images and audio go on the timeline in the order you choose, with B-roll on its own track.",
-      detail: "MP4 · MOV · WebM · images · audio",
+      title: "Upload your take",
+      body: "One talking-head video, or several clips. Paste your script if you have one; it is optional. Pick a look, or let the template pick it.",
+      detail: "MP4 · MOV · WebM · 9:16 · 1:1 · 16:9",
     },
     {
       k: "02",
-      title: "Add your script (optional)",
-      body: "Paste it or skip it. Your words are transcribed either way; with a script, the graphics follow the lines you meant.",
-      detail: "Word-level transcript",
+      title: "Stuccord makes the edit",
+      body: "It transcribes you, plans motion graphics on your words, makes story scenes with AI, adds captions, zooms, sound effects and music, cleans up your voice and masters the sound. You watch it happen.",
+      detail: "Automatic · no editing skills needed",
     },
     {
       k: "03",
-      title: "AI edits like a pro",
-      body: "Trims the pauses, writes word-by-word captions, plans motion graphics on your words, adds zooms, sounds and music under your voice.",
-      detail: "Captions · graphics · zooms · sound",
-    },
-    {
-      k: "04",
-      title: "Tweak or ship",
-      body: "Every AI decision is something you can move, retype or delete. Then export an MP4 in 9:16, 1:1 or 16:9.",
-      detail: "MP4 · 1080p · 9:16 · 1:1 · 16:9",
+      title: "Download, or make it yours",
+      body: "Get the finished MP4 straight away. Or change the look, redo the graphics, or open the editor and move, retype or delete anything the AI did.",
+      detail: "MP4 · 1080p · no watermark",
     },
   ];
 
@@ -1005,10 +775,8 @@ function Workflow() {
           eyebrow="02 — How it works"
           title={
             <>
-              Raw take in.{" "}
-              <span className="text-muted-foreground">
-                Finished post out.
-              </span>
+              Three steps.{" "}
+              <span className="text-muted-foreground">You only do the first.</span>
             </>
           }
         />
@@ -1045,7 +813,7 @@ function Workflow() {
         <div
           ref={ref}
           className={
-            "mt-8 grid gap-3 md:grid-cols-4 " +
+            "mt-8 grid gap-3 md:grid-cols-3 " +
             (shown ? "animate-fade-up" : "opacity-0")
           }
         >
@@ -1073,6 +841,81 @@ function Workflow() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
+   Studio sound
+   ============================================================ */
+const SOUND_POINTS = [
+  {
+    title: "Your voice, cleaned up",
+    body: "Low rumble cut, room noise reduced, a touch of clarity and air, sibilance tamed, loud and soft words evened out.",
+  },
+  {
+    title: "Everything set around you",
+    body: "Your voice is measured and set first. Music sits well under it and dips while you talk; whooshes and pops land under your words, never over them.",
+  },
+  {
+    title: "Ready for every app",
+    body: "Every export is mastered to the loudness TikTok, Reels and YouTube play at, so it never sounds quiet next to everyone else.",
+  },
+];
+
+function StudioSound() {
+  const bars = [6, 10, 16, 24, 30, 22, 14, 26, 34, 28, 18, 12, 20, 30, 36, 26, 16, 10, 22, 28, 18, 12, 8, 14];
+  return (
+    <section id="sound" className="relative overflow-hidden border-b border-hairline">
+      <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-24 md:grid-cols-2 md:py-32">
+        <div>
+          <SectionEyebrow>Studio sound</SectionEyebrow>
+          <h2 className="mt-4 text-balance font-display text-4xl font-bold leading-[1.02] tracking-tight text-foreground md:text-5xl">
+            Sounds like it came from a studio.{" "}
+            <span className="text-muted-foreground">Because it went through one.</span>
+          </h2>
+          <ul className="mt-8 space-y-5">
+            {SOUND_POINTS.map((p) => (
+              <li key={p.title} className="flex gap-3">
+                <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary-glow">
+                  <Check className="h-3.5 w-3.5" />
+                </span>
+                <div>
+                  <div className="text-[15px] font-semibold text-foreground">{p.title}</div>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{p.body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-2xl border border-hairline bg-surface p-5 shadow-2xl">
+          {[
+            { name: "Voice", hint: "cleaned · levelled", scale: 1, tone: "from-primary to-primary-glow" },
+            { name: "Music", hint: "under the voice · ducks", scale: 0.35, tone: "from-primary/40 to-primary/20" },
+            { name: "Sound effects", hint: "on the graphics", scale: 0.5, tone: "from-primary-glow/70 to-primary/30" },
+          ].map((t) => (
+            <div key={t.name} className="border-b border-hairline py-4 last:border-0">
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="font-medium text-foreground">{t.name}</span>
+                <span className="text-muted-foreground">{t.hint}</span>
+              </div>
+              <div className="mt-3 flex h-10 items-center gap-[3px]">
+                {bars.map((h, i) => (
+                  <span
+                    key={i}
+                    className={"w-full rounded-full bg-gradient-to-t " + t.tone}
+                    style={{ height: `${Math.max(3, h * t.scale)}px` }}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="mt-2 flex items-center justify-between rounded-lg bg-background px-3 py-2.5 text-[12px]">
+            <span className="text-muted-foreground">Master</span>
+            <span className="font-medium text-foreground">Mastered for TikTok, Reels and YouTube</span>
+          </div>
         </div>
       </div>
     </section>
@@ -1326,6 +1169,10 @@ const FAQS = [
   {
     q: "Do I really not need to know how to edit?",
     a: "No. Upload your takes and, if you like, paste your script. Stuccord transcribes you, trims the pauses, writes captions, plans motion graphics on your words, and adds zooms, sounds and music. You can export straight away or change anything first.",
+  },
+  {
+    q: "How long does it take?",
+    a: "A short is usually ready a few minutes after it finishes uploading. Longer videos take longer. You can watch each step happen, and leave the page open while it works.",
   },
   {
     q: "Can I change what the AI did?",
@@ -1585,94 +1432,6 @@ function SectionHeader({
 /* ============================================================
    Page
    ============================================================ */
-/* ============================================================
-   Gallery — dual-row marquee of creator stills
-   ============================================================ */
-const GALLERY_ROW_A = [
-  { src: creatorPortrait, label: "TK_01 · hook" },
-  { src: deskOverhead, label: "BRL_04 · desk" },
-  { src: creator2, label: "TK_07 · VO" },
-  { src: phoneShort, label: "OUT_02 · 9:16" },
-  { src: btsStudio, label: "BRL_02 · studio" },
-  { src: cameraLens, label: "FX_01 · flare" },
-];
-
-const GALLERY_ROW_B = [
-  { src: creator3, label: "TK_09 · stream" },
-  { src: editingDesk, label: "BRL_01 · edit" },
-  { src: phoneCaptions, label: "OUT_05 · captions" },
-  { src: studioMics, label: "BRL_08 · mics" },
-  { src: creatorPortrait, label: "TK_02 · reax" },
-  { src: deskOverhead, label: "BRL_04 · desk" },
-];
-
-function Gallery() {
-  return (
-    <section id="gallery" className="relative overflow-hidden border-b border-hairline bg-surface">
-      <div className="mx-auto max-w-7xl px-5 pt-20 md:pt-28">
-        <SectionHeader
-          eyebrow="05 — Frames"
-          title={
-            <>
-              Made for people who talk to camera.{" "}
-              <span className="text-muted-foreground">Creators, coaches, founders, educators.</span>
-            </>
-          }
-        />
-      </div>
-
-      <div className="relative mt-12 space-y-4 pb-20 md:pb-28">
-        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-surface to-transparent" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-surface to-transparent" />
-
-        <MarqueeRow items={[...GALLERY_ROW_A, ...GALLERY_ROW_A]} direction="left" />
-        <MarqueeRow items={[...GALLERY_ROW_B, ...GALLERY_ROW_B]} direction="right" />
-      </div>
-    </section>
-  );
-}
-
-function MarqueeRow({
-  items,
-  direction,
-}: {
-  items: { src: string; label: string }[];
-  direction: "left" | "right";
-}) {
-  return (
-    <div className="flex overflow-hidden">
-      <div
-        className={
-          "flex shrink-0 gap-3 pr-3 " +
-          (direction === "left" ? "animate-marquee-left" : "animate-marquee-right")
-        }
-        style={{ animationDuration: "60s" }}
-      >
-        {items.map((item, i) => (
-          <figure
-            key={`${item.label}-${i}`}
-            className="group relative aspect-[4/3] w-[280px] shrink-0 overflow-hidden rounded-lg border border-hairline bg-background md:w-[360px]"
-          >
-            <img
-              src={item.src}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-            <figcaption className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white backdrop-blur">
-              {item.label}
-            </figcaption>
-            <span className="absolute right-2 top-2 rounded-sm bg-primary/90 px-1.5 py-0.5 font-mono text-[9px] font-medium uppercase tracking-widest text-primary-foreground">
-              Stuccord
-            </span>
-          </figure>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function Landing() {
 
   // Silence unused-import warnings for reserved icons kept for future sections.
@@ -1682,11 +1441,10 @@ function Landing() {
       <Nav />
       <main>
         <Hero />
-        <FramesWall />
-        <Features />
         <Workflow />
+        <Features />
+        <StudioSound />
         <Compare />
-        <Gallery />
         <Pricing />
         <FAQ />
         <CTA />
