@@ -16,6 +16,13 @@ import {
   Sparkles,
   Upload,
   Layers,
+  Captions,
+  ImagePlus,
+  Palette,
+  Redo2,
+  Scissors,
+  Undo2,
+  Wand2,
 } from "lucide-react";
 import logoUrl from "@/assets/logo.png";
 import { planFor } from "@/lib/plans";
@@ -125,56 +132,60 @@ function LogoMark({ className = "h-10 w-10" }: { className?: string }) {
 function Hero() {
   return (
     <section id="top" className="relative overflow-hidden border-b border-hairline">
-      <div className="pointer-events-none absolute inset-0 bg-aurora opacity-70" />
-      <div className="pointer-events-none absolute inset-0 bg-grid opacity-25 [mask-image:radial-gradient(ellipse_at_top,black_20%,transparent_70%)]" />
-      <div className="pointer-events-none absolute -top-32 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-primary/25 blur-[120px]" />
-      <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-12 md:pb-24 md:pt-20">
-        <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-10">
-          <div className="animate-fade-up">
-            <a
-              href="#workflow"
-              className="group inline-flex items-center gap-2 rounded-full border border-primary/25 bg-surface/70 px-1 py-1 pr-3 text-xs text-foreground/80 backdrop-blur-md transition-colors hover:bg-surface"
-            >
-              <span className="rounded-full bg-gradient-to-r from-primary to-primary-glow px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-primary-foreground">
-                New
-              </span>
-              <span className="text-foreground">The edit now makes itself</span>
-              <ArrowUpRight className="h-3 w-3 text-primary-glow transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-            </a>
+      <div className="pointer-events-none absolute inset-0 bg-aurora opacity-60" />
+      <div className="pointer-events-none absolute left-1/2 top-1/3 h-[560px] w-[900px] -translate-x-1/2 rounded-full bg-primary/20 blur-[140px]" />
+      <HeroCurve />
 
-            <h1 className="mt-7 font-display text-[50px] font-bold leading-[0.95] tracking-[-0.04em] text-foreground sm:text-7xl lg:text-[84px]">
-              Upload the take.
+      {/* One heading for readers and search; the split one below is its picture. */}
+      <h1 className="sr-only">Upload the take. Get the edit.</h1>
+
+      <div className="relative mx-auto max-w-7xl px-5 pb-14 pt-10 lg:pb-20 lg:pt-14">
+        <div className="flex justify-center lg:justify-start">
+          <a
+            href="#workflow"
+            className="group inline-flex items-center gap-2 rounded-full border border-primary/25 bg-surface/70 px-1 py-1 pr-3 text-xs text-foreground/80 backdrop-blur-md transition-colors hover:bg-surface"
+          >
+            <span className="rounded-full bg-gradient-to-r from-primary to-primary-glow px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-primary-foreground">
+              New
+            </span>
+            <span className="text-foreground">The edit now makes itself</span>
+            <ArrowUpRight className="h-3 w-3 text-primary-glow transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+          </a>
+        </div>
+
+        <div className="mt-8 grid items-center gap-10 lg:mt-6 lg:grid-cols-[1fr_auto_1fr] lg:gap-8">
+          {/* Left: the first half of the line, then the pitch and buttons. */}
+          <div className="text-center lg:text-left">
+            <div aria-hidden className={HERO_WORDS + " lg:text-right"}>
+              Upload
               <br />
-              <span className="text-gradient-violet">Get the edit.</span>
-            </h1>
-
-            <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-muted-foreground">
+              the take.
+            </div>
+            <div aria-hidden className={HERO_WORDS + " mt-1 lg:hidden"}>
+              Get the <SelectedWord>edit.</SelectedWord>
+            </div>
+            <p className="mx-auto mt-6 max-w-md text-[16px] leading-relaxed text-muted-foreground lg:ml-auto lg:mr-0 lg:text-right">
               Stuccord turns a raw talking-head video into a finished motion-graphics edit:
-              captions, graphics on your words, AI story scenes, zooms and studio sound. Made for
-              you, automatically. Download it, or change anything first.
+              captions, graphics on your words, AI story scenes, zooms and studio sound. Made
+              for you, automatically.
             </p>
-
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center lg:justify-end">
               <a
                 href="/auth"
-                className="group inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-primary-glow px-7 py-3.5 text-[15px] font-semibold text-primary-foreground shadow-[0_10px_40px_-10px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] transition-all hover:-translate-y-px hover:shadow-[0_16px_50px_-10px_color-mix(in_oklab,var(--color-primary)_85%,transparent)]"
+                className="group inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-primary-glow px-7 py-3.5 text-[15px] font-semibold text-primary-foreground shadow-[0_10px_40px_-10px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] transition-all hover:-translate-y-px"
               >
                 <Sparkles className="h-4 w-4" />
                 Make my first video, free
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </a>
               <a
                 href="#compare"
-                className="group inline-flex items-center justify-center gap-2 rounded-full border border-hairline bg-surface/60 px-6 py-3.5 text-[15px] font-medium text-foreground backdrop-blur-md transition-colors hover:border-primary/40 hover:bg-surface"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-hairline bg-surface/60 px-6 py-3.5 text-[15px] font-medium text-foreground backdrop-blur-md transition-colors hover:border-primary/40 hover:bg-surface"
               >
-                <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground">
-                  <Play className="h-2.5 w-2.5 translate-x-px" fill="currentColor" />
-                </span>
-                See before and after
+                <Play className="h-3.5 w-3.5 text-primary-glow" fill="currentColor" />
+                Before and after
               </a>
             </div>
-
-            <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-muted-foreground">
+            <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[13px] text-muted-foreground lg:justify-end">
               {["No card", "No watermark", "Your footage never trains AI"].map((t) => (
                 <li key={t} className="flex items-center gap-1.5">
                   <Check className="h-3.5 w-3.5 text-primary-glow" />
@@ -184,10 +195,78 @@ function Hero() {
             </ul>
           </div>
 
-          <AutoEditDemo />
+          {/* Centre: the phone, with the editor's pieces floating round it. */}
+          <div className="relative mx-auto">
+            <PhoneEditor />
+            <FloatCard className="-left-40 top-[58%] hidden xl:block">
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/20 text-primary-glow">
+                  <Captions className="h-3.5 w-3.5" />
+                </span>
+                <div>
+                  <div className="text-[10px] text-muted-foreground">Captions · word by word</div>
+                  <div className="text-[12px] font-medium text-foreground">
+                    You&rsquo;ve been there <span className="text-primary-glow">before</span>
+                  </div>
+                </div>
+              </div>
+            </FloatCard>
+            <FloatCard className="-right-48 top-[12%] hidden xl:block">
+              <div className="mb-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                <span>AI story scenes</span>
+                <Wand2 className="h-3 w-3 text-primary-glow" />
+              </div>
+              <div className="flex gap-1.5">
+                {[editingDesk, btsStudio].map((src) => (
+                  <img
+                    key={src}
+                    src={src}
+                    alt=""
+                    loading="lazy"
+                    className="h-[70px] w-[54px] rounded-lg object-cover"
+                  />
+                ))}
+                <div className="grid h-[70px] w-[54px] place-items-center rounded-lg border border-dashed border-white/20 text-[9px] text-muted-foreground">
+                  <span className="flex flex-col items-center gap-1">
+                    <ImagePlus className="h-3.5 w-3.5" />
+                    Next
+                  </span>
+                </div>
+              </div>
+            </FloatCard>
+            <FloatCard className="-bottom-4 -left-28 hidden xl:block">
+              <MakingProgress />
+            </FloatCard>
+            <FloatCard className="-right-40 top-[40%] hidden xl:block">
+              <div className="mb-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <Palette className="h-3 w-3" />
+                Looks
+              </div>
+              <div className="flex gap-1.5">
+                {["#8b5cf6", "#e5e7eb", "#f59e0b", "#22d3ee", "#f5e6c8"].map((c, i) => (
+                  <span
+                    key={c}
+                    className={
+                      "h-5 w-5 rounded-full border " +
+                      (i === 0 ? "border-white ring-2 ring-primary/50" : "border-white/20")
+                    }
+                    style={{ background: c }}
+                  />
+                ))}
+              </div>
+            </FloatCard>
+          </div>
+
+          {/* Right: the second half of the line, with the key word selected
+              like a graphic in the editor. */}
+          <div aria-hidden className={HERO_WORDS + " hidden self-end pb-10 lg:block"}>
+            Get the
+            <br />
+            <SelectedWord>edit.</SelectedWord>
+          </div>
         </div>
 
-        <dl className="mt-16 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-hairline bg-hairline text-center md:grid-cols-4">
+        <dl className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-hairline bg-hairline text-center md:grid-cols-4">
           {[
             ["Automatic", "upload to finished edit"],
             ["16", "motion graphic types"],
@@ -205,182 +284,224 @@ function Hero() {
   );
 }
 
+const HERO_WORDS =
+  "font-display text-[56px] font-bold uppercase leading-[0.9] tracking-[-0.03em] text-foreground sm:text-[76px] lg:text-[84px] xl:text-[104px]";
+
+/** A word with an editor's selection box round it: handles at the corners. */
+function SelectedWord({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="relative mt-2 inline-block rounded-sm border-2 border-primary-glow/80 bg-primary/15 px-3 pb-1 pt-2 text-gradient-violet">
+      {children}
+      {["-left-1.5 -top-1.5", "-right-1.5 -top-1.5", "-bottom-1.5 -left-1.5", "-bottom-1.5 -right-1.5"].map(
+        (pos) => (
+          <span
+            key={pos}
+            className={"absolute h-3 w-3 rounded-full border-2 border-primary bg-white " + pos}
+          />
+        ),
+      )}
+    </span>
+  );
+}
+
+/** A small glassy card floating next to the phone. */
+function FloatCard({ className, children }: { className: string; children: React.ReactNode }) {
+  return (
+    <div
+      className={
+        "absolute z-20 rounded-2xl border border-white/10 bg-surface/80 p-3 shadow-[0_20px_50px_-15px_rgba(0,0,0,0.8)] backdrop-blur-xl " +
+        className
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The background's glowing curve, like a timeline's keyframe line. */
+function HeroCurve() {
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 top-10 h-[620px] w-full opacity-70"
+      viewBox="0 0 1440 620"
+      preserveAspectRatio="none"
+      fill="none"
+    >
+      <defs>
+        <linearGradient id="hero-curve" x1="0" x2="1">
+          <stop offset="0" stopColor="var(--color-primary)" stopOpacity="0" />
+          <stop offset="0.3" stopColor="var(--color-primary-glow)" />
+          <stop offset="0.7" stopColor="var(--color-primary)" />
+          <stop offset="1" stopColor="var(--color-primary-glow)" stopOpacity="0" />
+        </linearGradient>
+        <filter id="hero-glow">
+          <feGaussianBlur stdDeviation="4" />
+        </filter>
+      </defs>
+      <path
+        d="M-20 520 C 200 520, 260 120, 520 140 S 820 560, 1060 470 S 1300 80, 1460 120"
+        stroke="url(#hero-curve)"
+        strokeWidth="6"
+        filter="url(#hero-glow)"
+        opacity="0.6"
+      />
+      <path
+        d="M-20 520 C 200 520, 260 120, 520 140 S 820 560, 1060 470 S 1300 80, 1460 120"
+        stroke="url(#hero-curve)"
+        strokeWidth="1.5"
+      />
+      <line x1="0" y1="560" x2="1440" y2="560" stroke="var(--color-primary)" strokeOpacity="0.35" strokeDasharray="2 6" />
+      {[120, 380, 700, 1010, 1300].map((x) => (
+        <rect key={x} x={x - 4} y={556} width="8" height="8" rx="2" fill="var(--color-primary)" opacity="0.8" />
+      ))}
+    </svg>
+  );
+}
+
+/** The phone in the middle: the finished video on top, the editor's tracks below. */
+function PhoneEditor() {
+  const wave = [4, 9, 14, 8, 16, 22, 12, 18, 26, 14, 9, 20, 28, 16, 10, 6, 14, 22, 18, 12, 8, 16, 24, 12, 7, 13, 19, 11];
+  return (
+    <div className="relative w-[270px] rounded-[44px] border border-white/15 bg-[#0b0b12] p-2.5 shadow-[0_40px_100px_-30px_color-mix(in_oklab,var(--color-primary)_60%,black)] sm:w-[300px]">
+      <div className="overflow-hidden rounded-[36px] bg-black">
+        {/* Status bar */}
+        <div className="flex items-center justify-between px-6 pb-1 pt-3 text-[11px] font-semibold text-white">
+          <span>9:41</span>
+          <span className="h-5 w-20 rounded-full bg-[#0b0b12]" />
+          <span className="flex gap-1">
+            <span className="h-2 w-3 rounded-sm bg-white/80" />
+            <span className="h-2 w-4 rounded-sm bg-white/80" />
+          </span>
+        </div>
+
+        {/* The finished video */}
+        <div className="relative mx-2.5 mt-1 aspect-[4/5] overflow-hidden rounded-2xl">
+          <img src={creatorPortrait} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/70" />
+          <div className="absolute inset-x-3 top-3 flex items-center justify-between text-[10px] font-medium text-white/90">
+            <span className="rounded-md bg-black/40 px-1.5 py-0.5 backdrop-blur">3-second hook</span>
+            <span className="rounded-md bg-primary px-1.5 py-0.5 text-primary-foreground">1080p</span>
+          </div>
+          <div className="absolute inset-x-3 bottom-4 text-center font-display text-[19px] font-bold uppercase leading-[1.05] text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.7)]">
+            You&rsquo;ve been{" "}
+            <span className="inline-block -rotate-1 rounded-md bg-primary px-1.5 text-primary-foreground">
+              there
+            </span>{" "}
+            before
+          </div>
+        </div>
+
+        {/* Transport */}
+        <div className="flex items-center justify-between px-4 pt-2.5 text-[10px] text-white/70">
+          <span className="flex items-center gap-2">
+            <Play className="h-3 w-3 text-white" fill="currentColor" />
+            <span className="tabular-nums text-white">00:04</span>
+            <span className="tabular-nums">/ 00:08</span>
+          </span>
+          <span className="flex gap-2.5">
+            <Undo2 className="h-3 w-3" />
+            <Redo2 className="h-3 w-3" />
+          </span>
+        </div>
+
+        {/* Tracks */}
+        <div className="relative mt-2 space-y-1.5 px-2.5 pb-2">
+          <div className="absolute bottom-1 top-0 left-[46%] z-10 w-px bg-primary-glow shadow-[0_0_8px_var(--color-primary-glow)]">
+            <span className="absolute -left-1 -top-1 h-2 w-2 rotate-45 bg-primary-glow" />
+          </div>
+          <Track icon={Layers}>
+            <span className="w-[34%] rounded-md bg-primary/70 px-1.5 text-[8px] leading-4 text-white">Key line</span>
+            <span className="ml-[6%] w-[44%] rounded-md bg-primary-glow/60 px-1.5 text-[8px] leading-4 text-white">Story · 2 scenes</span>
+          </Track>
+          <Track icon={Captions}>
+            {[16, 22, 14, 20, 12].map((w, i) => (
+              <span key={i} className="mr-[3%] rounded bg-white/25" style={{ width: `${w}%`, height: 10 }} />
+            ))}
+          </Track>
+          <Track icon={Volume2}>
+            <span className="flex h-4 w-full items-center gap-[2px]">
+              {wave.map((h, i) => (
+                <span key={i} className="w-full rounded-full bg-primary-glow/70" style={{ height: `${h / 2}px` }} />
+              ))}
+            </span>
+          </Track>
+          <Track icon={Film}>
+            {[creatorPortrait, phoneShort, creatorPortrait, phoneShort].map((src, i) => (
+              <img key={i} src={src} alt="" loading="lazy" className="mr-[2%] h-5 w-[23%] rounded object-cover" />
+            ))}
+          </Track>
+        </div>
+
+        {/* Tools */}
+        <div className="flex items-center justify-around border-t border-white/10 px-4 py-2.5 text-white/60">
+          <Scissors className="h-3.5 w-3.5" />
+          <Wand2 className="h-3.5 w-3.5" />
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <Captions className="h-3.5 w-3.5" />
+          </span>
+          <Music2 className="h-3.5 w-3.5" />
+          <Palette className="h-3.5 w-3.5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Track({ icon: Icon, children }: { icon: typeof Film; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Icon className="h-3 w-3 shrink-0 text-white/50" />
+      <div className="flex h-5 flex-1 items-center overflow-hidden rounded-md bg-white/[0.04] px-1">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================
-   Auto-edit demo: the make page's checklist ending in a video
+   The auto edit's steps, ticking off (a floating card in the hero)
    ============================================================ */
 const AUTO_STEPS = [
-  { label: "Transcribing what you say", icon: FileText },
-  { label: "Planning the graphics", icon: Layers },
-  { label: "Making the story scenes", icon: Film },
-  { label: "Mixing and mastering the sound", icon: Volume2 },
-  { label: "Rendering your video", icon: Zap },
+  "Transcribing what you say",
+  "Planning the graphics",
+  "Making the story scenes",
+  "Mastering the sound",
+  "Rendering your video",
 ];
 
-function AutoEditDemo() {
-  // The steps light up one by one, the video arrives, then it starts over.
+function MakingProgress() {
+  // The steps light up one by one, the video is ready, then it starts over.
   const [step, setStep] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setStep((s) => (s + 1) % (AUTO_STEPS.length + 4)), 1100);
+    const id = setInterval(() => setStep((s) => (s + 1) % (AUTO_STEPS.length + 3)), 1100);
     return () => clearInterval(id);
   }, []);
   const done = step >= AUTO_STEPS.length;
-
   return (
-    <div className="relative mx-auto w-full max-w-[460px] animate-fade-up">
-      <div className="pointer-events-none absolute -inset-8 rounded-[40px] bg-primary/20 blur-3xl" />
-      <div className="relative grid grid-cols-1 items-end gap-5 sm:grid-cols-[1fr_auto] sm:gap-4">
-        <div className="relative z-10 rounded-2xl border border-hairline bg-surface/90 p-4 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-display text-[15px] font-bold tracking-tight text-foreground">
-              {done ? "Your video is ready" : "Making your video"}
-            </span>
-            <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary-glow">
-              {done ? "Done" : "Automatic"}
-            </span>
-          </div>
-          <ul className="mt-4 space-y-2.5">
-            {AUTO_STEPS.map((s, i) => {
-              const state = i < step ? "done" : i === step ? "active" : "waiting";
-              const Icon = s.icon;
-              return (
-                <li key={s.label} className="flex items-center gap-2.5 text-[13px]">
-                  <span
-                    className={
-                      "grid h-6 w-6 shrink-0 place-items-center rounded-full border transition-colors " +
-                      (state === "done"
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : state === "active"
-                          ? "border-primary/60 text-primary-glow"
-                          : "border-hairline text-muted-foreground/60")
-                    }
-                  >
-                    {state === "done" ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : (
-                      <Icon className="h-3 w-3" />
-                    )}
-                  </span>
-                  <span
-                    className={state === "waiting" ? "text-muted-foreground/70" : "text-foreground"}
-                  >
-                    {s.label}
-                  </span>
-                  {state === "active" && (
-                    <span className="ml-auto h-1.5 w-1.5 shrink-0 animate-blink rounded-full bg-primary-glow" />
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          <div className="mt-4 h-1 overflow-hidden rounded-full bg-hairline">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-700"
-              style={{ width: `${Math.min(100, (step / AUTO_STEPS.length) * 100)}%` }}
-            />
-          </div>
-        </div>
+    <div className="w-[210px]">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="font-semibold text-foreground">
+          {done ? "Your video is ready" : "Making your video"}
+        </span>
+        <span className="text-primary-glow">
+          {Math.min(100, Math.round((step / AUTO_STEPS.length) * 100))}%
+        </span>
+      </div>
+      <div className="mt-1 truncate text-[10px] text-muted-foreground">
+        {done ? "Download, or change anything" : AUTO_STEPS[step]}
+      </div>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-hairline">
         <div
-          className={
-            "relative z-0 mx-auto w-[160px] transition-all duration-700 sm:mx-0 sm:w-[170px] " +
-            (done ? "translate-y-0 opacity-100" : "translate-y-3 opacity-60 blur-[1px]")
-          }
-        >
-          <VerticalShort />
-        </div>
+          className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-700"
+          style={{ width: `${Math.min(100, (step / AUTO_STEPS.length) * 100)}%` }}
+        />
       </div>
     </div>
   );
 }
-
 
 /* Vertical 9:16 phone-style preview inside the editor */
-function VerticalShort() {
-  return (
-    <div className="relative aspect-[9/16] w-full max-w-[280px] overflow-hidden rounded-2xl border border-foreground/20 bg-black shadow-[0_20px_60px_-20px_rgba(0,0,0,0.8)]">
-      {/* Real talking-head footage */}
-      <img
-        src={creatorPortrait}
-        alt=""
-        loading="lazy"
-        className="absolute inset-0 h-full w-full object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60" />
-      {/* Violet tint overlay */}
-      <div className="absolute inset-0 bg-[radial-gradient(400px_300px_at_50%_20%,rgba(124,58,237,0.25),transparent_60%)] mix-blend-overlay" />
-      {/* Film grain */}
-      <div
-        className="absolute inset-0 opacity-[0.08] mix-blend-overlay"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 3px)",
-        }}
-      />
-
-
-      {/* Top HUD */}
-      <div className="absolute inset-x-3 top-3 flex items-center justify-between font-mono text-[9px] uppercase tracking-widest text-white/70">
-        <span className="rounded border border-white/20 bg-black/40 px-1.5 py-0.5 backdrop-blur">
-          Rec · 1080p
-        </span>
-        <span className="rounded border border-white/20 bg-black/40 px-1.5 py-0.5 tabular-nums backdrop-blur">
-          00:04
-        </span>
-      </div>
-
-      {/* Zoom-punch marker */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="h-[60%] w-[60%] rounded-md border border-primary/70 shadow-[inset_0_0_0_1px_rgba(124,58,237,0.25)]">
-          <div className="absolute -left-1 -top-1 h-2 w-2 border-l-2 border-t-2 border-primary" />
-          <div className="absolute -right-1 -top-1 h-2 w-2 border-r-2 border-t-2 border-primary" />
-          <div className="absolute -bottom-1 -left-1 h-2 w-2 border-b-2 border-l-2 border-primary" />
-          <div className="absolute -bottom-1 -right-1 h-2 w-2 border-b-2 border-r-2 border-primary" />
-        </div>
-      </div>
-      <div className="absolute right-3 top-[38%] rounded-sm bg-primary px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-primary-foreground shadow-lg">
-        Zoom 1.4×
-      </div>
-
-      {/* Graphic coming in */}
-      <div className="absolute left-3 top-[28%] w-14 overflow-hidden rounded-sm border border-white/30 shadow-lg">
-        <div className="aspect-video bg-[linear-gradient(135deg,#c67b5c,#3a2a2a)]" />
-        <div className="bg-black/60 px-1 py-0.5 font-mono text-[8px] uppercase tracking-widest text-white/80">
-          Graphic · in 2f
-        </div>
-      </div>
-
-      {/* Word-by-word caption */}
-      <div className="absolute inset-x-4 bottom-24 text-center">
-        <div className="mb-1 inline-block rounded-sm bg-black/50 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-white/70 backdrop-blur">
-          00:04.20
-        </div>
-        <div className="font-display text-lg font-black leading-[1.05] tracking-tight text-white [text-shadow:0_2px_8px_rgba(0,0,0,0.6)]">
-          You&rsquo;re editing your{" "}
-          <span className="inline-block -rotate-1 rounded-md bg-primary px-1.5 py-0.5 text-primary-foreground shadow-[0_4px_0_0_rgba(0,0,0,0.35)]">
-            OWN
-          </span>{" "}
-          content
-        </div>
-      </div>
-
-      {/* SFX chip */}
-      <div className="absolute bottom-14 left-3 flex items-center gap-1 rounded-full border border-white/25 bg-black/50 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-widest text-white/80 backdrop-blur">
-        <Volume2 className="h-2.5 w-2.5 text-primary" />
-        whoosh · -3dB
-      </div>
-
-      {/* Progress + scan */}
-      <div className="absolute inset-x-3 bottom-3">
-        <div className="relative h-0.5 rounded-full bg-white/20">
-          <div className="absolute inset-y-0 left-0 w-[38%] rounded-full bg-white" />
-        </div>
-      </div>
-      <div
-        className="pointer-events-none absolute inset-y-0 w-px animate-scan bg-primary/70 shadow-[0_0_18px_2px_rgba(124,58,237,0.7)]"
-        style={{ left: "50%" }}
-      />
-    </div>
-  );
-}
 
 
 
