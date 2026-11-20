@@ -11,6 +11,7 @@ import { getUsageStats } from "@/lib/projects.functions";
 import { AI_VOICE_MONTHLY_CHARS, getAiVoiceUsage } from "@/lib/voiceover.functions";
 import { listAllowances } from "@/lib/teams.functions";
 import { MAX_UPLOAD_MB } from "@/lib/upload-rules";
+import { isUnlimited } from "@/lib/plans";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({ meta: [{ title: "Billing — Stuccord Motion" }] }),
@@ -80,8 +81,16 @@ function BillingPage() {
               "Loading your usage…"
             ) : (
               <>
-                <span className="tabular-nums font-medium text-white">{used}</span> of {cap}{" "}
-                personal exports used this month · {left} left · resets {nextResetLabel()}
+                <span className="tabular-nums font-medium text-white">{used}</span>
+                {isUnlimited(cap) ? (
+                  <> personal exports this month · no limit on your account</>
+                ) : (
+                  <>
+                    {" "}
+                    of {cap} personal exports used this month · {left} left · resets{" "}
+                    {nextResetLabel()}
+                  </>
+                )}
               </>
             )}
           </div>

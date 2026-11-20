@@ -1558,7 +1558,7 @@ export async function exportAllowance(userId: string, teamId: string | null): Pr
     if (error) throw new Error(countError(error.message, status));
     return {
       used: count ?? 0,
-      cap: plan.teamExports,
+      cap: (await ownerCap(userId)) ?? plan.teamExports,
       team: { id: teamId, name: team?.name ?? "This team" },
       plan: plan.label,
     };
@@ -1567,7 +1567,19 @@ export async function exportAllowance(userId: string, teamId: string | null): Pr
   q = q.eq("user_id", userId).is("team_id", null);
   const { count, error, status } = await q;
   if (error) throw new Error(countError(error.message, status));
-  return { used: count ?? 0, cap: plan.personalExports, team: null, plan: plan.label };
+  return {
+    used: count ?? 0,
+    cap: (await ownerCap(userId)) ?? plan.personalExports,
+    team: null,
+    plan: plan.label,
+  };
+}
+
+/** UNLIMITED for the app's owner (no monthly limits), else null. */
+async function ownerCap(userId: string): Promise<number | null> {
+  const { isAppOwner } = await import("@/lib/owner.server");
+  const { UNLIMITED } = await import("@/lib/plans");
+  return isAppOwner(userId) ? UNLIMITED : null;
 }
 
 /**

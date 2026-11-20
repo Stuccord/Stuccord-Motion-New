@@ -37,6 +37,7 @@ import { useWorkspace } from "@/lib/use-workspace";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { GlobalSearch } from "@/components/global-search";
 import { cn } from "@/lib/utils";
+import { isUnlimited } from "@/lib/plans";
 
 type NavItem = {
   to: string;
@@ -201,8 +202,17 @@ export function AppShell({
               <Gift className="w-3 h-3" /> {usage?.allowance.plan ?? "Free"} plan
             </div>
             <div className="mt-2 text-xs text-foreground leading-relaxed">
-              <span className="font-semibold tabular-nums">{used} of {cap}</span>{" "}
-              {ws.team ? `${ws.team.name} exports` : "exports"} used this month
+              {isUnlimited(cap) ? (
+                <>
+                  <span className="font-semibold tabular-nums">{used}</span>{" "}
+                  {ws.team ? `${ws.team.name} exports` : "exports"} this month · no limit
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold tabular-nums">{used} of {cap}</span>{" "}
+                  {ws.team ? `${ws.team.name} exports` : "exports"} used this month
+                </>
+              )}
             </div>
             <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div className="h-full bg-primary transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]" style={{ width: `${usePct}%` }} />

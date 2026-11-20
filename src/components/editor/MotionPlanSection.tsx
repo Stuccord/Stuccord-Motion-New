@@ -30,6 +30,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { isUnlimited } from "@/lib/plans";
 import type { TimelineWord } from "@/lib/captions";
 import {
   ELEMENT_LABEL,
@@ -227,9 +228,15 @@ export function MotionPlanSection({
   return (
     <Shell>
       <p className="text-[10px] text-neutral-500 tabular-nums">
-        {allowance.used} of {allowance.cap} AI plans used this month
+        {isUnlimited(allowance.cap)
+          ? `${allowance.used} AI plans this month · no limit`
+          : `${allowance.used} of ${allowance.cap} AI plans used this month`}
         {allowance.team ? ` (${allowance.team.name})` : ""}
-        {images ? ` · ${images.used} of ${images.cap} AI pictures` : ""}
+        {images
+          ? isUnlimited(images.cap)
+            ? ` · ${images.used} AI pictures`
+            : ` · ${images.used} of ${images.cap} AI pictures`
+          : ""}
       </p>
 
       {untranscribed > 0 ? (

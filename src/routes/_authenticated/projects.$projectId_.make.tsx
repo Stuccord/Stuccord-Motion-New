@@ -27,6 +27,7 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isUnlimited } from "@/lib/plans";
 import { getProject, getRenderSignedUrl, submitRender } from "@/lib/projects.functions";
 import {
   getMotionPlan,
@@ -450,7 +451,7 @@ function MakePage() {
                 </Button>
                 <p className="text-[11px] text-muted-foreground">
                   Claude plans them again and the video is re-rendered
-                  {plansLeft !== null
+                  {plansLeft !== null && planState && !isUnlimited(planState.allowance.cap)
                     ? ` (${plansLeft} AI plan${plansLeft === 1 ? "" : "s"} left this month)`
                     : ""}
                   .

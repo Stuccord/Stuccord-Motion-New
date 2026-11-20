@@ -40,6 +40,13 @@ export function planFor(id: string | null | undefined): Plan {
   return PLANS[(id ?? "free") as PlanId] ?? PLANS.free;
 }
 
+/**
+ * The cap the app's owner gets (owner.server.ts): effectively no limit.
+ * isUnlimited() tells the UI to say "Unlimited" instead of the number.
+ */
+export const UNLIMITED = 1_000_000;
+export const isUnlimited = (cap: number) => cap >= UNLIMITED;
+
 /** Teams one person can own. */
 export const TEAMS_OWNED_LIMIT = 5;
 

@@ -32,7 +32,7 @@ import {
   type PlanClip,
   type SpeakerCartoon,
 } from "@/lib/motion-plan";
-import { planFor, type Plan } from "@/lib/plans";
+import { planFor, UNLIMITED, type Plan } from "@/lib/plans";
 import { defaultLook } from "@/motion/looks";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
 
@@ -85,9 +85,13 @@ async function monthlyAllowance(
   table: "motion_plan_runs" | "motion_image_runs",
   userId: string,
   teamId: string | null,
-  capOf: (plan: Plan, team: boolean) => number,
+  planCapOf: (plan: Plan, team: boolean) => number,
 ): Promise<PlanAllowance> {
   const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+  // The app's owner has no monthly limits (owner.server.ts).
+  const { isAppOwner } = await import("@/lib/owner.server");
+  const capOf = (plan: Plan, team: boolean) =>
+    isAppOwner(userId) ? UNLIMITED : planCapOf(plan, team);
   let q = admin
     .from(table)
     .select("id", { count: "exact", head: true })
