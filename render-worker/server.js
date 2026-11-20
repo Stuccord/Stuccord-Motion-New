@@ -58,6 +58,7 @@ import {
 import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 import { CaptureError, capturePage } from "./capture.js";
 import { limitThreads } from "./threads.js";
+import { analyzeColour, correctionFilter } from "./colour.js";
 import {
   buildAudioMixArgs,
   masterArgs,
@@ -1599,7 +1600,16 @@ async function runRender(job) {
     let zoom = null;
     // The look's finish: its colour grade, camera pace and captions.
     const finish = lookFinish(motionJob?.look);
-    const grade = motionJob ? gradeFilter(finish) : null;
+    // The picture's colour: every video is measured and corrected (exposure,
+    // contrast, colour cast; see colour.js), then the look's grade goes on
+    // top. Best-effort: a failed measurement leaves the footage as filmed.
+    let correction = null;
+    try {
+      correction = correctionFilter(await analyzeColour(ffmpegPath, composedOut));
+    } catch (e) {
+      console.warn(`[Worker] Colour analysis failed for job=${job.job_id}:`, e?.message || e);
+    }
+    const grade = [correction, motionJob ? gradeFilter(finish) : null].filter(Boolean).join(",") || null;
     const filmFinish = motionJob ? finishFilters(finish, w, h) : [];
     // Notes pages: when the speaker moves aside for them.
     let split = null;

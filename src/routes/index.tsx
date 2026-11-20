@@ -29,6 +29,7 @@ import { planFor } from "@/lib/plans";
 import { MAX_UPLOAD_MB } from "@/lib/upload-rules";
 import { AI_VOICE_MONTHLY_CHARS } from "@/lib/ai-voice";
 import creatorPortrait from "@/assets/creator-portrait.jpg";
+import creatorPortraitGraded from "@/assets/creator-portrait-graded.jpg";
 import editingDesk from "@/assets/editing-desk.jpg";
 import btsStudio from "@/assets/bts-studio.jpg";
 import phoneShort from "@/assets/phone-short.jpg";
@@ -1059,26 +1060,26 @@ function Compare() {
               <span className="text-muted-foreground">Very different post.</span>
             </>
           }
-          subtitle="Drag the handle. Left is a raw take. Right is the kind of edit Stuccord adds."
+          subtitle="Drag the handle. Left is the frame as shot. Right is the same frame through Stuccord’s colour correction and Motion Explainer grade, with the zoom, graphics, captions and sound it adds."
         />
 
         <div className="mt-14 grid gap-6 md:grid-cols-[1fr_320px] md:items-center">
           {/* Slider */}
           <div className="relative aspect-video overflow-hidden rounded-xl border border-hairline bg-black">
-            {/* RAW side (base) — real footage, flat */}
-            <img src={creatorPortrait} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover grayscale-[35%] brightness-90" />
-            <div className="absolute inset-0 bg-black/25" />
+            {/* RAW side (base): the frame as shot, untouched */}
+            <img src={creatorPortrait} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute left-4 top-4 rounded border border-white/20 bg-black/50 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white/80 backdrop-blur">
               RAW · your take
             </div>
 
-            {/* EDITED side (clipped) — same footage, styled */}
+            {/* EDITED side (clipped): the same frame through the renderer's real
+                colour correction and Motion Explainer grade (render-worker/colour.js
+                and LOOK_FINISH.glass), made with those filters, not CSS */}
             <div
               className="absolute inset-0 overflow-hidden"
               style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
             >
-              <img src={creatorPortrait} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover contrast-[1.08] saturate-[1.15]" />
-              <div className="absolute inset-0 bg-[radial-gradient(500px_400px_at_50%_30%,rgba(124,58,237,0.35),transparent_60%),radial-gradient(400px_300px_at_50%_80%,rgba(255,180,120,0.18),transparent_60%)] mix-blend-overlay" />
+              <img src={creatorPortraitGraded} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
 
               {/* Zoom marker */}
               <div className="absolute inset-6 rounded border border-primary/70">
@@ -1142,6 +1143,7 @@ function Compare() {
               What AI added, right side
             </div>
             {[
+              ["Colour", "Corrected, then the Motion Explainer grade"],
               ["Cut", "Pauses trimmed"],
               ["Zoom", "1.4× punch on \u201cMORE\u201d"],
               ["Caption", "Word-by-word · Anton · brand yellow"],

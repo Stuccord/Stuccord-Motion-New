@@ -339,8 +339,21 @@ const STANDARD_FINISH = {
   angleMove: "cut",
   captions: "bold",
 };
+// The Motion Explainer look's grade: punchy: rich colour and crisp,
+// bright highlights, with the shadows left alone so a face (darker skin
+// most of all) keeps its filmed level. The owner's pick of five options
+// tried on a real phone take.
+const EXPLAINER_GRADE = {
+  saturation: 1.24,
+  contrast: 1.04,
+  curves: {
+    r: [0, 0.255, 0.51, 0.81, 1],
+    g: [0, 0.255, 0.51, 0.81, 1],
+    b: [0, 0.26, 0.51, 0.805, 1],
+  },
+};
 export const LOOK_FINISH = {
-  glass: STANDARD_FINISH,
+  glass: { ...STANDARD_FINISH, grade: EXPLAINER_GRADE },
   paper: STANDARD_FINISH,
   minimal: {
     ...STANDARD_FINISH,

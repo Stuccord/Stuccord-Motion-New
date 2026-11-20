@@ -37,6 +37,22 @@ export type LookFinish = {
   captions: "bold" | "clean";
 };
 
+/**
+ * The Motion Explainer look's grade: punchy: rich colour and crisp, bright
+ * highlights, with the shadows left alone so a face (darker skin most of
+ * all) keeps its filmed level (render-worker/motion.js has the same
+ * numbers). The owner's pick of five options tried on a real phone take.
+ */
+const EXPLAINER_GRADE: NonNullable<LookFinish["grade"]> = {
+  saturation: 1.24,
+  contrast: 1.04,
+  curves: {
+    r: [0, 0.255, 0.51, 0.81, 1],
+    g: [0, 0.255, 0.51, 0.81, 1],
+    b: [0, 0.26, 0.51, 0.805, 1],
+  },
+};
+
 const STANDARD: LookFinish = {
   grade: null,
   grain: 0,
@@ -49,7 +65,7 @@ const STANDARD: LookFinish = {
 };
 
 export const LOOK_FINISH: Record<MotionLookId, LookFinish> = {
-  glass: STANDARD,
+  glass: { ...STANDARD, grade: EXPLAINER_GRADE },
   paper: STANDARD,
   // Quiet: softer colour, gentle and slower camera moves, clean captions.
   minimal: {
