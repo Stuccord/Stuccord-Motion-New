@@ -138,38 +138,61 @@ export function measureLoudness(ffmpegPath, file, { filters = null, momentary = 
   ]);
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
-    let err = "";
-    let momentaryMax = -Infinity;
-    let tail = "";
-    child.stderr.on("data", (d) => {
-      const s = tail + d.toString();
-      // Keep only what's needed: the JSON at the end and each M: reading.
-      if (momentary) {
-        for (const m of s.matchAll(/ M: *(-?[\d.]+)/g)) momentaryMax = Math.max(momentaryMax, Number(m[1]));
-      }
-      err = (err + s).slice(-6000);
-      tail = s.slice(-40);
-    });
+    const reader = loudnessReader();
+    child.stderr.on("data", (d) => reader.push(d.toString()));
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code !== 0) return reject(new Error(`loudness measure exited ${code}: ${err.slice(-300)}`));
-      const json = err.slice(err.lastIndexOf("{"), err.lastIndexOf("}") + 1);
-      try {
-        const j = JSON.parse(json);
-        const n = (k) => Number(j[k]);
-        if (!Number.isFinite(n("input_i")) || n("input_i") <= -70) return resolve(null);
-        resolve({
-          i: n("input_i"),
-          tp: n("input_tp"),
-          lra: n("input_lra"),
-          thresh: n("input_thresh"),
-          momentaryMax: Number.isFinite(momentaryMax) ? momentaryMax : null,
-        });
-      } catch {
-        resolve(null);
+      if (code !== 0) return reject(new Error(`loudness measure exited ${code}: ${reader.tail(300)}`));
+      const result = reader.result();
+      if (result === undefined) {
+        console.warn(`[Worker] No loudness reading in ffmpeg's report: ${reader.tail(300)}`);
       }
+      resolve(result ?? null);
     });
   });
+}
+
+/**
+ * Reads ffmpeg's report as it arrives, in pieces of any size: each momentary
+ * (M:) reading, and loudnorm's JSON at the end. result() is the reading,
+ * null for silence, undefined when the report had none.
+ */
+export function loudnessReader() {
+  let text = "";
+  let carry = "";
+  let momentaryMax = -Infinity;
+  return {
+    push(chunk) {
+      // A reading can be split between pieces: look for them in what's left
+      // over from the last piece plus this one, but store each piece once.
+      const scan = carry + chunk;
+      for (const m of scan.matchAll(/ M: *(-?[\d.]+)(?=\s)/g)) {
+        momentaryMax = Math.max(momentaryMax, Number(m[1]));
+      }
+      carry = scan.slice(-40);
+      text = (text + chunk).slice(-6000);
+    },
+    tail: (n) => text.slice(-n),
+    result() {
+      const json = text.slice(text.lastIndexOf("{"), text.lastIndexOf("}") + 1);
+      let j;
+      try {
+        j = JSON.parse(json);
+      } catch {
+        return undefined;
+      }
+      const n = (k) => Number(j[k]);
+      if (!Number.isFinite(n("input_i"))) return undefined;
+      if (n("input_i") <= -70) return null;
+      return {
+        i: n("input_i"),
+        tp: n("input_tp"),
+        lra: n("input_lra"),
+        thresh: n("input_thresh"),
+        momentaryMax: Number.isFinite(momentaryMax) ? momentaryMax : null,
+      };
+    },
+  };
 }
 
 /**
