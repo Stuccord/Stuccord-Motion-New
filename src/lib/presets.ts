@@ -18,7 +18,7 @@ const PRESET_LABEL: Record<string, string> = {
 /** The styles a new project can pick. */
 export const NEW_PROJECT_STYLES = [
   { id: "gadzhi", label: "Motion Explainer — premium motion graphics" },
-  { id: "minimal", label: "Minimal — clean type, thin lines, calm cuts" },
+  { id: "minimal", label: "Minimal — black frames, thin lines, quiet type" },
   { id: "film", label: "Cinematic — film colour, grain, bars, slow push-ins" },
   { id: "saas", label: "SaaS — light pages, white cards, app screens" },
 ] as const;

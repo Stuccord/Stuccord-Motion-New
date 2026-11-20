@@ -8,17 +8,11 @@ import { probeFileDurationMs } from "@/lib/media-duration";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { UploadCloud, X, Loader2, Film, Sparkles } from "lucide-react";
+import { LookPreview, lookOfPreset } from "@/components/look-preview";
+import { cn } from "@/lib/utils";
+import creatorPortrait from "@/assets/creator-portrait.jpg";
+import { Check, ChevronDown, UploadCloud, X, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { TEMPLATES } from "@/lib/templates.data";
 import { NEW_PROJECT_STYLES } from "@/lib/presets";
@@ -41,6 +35,8 @@ type PendingFile = {
   role: "auto" | "aroll" | "broll";
   progress: number;
   uploaded: boolean;
+  /** A local URL for the clip's preview (released when it's removed). */
+  url: string;
   storagePath?: string;
   error?: string;
 };
@@ -82,12 +78,17 @@ function NewProject() {
         role: "auto" as const,
         progress: 0,
         uploaded: false,
+        url: URL.createObjectURL(file),
       })),
     ]);
   }
 
   function removeFile(id: string) {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
+    setFiles((prev) => {
+      const gone = prev.find((f) => f.id === id);
+      if (gone) URL.revokeObjectURL(gone.url);
+      return prev.filter((f) => f.id !== id);
+    });
   }
 
   function setRole(id: string, role: "auto" | "aroll" | "broll") {
@@ -193,202 +194,303 @@ function NewProject() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const look = lookOfPreset(preset);
+  const style = NEW_PROJECT_STYLES.find((s) => s.id === preset);
+  const [lookName, lookHint] = (style?.label ?? "").split(" — ");
+
   return (
     <AppShell>
-      <div className="max-w-3xl">
-        <div className="caps-label text-[11px] text-primary-glow mb-2">Motion Explainer · auto-edit</div>
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">New project</h1>
-        {ws.team && (
-          <p className="text-sm text-muted-foreground mt-1" data-new-in-team>
-            {ws.canEdit
-              ? `Made in ${ws.team.name}: everyone in the team can open it.`
-              : `You're a Viewer in ${ws.team.name}, so you can't make projects there. Switch to Personal or ask an admin.`}
+      <div className="mx-auto grid max-w-6xl gap-8 pb-28 lg:grid-cols-[minmax(0,1fr)_340px] lg:pb-10">
+        <div className="min-w-0">
+          <div className="caps-label text-[11px] text-primary-glow">New video</div>
+          <input
+            aria-label="Project title"
+            className="mt-2 w-full bg-transparent font-display text-3xl font-bold tracking-tight text-foreground placeholder:text-muted-foreground/50 focus:outline-none sm:text-4xl"
+            placeholder="Untitled video"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <p className="mt-2 text-sm text-muted-foreground">
+            Drop your take, pick a shape and a look. Stuccord makes the whole edit for you.
           </p>
-        )}
-        <p className="text-sm text-muted-foreground mt-1">
-          Drop your clips, add your script if you have one, and the AI plans the graphics from
-          what you say.
-        </p>
-
-        {template && (
-          <div className="mt-5 flex items-start gap-3 rounded-xl border border-primary/30 bg-gradient-to-br from-primary/15 to-fuchsia-500/10 p-4">
-            <div className="w-9 h-9 rounded-lg bg-card grid place-items-center shrink-0 shadow-sm">
-              <Sparkles className="w-4 h-4 text-violet-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold uppercase tracking-wider text-violet-300">Using template</div>
-              <div className="text-sm font-semibold mt-0.5">{template.title}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Look, shape and brief pre-filled — change anything below.
-              </div>
-            </div>
-            <button
-              onClick={() => navigate({ to: "/projects/new", search: {} as never })}
-              className="text-xs text-muted-foreground hover:text-foreground shrink-0"
-            >
-              Clear
-            </button>
-          </div>
-        )}
-
-        <div className="mt-8 space-y-5 pb-24 sm:pb-0">
-          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">1</span>Title & format</h2>
-            <div className="grid grid-cols-1 gap-4 mt-4 sm:grid-cols-2 [&>*]:min-w-0">
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label htmlFor="title">Project title</Label>
-                <Input
-                  id="title"
-                  placeholder="Ep. 14 — Why nobody watches your reels"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Aspect ratio</Label>
-                <Select value={ratio} onValueChange={(v) => setRatio(v as typeof ratio)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="9:16">9:16 — Reels / Shorts / TikTok</SelectItem>
-                    <SelectItem value="16:9">16:9 — YouTube long-form</SelectItem>
-                    <SelectItem value="1:1">1:1 — Feed square</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Style preset</Label>
-                <Select value={preset} onValueChange={setPreset}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NEW_PROJECT_STYLES.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">2</span>Upload your clips</h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              Your talking clips (A-roll) and any B-roll. They go on the timeline in the order
-              you add them; mark each one or leave it on auto-detect.
+          {ws.team && (
+            <p className="mt-1 text-sm text-muted-foreground" data-new-in-team>
+              {ws.canEdit
+                ? `Made in ${ws.team.name}: everyone in the team can open it.`
+                : `You're a Viewer in ${ws.team.name}, so you can't make projects there. Switch to Personal or ask an admin.`}
             </p>
-            <div
-              className={`mt-4 border-2 border-dashed rounded-2xl px-6 py-10 sm:py-12 text-center cursor-pointer transition-colors ${
-                dragOver ? "border-primary bg-primary/10" : "border-white/15 bg-white/[0.02] hover:border-primary/60 hover:bg-primary/[0.04]"
-              }`}
-              onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                addFiles(e.dataTransfer.files);
-              }}
-            >
-              <div className="mx-auto w-12 h-12 rounded-2xl bg-primary/15 border border-primary/30 grid place-items-center">
-                <UploadCloud className="w-6 h-6 text-primary-glow" />
+          )}
+
+          {template && (
+            <div className="mt-5 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3">
+              <Sparkles className="h-4 w-4 shrink-0 text-primary-glow" />
+              <div className="min-w-0 flex-1 text-sm">
+                <span className="font-semibold">{template.title}</span>
+                <span className="text-muted-foreground"> template: shape, look and directions are set. Change anything.</span>
               </div>
-              <p className="mt-4 text-base font-semibold">Drop videos or click to browse</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                MP4, MOV, WebM · up to {MAX_UPLOAD_MB} MB per clip
+              <button
+                onClick={() => navigate({ to: "/projects/new", search: {} as never })}
+                className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
+          {/* 1. The footage: the main thing, first. */}
+          <div
+            className={cn(
+              "relative mt-7 cursor-pointer overflow-hidden rounded-3xl border transition-colors",
+              dragOver ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/50",
+            )}
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              addFiles(e.dataTransfer.files);
+            }}
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,color-mix(in_oklab,var(--color-primary)_20%,transparent),transparent_65%)]" />
+            <div className="relative flex flex-col items-center px-6 py-12 text-center sm:py-16">
+              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_12px_40px_-10px_color-mix(in_oklab,var(--color-primary)_80%,transparent)]">
+                <UploadCloud className="h-6 w-6" />
+              </span>
+              <p className="mt-5 font-display text-xl font-bold tracking-tight">
+                {files.length ? "Add more clips" : "Drop your take here"}
               </p>
-              <input
-                ref={inputRef}
-                type="file"
-                multiple
-                accept="video/*"
-                className="hidden"
-                onChange={(e) => e.target.files && addFiles(e.target.files)}
+              <p className="mt-1 text-sm text-muted-foreground">
+                or click to browse · MP4, MOV or WebM · up to {MAX_UPLOAD_MB} MB a clip
+              </p>
+            </div>
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => e.target.files && addFiles(e.target.files)}
+            />
+          </div>
+
+          {files.length > 0 && (
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+              {files.map((f, i) => (
+                <li key={f.id} className="flex gap-3 rounded-2xl border border-border bg-card p-2.5">
+                  <video
+                    src={f.url}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="h-[88px] w-[66px] shrink-0 rounded-lg bg-black object-cover"
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{f.file.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Clip {i + 1} · {(f.file.size / 1024 / 1024).toFixed(1)} MB
+                          {f.error && <span className="ml-1 text-red-400">· {f.error}</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeFile(f.id)}
+                        aria-label={`Remove ${f.file.name}`}
+                        className="rounded-md p-1 hover:bg-white/5"
+                      >
+                        <X className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </div>
+                    <div className="mt-auto flex gap-1">
+                      {ROLES.map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => setRole(f.id, r.id)}
+                          title={r.hint}
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+                            f.role === r.id
+                              ? "bg-foreground text-background"
+                              : "bg-surface text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* 2. The shape. */}
+          <h2 className="mt-10 text-sm font-semibold">Shape</h2>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            {SHAPES.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setRatio(s.id)}
+                className={cn(
+                  "flex flex-col items-center gap-3 rounded-2xl border p-4 transition-colors",
+                  ratio === s.id
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-card hover:border-primary/40",
+                )}
+              >
+                <span className="flex h-14 items-center">
+                  <span
+                    className={cn(
+                      "block rounded-[5px] border-2",
+                      ratio === s.id ? "border-primary-glow" : "border-muted-foreground/50",
+                    )}
+                    style={{ width: s.w, height: s.h }}
+                  />
+                </span>
+                <span className="text-center">
+                  <span className="block text-sm font-semibold">{s.id}</span>
+                  <span className="block text-[11px] text-muted-foreground">{s.hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* 3. The look. */}
+          <h2 className="mt-10 text-sm font-semibold">Look</h2>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {NEW_PROJECT_STYLES.map((s) => {
+              const [name] = s.label.split(" — ");
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setPreset(s.id)}
+                  className={cn(
+                    "overflow-hidden rounded-2xl border text-left transition-colors",
+                    preset === s.id ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/40",
+                  )}
+                >
+                  <div className="flex h-36 items-center justify-center bg-black/40 p-2">
+                    <LookPreview
+                      look={lookOfPreset(s.id)}
+                      ratio="9:16"
+                      image={creatorPortrait}
+                      line="Most people quit before it works"
+                      emphasis="works"
+                    />
+                  </div>
+                  <div className="px-3 py-2.5 text-[13px] font-semibold">{name}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 4. Optional: the script and directions. */}
+          <details className="group mt-10 rounded-2xl border border-border bg-card" open={!!template}>
+            <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4">
+              <span>
+                <span className="block text-sm font-semibold">Script and directions</span>
+                <span className="block text-xs text-muted-foreground">
+                  Optional. Helps the AI put the graphics on the lines you meant.
+                </span>
+              </span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="space-y-4 border-t border-border px-5 py-5">
+              <label className="block">
+                <span className="text-xs font-medium text-muted-foreground">Your script</span>
+                <Textarea
+                  className="mt-1.5 min-h-28 text-sm"
+                  placeholder="Most creators fail because…"
+                  value={script}
+                  onChange={(e) => setScript(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-muted-foreground">Directions for the edit</span>
+                <Textarea
+                  className="mt-1.5 min-h-20 text-sm"
+                  placeholder="Fast and punchy. Put the hook's key line behind me, every number as a counter, a chapter for each tip."
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                />
+              </label>
+            </div>
+          </details>
+        </div>
+
+        {/* Your video: what it will look like, and the button. */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-6 rounded-3xl border border-border bg-card p-5">
+            <div className="caps-label text-[10px] text-muted-foreground">Your video</div>
+            <div className="mt-4 flex h-[300px] items-center justify-center rounded-2xl bg-black/50 p-3">
+              <LookPreview
+                look={look}
+                ratio={ratio}
+                image={creatorPortrait}
+                line="Most people quit before it works"
+                emphasis="works"
+                className={ratio === "16:9" ? "max-w-full" : ""}
               />
             </div>
-
-            {files.length > 0 && (
-              <ul className="mt-4 divide-y divide-border border border-border rounded-xl">
-                {files.map((f) => (
-                  <li key={f.id} className="flex items-center gap-3 p-3">
-                    <div className="w-9 h-9 grid place-items-center rounded-md bg-surface-2">
-                      <Film className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate">{f.file.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {(f.file.size / 1024 / 1024).toFixed(1)} MB
-                        {f.error && <span className="text-red-400 ml-2">· {f.error}</span>}
-                      </div>
-                    </div>
-                    <Select value={f.role} onValueChange={(v) => setRole(f.id, v as PendingFile["role"])}>
-                      <SelectTrigger className="w-32 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="auto">Auto-detect</SelectItem>
-                        <SelectItem value="aroll">A-roll</SelectItem>
-                        <SelectItem value="broll">B-roll</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <button
-                      onClick={() => removeFile(f.id)}
-                      className="p-1.5 rounded-md hover:bg-white/5"
-                    >
-                      <X className="w-4 h-4 text-muted-foreground" />
-                    </button>
+            <div className="mt-4 text-sm font-semibold">{lookName}</div>
+            <div className="text-xs text-muted-foreground">{lookHint}</div>
+            <ul className="mt-4 space-y-1.5 text-xs text-muted-foreground">
+              {["Transcribes what you say", "Plans graphics on your words", "Makes story scenes with AI", "Cleans and masters the sound", "Corrects the colour, then renders"].map(
+                (s) => (
+                  <li key={s} className="flex items-center gap-2">
+                    <Check className="h-3.5 w-3.5 text-primary-glow" />
+                    {s}
                   </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">3</span>Script (optional)</h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              Paste the script if you have one. The AI reads it alongside what you actually say
-              when it plans the graphics and writes your opening hook.
-            </p>
-            <Textarea
-              className="mt-4 min-h-32 font-mono text-sm"
-              placeholder="Most creators fail because…"
-              value={script}
-              onChange={(e) => setScript(e.target.value)}
-            />
-          </section>
-
-          <section className="bg-card border border-border rounded-2xl p-5 sm:p-6">
-            <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="grid place-items-center w-6 h-6 rounded-full bg-primary/15 border border-primary/30 text-[11px] font-bold text-primary-glow font-display">4</span>Brief the edit (optional)</h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              Tell the AI which graphics you want and how fast. Captions, music and cuts are
-              set in the editor.
-            </p>
-            <Textarea
-              className="mt-4 min-h-24"
-              placeholder="Fast and punchy. Put the hook's key line behind me, every number as a counter, a chapter for each tip, punch-in zooms on emphatic words."
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
-            />
-          </section>
-
-          <div className="fixed sm:static inset-x-0 bottom-0 z-20 flex justify-end gap-3 border-t sm:border-0 border-border bg-background/90 sm:bg-transparent backdrop-blur-xl sm:backdrop-blur-none px-4 py-3 sm:p-0">
-            <Button variant="ghost" onClick={() => navigate({ to: "/dashboard" })}>
-              Cancel
-            </Button>
-            <Button size="lg" className="rounded-full px-6 flex-1 sm:flex-none" onClick={() => submit.mutate()} disabled={submit.isPending || !ws.canEdit}>
+                ),
+              )}
+            </ul>
+            <Button
+              size="lg"
+              className="mt-5 w-full rounded-full"
+              onClick={() => submit.mutate()}
+              disabled={submit.isPending || !ws.canEdit}
+            >
               {submit.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
-              Create project
+              Make my video
             </Button>
+            <div className="mt-2 text-center text-[11px] text-muted-foreground">
+              {files.length ? `${files.length} clip${files.length === 1 ? "" : "s"} ready` : "Add a clip to start"}
+            </div>
           </div>
-        </div>
+        </aside>
+      </div>
+
+      {/* Phones and tablets: the button stays in reach. */}
+      <div className="fixed inset-x-0 bottom-0 z-20 flex gap-3 border-t border-border bg-background/90 px-4 py-3 backdrop-blur-xl lg:hidden">
+        <Button variant="ghost" onClick={() => navigate({ to: "/dashboard" })}>
+          Cancel
+        </Button>
+        <Button
+          size="lg"
+          className="flex-1 rounded-full"
+          onClick={() => submit.mutate()}
+          disabled={submit.isPending || !ws.canEdit}
+        >
+          {submit.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
+          Make my video
+        </Button>
       </div>
     </AppShell>
   );
 }
+
+const ROLES = [
+  { id: "auto", label: "Auto", hint: "Let Stuccord decide" },
+  { id: "aroll", label: "Talking", hint: "You talking to camera (A-roll)" },
+  { id: "broll", label: "B-roll", hint: "Cutaway footage shown over you" },
+] as const;
+
+const SHAPES = [
+  { id: "9:16", hint: "Reels, Shorts, TikTok", w: 26, h: 46 },
+  { id: "16:9", hint: "YouTube", w: 52, h: 29 },
+  { id: "1:1", hint: "Feed square", w: 38, h: 38 },
+] as const;

@@ -204,8 +204,11 @@ export function AppShell({
             <div className="mt-2 text-xs text-foreground leading-relaxed">
               {isUnlimited(cap) ? (
                 <>
-                  <span className="font-semibold tabular-nums">{used}</span>{" "}
-                  {ws.team ? `${ws.team.name} exports` : "exports"} this month · no limit
+                  <span className="block font-semibold">No limit</span>
+                  <span className="block text-muted-foreground">
+                    <span className="tabular-nums">{used}</span>{" "}
+                    {ws.team ? `${ws.team.name} exports` : "exports"} this month
+                  </span>
                 </>
               ) : (
                 <>

@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Plus,
+  Check,
   Film,
   Sparkles,
   Clock,
@@ -27,9 +28,11 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import phoneShort from "@/assets/phone-short.jpg";
 import editingDesk from "@/assets/editing-desk.jpg";
-import creatorPortrait from "@/assets/creator-portrait.jpg";
+import creatorPortraitGraded from "@/assets/creator-portrait-graded.jpg";
+import creator2 from "@/assets/creator-2.jpg";
+import btsStudio from "@/assets/bts-studio.jpg";
+import { LookPreview } from "@/components/look-preview";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Home — Stuccord Motion" }] }),
@@ -134,7 +137,7 @@ function Home() {
                 className="group mt-5 inline-flex items-center gap-2 rounded-full bg-white/[0.06] border border-border pl-1 pr-3 py-1 text-[12px] font-medium text-foreground hover:border-primary/40 transition-all"
               >
                 <span className="rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5">New</span>
-                Move, resize &amp; rotate clips in the preview
+                Studio sound and colour on every export
                 <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
               </Link>
             </div>
@@ -152,53 +155,50 @@ function Home() {
           </div>
         </section>
 
-        {/* Primary create cards */}
+        {/* Primary create cards: the real ways in */}
         <div className="grid gap-4 md:grid-cols-3">
           <CreateCard
-            title="Short from footage"
-            desc="Drop your clips, edit them on the timeline, export with captions & music"
+            title="Make a video"
+            desc="Upload a take. Stuccord makes the whole edit: graphics, AI scenes, captions, sound and colour."
             onClick={() => navigate({ to: "/projects/new" })}
             visual={
-              <div className="relative h-full w-full bg-gradient-to-br from-primary/20 via-surface to-black p-4 grid place-items-center">
-                <div className="relative w-[110px] rotate-[-6deg] rounded-[14px] overflow-hidden shadow-[0_20px_50px_-20px_rgba(0,0,0,0.25)] border border-border">
-                  <img src={phoneShort} alt="" className="aspect-[9/16] w-full object-cover" />
-                  <div className="absolute inset-x-0 bottom-0 p-1.5">
-                    <div className="rounded-md bg-black/60 backdrop-blur px-1.5 py-1 text-[8px] font-semibold text-white text-center leading-tight">
-                      "…and that's when it clicked."
+              <div className="relative h-full w-full bg-[radial-gradient(ellipse_at_30%_0%,color-mix(in_oklab,var(--color-primary)_28%,transparent),transparent_70%)] p-4">
+                <div className="absolute left-4 top-4 right-[42%] space-y-1.5 rounded-xl border border-white/10 bg-black/40 p-2.5 backdrop-blur">
+                  {["Transcribed", "Graphics planned", "Story scenes made", "Sound mastered", "Rendered"].map((s) => (
+                    <div key={s} className="flex items-center gap-1.5 text-[10px] text-foreground/90">
+                      <span className="grid h-3.5 w-3.5 place-items-center rounded-full bg-primary text-primary-foreground">
+                        <Check className="h-2.5 w-2.5" />
+                      </span>
+                      {s}
                     </div>
-                  </div>
+                  ))}
                 </div>
-                <div className="absolute top-4 right-4 w-16 rotate-6 rounded-lg overflow-hidden shadow-md border border-border">
-                  <img src={editingDesk} alt="" className="aspect-video w-full object-cover" />
+                <div className="absolute right-4 top-3 bottom-3">
+                  <LookPreview
+                    look="glass"
+                    ratio="9:16"
+                    image={creatorPortraitGraded}
+                    line="Most people quit before it works"
+                    emphasis="works"
+                  />
                 </div>
               </div>
             }
           />
           <CreateCard
-            title="Talking-head clip"
-            desc="Turn a selfie video into a captioned short, with your B-roll on top"
-            onClick={() =>
-              navigate({ to: "/projects/new", search: { template: "talking" } as never })
-            }
+            title="Start from a template"
+            desc="Hooks, talking heads, product demos, podcasts and more, each with its own shape and look."
+            onClick={() => navigate({ to: "/templates" })}
             visual={
-              <div className="relative h-full w-full bg-gradient-to-br from-accent/60 via-card to-primary/5 p-4">
-                <div className="absolute top-4 left-4 w-[92px] rounded-xl overflow-hidden shadow-md border border-border">
-                  <img src={creatorPortrait} alt="" className="aspect-[3/4] w-full object-cover" />
+              <div className="relative flex h-full w-full items-center justify-center gap-2.5 bg-[radial-gradient(ellipse_at_50%_100%,color-mix(in_oklab,var(--color-primary)_18%,transparent),transparent_70%)] px-3 py-4">
+                <div className="h-[118px] -rotate-6">
+                  <LookPreview look="film" ratio="9:16" image={btsStudio} line="That night" />
                 </div>
-                <div className="absolute right-4 top-6 max-w-[130px] rounded-lg bg-card shadow-sm border border-border p-2">
-                  <div className="text-[9px] font-mono text-muted-foreground mb-1">00:04 · Hook</div>
-                  <div className="text-[10px] font-medium text-foreground leading-tight">
-                    Three habits that changed my morning routine…
-                  </div>
+                <div className="z-10 h-[140px]">
+                  <LookPreview look="glass" ratio="9:16" image={creator2} line="Three habits" emphasis="habits" />
                 </div>
-                <div className="absolute bottom-4 right-4 left-4 flex items-center gap-1.5">
-                  {Array.from({ length: 22 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="flex-1 rounded-full bg-primary/70"
-                      style={{ height: `${6 + Math.abs(Math.sin(i * 0.9)) * 22}px` }}
-                    />
-                  ))}
+                <div className="h-[118px] rotate-6">
+                  <LookPreview look="saas" ratio="9:16" image={editingDesk} line="Ship faster" emphasis="faster" />
                 </div>
               </div>
             }
@@ -303,15 +303,16 @@ function Home() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">What you can do today</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-[13px] text-foreground max-w-md">
                 {[
+                  "The whole edit, made automatically",
+                  "Motion graphics on your words",
+                  "AI story scenes",
                   "Word-by-word captions",
+                  "Studio sound: voice cleanup & mastering",
+                  "Colour correction & five looks",
                   "Music & SFX, quieter under your voice",
-                  "B-roll, images & picture-in-picture",
-                  "A timeline with trims, splits & undo",
-                  "9:16, 16:9 & 1:1 exports",
-                  "Browser exports up to 4K",
-                  "Thumbnails & project covers",
                   "Auto-cut silences",
                   "Voiceovers: your mic or AI voice",
+                  "9:16, 16:9 & 1:1 exports",
                 ].map((f) => (
                   <div key={f} className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
@@ -325,9 +326,7 @@ function Home() {
               <div className="relative">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground mb-2">Coming next</div>
                 <ul className="space-y-1 text-[12.5px] text-foreground/80">
-                  {[
-                    "Teams",
-                  ].map((f) => (
+                  {["AI video scenes: short generated clips in your edit"].map((f) => (
                     <li key={f}>{f}</li>
                   ))}
                 </ul>

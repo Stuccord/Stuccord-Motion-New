@@ -1,8 +1,9 @@
 // The Minimal, Cinematic and SaaS looks: every Motion Explainer graphic as
 // type and thin lines - no glows or 3D. The key word in the accent colour,
 // hairlines that draw on, lots of empty space, gentle fades without blur.
-// The looks share these layouts and differ in their skin: Minimal is one
-// clean sans on a near-black page; Cinematic has serif titles with the key
+// The looks share these layouts and differ in their skin: Minimal is white
+// only on true black with serif titles, its key moments cut to black
+// line-art scenes (MinimalScene.tsx); Cinematic has serif titles with the key
 // word in italics, widely spaced capitals, slower fades, a warmer page and
 // light leaks across chapter and story changes; SaaS is light - a pale page,
 // dark words, bold numbers, and words over the footage on white cards with
@@ -23,6 +24,7 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { NotesGraphic } from "@/motion/NotesGraphic";
+import { MinimalScene, isMinimalScene } from "@/motion/MinimalScene";
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import {
   ImagesContext,
@@ -77,20 +79,20 @@ const SHADOW = "0 1px 12px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.35)";
 
 const MINIMAL_SKIN: Skin = {
   vars: {
-    "--cg-page": "#0D0D0F",
+    "--cg-page": "#000000",
     "--cg-ink": "#F2F2F0",
     "--cg-soft": "rgba(242, 242, 240, 0.7)",
     "--cg-line": "rgba(242, 242, 240, 0.2)",
     "--cg-tile": "#1B1B1F",
     "--cg-over": SHADOW,
-    "--cg-title": SANS,
-    "--cg-track": "0.16em",
+    "--cg-title": SERIF,
+    "--cg-track": "0.3em",
     "--cg-behind-ink": "#F2F2F0",
     "--cg-behind-soft": "rgba(242, 242, 240, 0.7)",
     "--cg-button": "rgba(13, 13, 15, 0.35)",
     "--cg-button-edge": "rgba(242, 242, 240, 0.6)",
   },
-  serif: false,
+  serif: true,
   fadeFrames: 16,
   leaks: false,
   numberWeight: 200,
@@ -1760,9 +1762,16 @@ function Skinned({ skin, g, theme }: { skin: Skin; g: PlacedGraphic; theme: Moti
   );
 }
 
-/** One graphic in the minimal look. */
+/** White, the Minimal look's only colour (no accent: the key word goes italic). */
+const MONO = { accent: "#F4F4F2", glow: "rgba(244, 244, 242, 0.25)" };
+
+/**
+ * One graphic in the minimal look: its key moments as black line-art scenes
+ * (MinimalScene), everything else in white on black with serif titles.
+ */
 export function MinimalGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  return <Skinned skin={MINIMAL_SKIN} g={g} theme={theme} />;
+  if (isMinimalScene(g)) return <MinimalScene g={g} />;
+  return <Skinned skin={MINIMAL_SKIN} g={g} theme={{ ...theme, ...MONO }} />;
 }
 
 /** One graphic in the cinematic look. */
