@@ -23,7 +23,7 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { PaperGraphic } from "@/motion/PaperGraphics";
-import { FilmGraphic, MinimalGraphic, SaasGraphic } from "@/motion/MinimalGraphics";
+import { Cine3dGraphic, DocuGraphic, FilmGraphic, MinimalGraphic, SaasGraphic } from "@/motion/MinimalGraphics";
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import type { MotionLookId } from "@/motion/looks";
 import { NotesGraphic } from "@/motion/NotesGraphic";
@@ -1782,6 +1782,8 @@ const DRAW: Record<
   chapter: Chapter,
   label: Label,
   cta: Cta,
+  // Shown as a key line here (the Documentary and 3D Cinematic looks draw it as a scene).
+  metaphor: KeyLine,
   screen: ({ g, theme }) => (
     <ScreenGraphic
       g={g}
@@ -1801,7 +1803,12 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
     <ImagesContext.Provider value={images ?? {}}>
       <LogoContext.Provider value={logo ?? null}>
         <AbsoluteFill>
-          {graphics.map((g) => {
+          {graphics.map((graphic) => {
+            // A metaphor is a key line in the looks that don't draw it as a scene.
+            const g: PlacedGraphic =
+              graphic.type === "metaphor" && look !== "docu" && look !== "cine3d"
+                ? { ...graphic, type: "keyline" }
+                : graphic;
             const Draw =
               look === "paper"
                 ? PaperGraphic
@@ -1811,7 +1818,11 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
                     ? FilmGraphic
                     : look === "saas"
                       ? SaasGraphic
-                      : DRAW[g.type];
+                      : look === "docu"
+                        ? DocuGraphic
+                        : look === "cine3d"
+                          ? Cine3dGraphic
+                          : DRAW[g.type];
             return (
               <Sequence
                 key={g.id}

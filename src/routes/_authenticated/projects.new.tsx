@@ -361,7 +361,7 @@ function NewProject() {
 
           {/* 3. The look. */}
           <h2 className="mt-10 text-sm font-semibold">Look</h2>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {NEW_PROJECT_STYLES.map((s) => {
               const [name] = s.label.split(" — ");
               return (

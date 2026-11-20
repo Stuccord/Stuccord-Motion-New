@@ -5,7 +5,15 @@
 // render-worker/motion.js (LOOK_FINISH), the export. No app imports: the
 // worker bundles src/motion on its own.
 
-export const MOTION_LOOK_IDS = ["glass", "paper", "minimal", "film", "saas"] as const;
+export const MOTION_LOOK_IDS = [
+  "glass",
+  "paper",
+  "minimal",
+  "film",
+  "saas",
+  "docu",
+  "cine3d",
+] as const;
 export type MotionLookId = (typeof MOTION_LOOK_IDS)[number];
 
 /** A colour channel's curve: its output at inputs 0, 0.25, 0.5, 0.75 and 1. */
@@ -103,7 +111,40 @@ export const LOOK_FINISH: Record<MotionLookId, LookFinish> = {
     angleClose: 1.2,
     captions: "clean",
   },
+  // Documentary: calm and true to life - gentle colour, slow push-ins, clean
+  // captions, so the drawn scenes carry the story.
+  docu: {
+    ...STANDARD,
+    grade: { saturation: 0.92, contrast: 1.04 },
+    angleClose: 1.15,
+    pace: "calm",
+    angleMove: "push",
+    captions: "clean",
+  },
+  // 3D Cinematic: deeper contrast, rich reds and cool shadows, a vignette,
+  // slow push-ins.
+  cine3d: {
+    grade: {
+      saturation: 1.1,
+      contrast: 1.12,
+      curves: {
+        r: [0, 0.24, 0.52, 0.8, 1],
+        g: [0, 0.23, 0.49, 0.76, 0.98],
+        b: [0.03, 0.27, 0.5, 0.74, 0.95],
+      },
+    },
+    grain: 0.2,
+    vignette: true,
+    bars: false,
+    angleClose: 1.15,
+    pace: "calm",
+    angleMove: "push",
+    captions: "clean",
+  },
 };
+
+/** Looks that draw metaphor scenes; in the others a metaphor shows as a key line. */
+export const METAPHOR_LOOKS: ReadonlySet<MotionLookId> = new Set(["docu", "cine3d"]);
 
 /** A look's finish (unknown looks: the standard one). */
 export function lookFinish(look: string | null | undefined): LookFinish {

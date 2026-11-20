@@ -258,6 +258,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
         title: project.title,
         script: project.script,
         brief: project.brief,
+        look: parseMotionPlan(project.motion_plan)?.look ?? defaultLook(project.style_preset),
         numberedWords: numberedTranscript(words),
         wordCount: words.length,
       });

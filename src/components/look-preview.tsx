@@ -115,6 +115,37 @@ function Overlay({
           </div>
         </div>
       );
+    case "docu":
+      // A drawn scene (Documentary): a light grey stage, a dark road winding
+      // into the distance to a small red flag, and the line in dark ink.
+      return (
+        <div className="absolute inset-0 bg-[#e4e3df]">
+          <div className="absolute inset-0 shadow-[inset_0_0_50px_rgba(0,0,0,0.25)]" />
+          <svg className="absolute inset-x-0 top-[12%] h-[46%] w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M18 100 C 40 78, 70 74, 58 56 S 44 34, 56 22" fill="none" stroke="#1d1d1f" strokeWidth={7} strokeLinecap="round" />
+            <line x1={56} y1={22} x2={56} y2={6} stroke="#1d1d1f" strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
+            <path d="M56 6 L66 10 L56 14 Z" fill="#d7262e" />
+          </svg>
+          <div className={cn("absolute inset-x-[8%] top-[64%] text-center font-semibold leading-tight text-[#1d1d1f]", text)}>
+            <Words line={line} emphasis={emphasis} accent="text-[#d7262e]" />
+          </div>
+        </div>
+      );
+    case "cine3d":
+      // 3D Cinematic: a dark, red-lit stage, a glowing sphere for the object
+      // and big glowing words, the key word largest.
+      return (
+        <div className="absolute inset-0 bg-[#0a0506]">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_35%,rgba(220,38,38,0.55),transparent_60%)]" />
+          <div className="absolute left-1/2 top-[30%] h-[26%] aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_35%_30%,#f5d27a,#a8741c_55%,#3a2306)] shadow-[0_0_40px_rgba(239,68,68,0.6)]" />
+          <div className="absolute inset-0 shadow-[inset_0_0_60px_rgba(0,0,0,0.85)]" />
+          <div
+            className={cn("absolute inset-x-[7%] top-[58%] text-center font-semibold leading-tight text-white [text-shadow:0_0_18px_rgba(255,255,255,0.7)]", text)}
+          >
+            <Words line={line} emphasis={emphasis} accent="block text-[1.6em] font-normal" />
+          </div>
+        </div>
+      );
     case "film":
       return (
         <>

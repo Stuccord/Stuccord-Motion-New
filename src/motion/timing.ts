@@ -11,6 +11,7 @@ import {
   maxScenes,
   type ElementType,
   type MotionElement,
+  type Motif,
   type ProfileDetails,
   type ScreenDetails,
 } from "@/lib/motion-plan";
@@ -47,6 +48,8 @@ export type PlacedGraphic = {
   profile: ProfileDetails | null;
   /** An app screen's kind, device and address; null for other graphics. */
   screen: ScreenDetails | null;
+  /** A metaphor's drawn scene; null for other graphics (or a metaphor without one). */
+  motif: Motif | null;
   /** A Notes page's lines: from which frame each is written, and its sketch; null for other graphics. */
   lines: PlacedNoteLine[] | null;
   /** The pictures (a story's scenes, a cartoon's one, a card stream's or profile's); null for other graphics. */
@@ -179,6 +182,7 @@ export function placeGraphics(
       swap: el.type === "loop" && el.swap ? el.swap : null,
       profile: el.type === "profile" && el.profile ? el.profile : null,
       screen: el.type === "screen" && el.screen ? el.screen : null,
+      motif: el.type === "metaphor" ? (el.motif ?? null) : null,
       lines: el.type === "notes" ? placeLines(el, from, to, wordsByKey) : null,
       scenes: PICTURE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
     });

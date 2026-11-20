@@ -122,6 +122,7 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
     const len = g.to - g.from;
     switch (g.type) {
       case "keyline":
+      case "metaphor":
         add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
         add(g, "pop", "pop", at);
         break;

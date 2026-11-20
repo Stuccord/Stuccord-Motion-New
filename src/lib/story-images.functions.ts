@@ -103,8 +103,8 @@ export const makeSceneImage = createServerFn({ method: "POST" })
         reference_path: z.string().max(300).nullable(),
         /** The video's colour, for the house style's tint. */
         accent: Hex.nullable(),
-        /** Cinematic for stories, 3D animated for cartoon graphics. */
-        style: z.enum(["cinematic", "cartoon"]).default("cinematic"),
+        /** Cinematic for stories, 3D animated for cartoon graphics, a photo-real object for metaphors. */
+        style: z.enum(["cinematic", "cartoon", "object"]).default("cinematic"),
         /** The speaker is in the picture: send their cartoon along. */
         with_speaker: z.boolean().default(false),
       })

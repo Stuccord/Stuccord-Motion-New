@@ -13,6 +13,9 @@ import {
   CTA_KINDS,
   ELEMENT_LABEL,
   ELEMENT_TYPES,
+  MOTIFS,
+  MOTIF_LABEL,
+  type Motif,
   ZOOM_KINDS,
   markEdited,
   maxItems,
@@ -51,6 +54,8 @@ const HINT: Record<ElementType, string> = {
   label: "A small label naming the current topic.",
   cta: "A button the pointer clicks (like, subscribe…).",
   screen: "A phone or browser floating in: a cursor clicks, the camera zooms in.",
+  metaphor:
+    "An idea shown as a picture: a drawn scene (Documentary) or a 3D object (3D Cinematic). A key line in other looks.",
   zoom: "Zooms the picture in or eases it out.",
 };
 
@@ -107,6 +112,7 @@ export function GraphicInspector({
     el.type !== "zoom" && el.type !== "cartoon" && el.type !== "profile" && el.type !== "screen";
   const showEmphasis =
     el.type === "keyline" ||
+    el.type === "metaphor" ||
     el.type === "card" ||
     el.type === "steps" ||
     el.type === "loop" ||
@@ -204,6 +210,38 @@ export function GraphicInspector({
               className={cn(inputCls, "min-h-[64px] resize-none")}
             />
           </Field>
+        )}
+
+        {el.type === "metaphor" && (
+          <Field label="Drawn scene (Documentary look)">
+            <select
+              value={el.motif ?? "road"}
+              disabled={readOnly}
+              onChange={(e) => set({ motif: e.target.value as Motif })}
+              className="w-full h-8 rounded-md bg-black/40 border border-white/10 text-neutral-100 text-[12px] px-2"
+            >
+              {MOTIFS.map((m) => (
+                <option key={m} value={m}>
+                  {MOTIF_LABEL[m]}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        {el.type === "metaphor" && story && (
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase tracking-wide text-neutral-500">
+              Picture (3D Cinematic look)
+            </span>
+            <StoryScenesEditor
+              element={el}
+              tools={story}
+              readOnly={readOnly}
+              onScenes={(scenes) => set({ scenes })}
+              inputCls={inputCls}
+            />
+          </div>
         )}
 
         {el.type === "notes" && (

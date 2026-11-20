@@ -170,7 +170,7 @@ export function useStoryImages(
             prompt: scene.prompt,
             reference_path: el.type === "story" && index > 0 ? first : null,
             accent,
-            style: el.type === "cartoon" ? "cartoon" : "cinematic",
+            style: el.type === "cartoon" ? "cartoon" : el.type === "metaphor" ? "object" : "cinematic",
             with_speaker: speaker,
           },
         });
@@ -261,7 +261,10 @@ export function useStoryImages(
     const plan = motion.plan;
     if (!plan || !motion.canEdit) return;
     for (const el of plan.elements) {
-      if (!SCENE_TYPES.has(el.type) || el.source !== "ai") continue;
+      // Metaphors get their object picture only in the look that shows it.
+      const pictured =
+        SCENE_TYPES.has(el.type) || (el.type === "metaphor" && plan.look === "cine3d");
+      if (!pictured || el.source !== "ai") continue;
       const waiting = (el.scenes ?? []).some((sc, i) => !sc.image && withSpeaker(el, i));
       const key = `${plan.created_at}:${el.id}:${waiting ? (character?.image ?? "-") : ""}`;
       if (started.current.has(key)) continue;

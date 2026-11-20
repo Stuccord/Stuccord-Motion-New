@@ -1,6 +1,7 @@
 // A story graphic's scenes in the graphic panel: each scene's picture (made
 // by the AI or uploaded), its words on screen, and what the picture shows.
-// A cartoon graphic has one scene, always with the speaker's cartoon in it.
+// A cartoon graphic has one scene, always with the speaker's cartoon in it;
+// a metaphor has one object picture (shown in the 3D Cinematic look).
 
 import { useRef } from "react";
 import { ImagePlus, Loader2, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
@@ -41,7 +42,9 @@ export function StoryScenesEditor({
   inputCls: string;
 }) {
   const cartoon = el.type === "cartoon";
-  const scenes = cartoon ? (el.scenes ?? []).slice(0, 1) : (el.scenes ?? []);
+  const object = el.type === "metaphor";
+  const one = cartoon || object;
+  const scenes = one ? (el.scenes ?? []).slice(0, 1) : (el.scenes ?? []);
   const missing = scenes.filter((sc) => !sc.image).length;
   const anyBusy = scenes.some((_, i) => tools.busy.has(`${el.id}:${i}`));
   const set = (i: number, patch: Partial<MotionScene>) =>
@@ -49,7 +52,17 @@ export function StoryScenesEditor({
 
   return (
     <div className="space-y-3">
-      {!cartoon && (
+      {object && scenes.length === 0 && !readOnly && (
+        <button
+          onClick={() =>
+            onScenes([{ at: el.start, text: "", emphasis: null, prompt: "", image: null }])
+          }
+          className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-white"
+        >
+          <Plus className="w-3 h-3" /> Add a picture
+        </button>
+      )}
+      {!one && (
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-neutral-300 flex-1">
             {scenes.length} scene{scenes.length === 1 ? "" : "s"}
@@ -71,12 +84,13 @@ export function StoryScenesEditor({
           key={i}
           index={i}
           cartoon={cartoon}
+          object={object}
           hasCartoon={tools.hasCartoon}
           scene={sc}
           url={sc.image ? tools.urls[sc.image.path] : undefined}
           busy={tools.busy.has(`${el.id}:${i}`)}
           readOnly={readOnly}
-          canRemove={!cartoon && scenes.length > 1}
+          canRemove={object || (!cartoon && scenes.length > 1)}
           inputCls={inputCls}
           onChange={(patch) => set(i, patch)}
           onMake={() => void tools.make(el.id, i)}
@@ -85,7 +99,7 @@ export function StoryScenesEditor({
         />
       ))}
 
-      {!readOnly && !cartoon && scenes.length < MAX_SCENES && (
+      {!readOnly && !one && scenes.length < MAX_SCENES && (
         <button
           onClick={() =>
             onScenes([...scenes, { at: el.end, text: "", emphasis: null, prompt: "", image: null }])
@@ -102,6 +116,7 @@ export function StoryScenesEditor({
 function SceneRow({
   index,
   cartoon,
+  object = false,
   hasCartoon,
   scene: sc,
   url,
@@ -116,6 +131,8 @@ function SceneRow({
 }: {
   index: number;
   cartoon: boolean;
+  /** A metaphor's object picture: no words of its own, never the speaker. */
+  object?: boolean;
   hasCartoon: boolean;
   scene: MotionScene;
   url: string | undefined;
@@ -152,7 +169,7 @@ function SceneRow({
         <div className="flex-1 min-w-0 space-y-1">
           <div className="flex items-center gap-1">
             <span className="text-[10px] uppercase tracking-wide text-neutral-500 flex-1">
-              {cartoon ? "Cartoon" : `Scene ${index + 1}`}
+              {cartoon ? "Cartoon" : object ? "Object picture" : `Scene ${index + 1}`}
               {sc.image?.source === "upload" ? " · your picture" : ""}
             </span>
             {!readOnly && canRemove && (
@@ -165,6 +182,11 @@ function SceneRow({
               </button>
             )}
           </div>
+          {object ? (
+            <p className="text-[10px] text-neutral-500 leading-snug">
+              Shown with a 3D camera move in the 3D Cinematic look.
+            </p>
+          ) : (
           <Input
             value={sc.text}
             maxLength={80}
@@ -173,6 +195,7 @@ function SceneRow({
             onChange={(e) => onChange({ text: e.target.value })}
             className={cn(inputCls, "h-7")}
           />
+          )}
         </div>
       </div>
       <Textarea
@@ -182,12 +205,14 @@ function SceneRow({
         placeholder={
           cartoon
             ? "What the speaker's cartoon is doing, where, and their expression"
-            : "What the picture shows (a person, the place, the light and mood)"
+            : object
+              ? "The object that shows the idea (e.g. a brass clock beside gold coins)"
+              : "What the picture shows (a person, the place, the light and mood)"
         }
         onChange={(e) => onChange({ prompt: e.target.value })}
         className={cn(inputCls, "min-h-[52px] resize-none text-[11px]")}
       />
-      {!cartoon && (
+      {!cartoon && !object && (
         <label className="flex items-center gap-2 text-[10px] text-neutral-400">
           <Switch
             checked={speaker}

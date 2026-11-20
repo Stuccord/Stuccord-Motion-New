@@ -204,19 +204,23 @@ export async function estimateUsd(
   return Number.isFinite(usd) ? usd : null;
 }
 
-/** Downloads a finished result. */
+/**
+ * Downloads a finished result. A 2K picture is about 5 MB, so the whole
+ * download (the file itself included, not just its first answer) gets a few
+ * minutes on a slow connection; a stalled one fails with a message, not a crash.
+ */
 export async function fetchResult(url: string, fetchFn: Fetch = fetch): Promise<Bytes> {
-  let res: Response;
   try {
-    res = await fetchFn(url, { signal: AbortSignal.timeout(120_000) });
+    const res = await fetchFn(url, { signal: AbortSignal.timeout(300_000) });
+    if (!res.ok) {
+      console.warn("[higgsfield] download →", res.status);
+      throw new HiggsfieldError("Couldn't fetch the result from the AI service. Try again.");
+    }
+    const mimeType = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    return { data: new Uint8Array(await res.arrayBuffer()), mimeType };
   } catch (e) {
+    if (e instanceof HiggsfieldError) throw e;
     console.warn("[higgsfield] download failed:", e);
     throw new HiggsfieldError("Couldn't fetch the result from the AI service. Try again.");
   }
-  if (!res.ok) {
-    console.warn("[higgsfield] download →", res.status);
-    throw new HiggsfieldError("Couldn't fetch the result from the AI service. Try again.");
-  }
-  const mimeType = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-  return { data: new Uint8Array(await res.arrayBuffer()), mimeType };
 }

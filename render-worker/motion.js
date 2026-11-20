@@ -21,16 +21,18 @@ export const MOTION_FPS = 30;
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 const TAIL_FRAMES = Math.round(0.35 * MOTION_FPS);
 export const ZOOM_SCALE = 1.14;
-const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "chapter", "label", "cta", "screen"]);
+const TYPES = new Set(["keyline", "counter", "list", "card", "compare", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "chapter", "label", "cta", "screen", "metaphor"]);
+// A metaphor's drawn motifs (src/lib/motion-plan.ts MOTIFS).
+const MOTIFS = ["road", "stairs", "mountain", "crossroads", "scale", "chart", "clock", "target"];
 // Most items per type (src/lib/motion-plan.ts maxItems).
 const MAX_ITEMS = { compare: 2, card: 4, steps: 5, loop: 6, screen: 5 };
 // Graphics that fill the screen, so the captions make way (FULL_SCREEN_TYPES).
-const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "screen"]);
+const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "screen", "metaphor"]);
 // How far the picture shifts while a Notes page is up (src/motion/timing.ts).
 const SPLIT_WIDE = 0.25;
 const SPLIT_TALL = 0.15;
 // Types with pictures, and how many each holds (src/lib/motion-plan.ts maxScenes).
-const PICTURE_LIMIT = { story: 6, cartoon: 1, stream: 12, profile: 7, screen: 1 };
+const PICTURE_LIMIT = { story: 6, cartoon: 1, stream: 12, profile: 7, screen: 1, metaphor: 1 };
 // An app screen's kinds and devices (src/lib/motion-plan.ts SCREEN_KINDS, SCREEN_DEVICES).
 const SCREEN_KINDS = ["picture", "chat", "dashboard", "page"];
 const SCREEN_DEVICES = ["auto", "phone", "browser"];
@@ -93,6 +95,7 @@ export function placeGraphics(elements, words) {
           : null,
       profile: el.type === "profile" ? profileDetails(el.profile) : null,
       screen: el.type === "screen" ? screenDetails(el.screen) : null,
+      motif: el.type === "metaphor" && MOTIFS.includes(el.motif) ? el.motif : null,
       lines: el.type === "notes" ? placeLines(el.lines, from, to, byKey) : null,
       scenes: PICTURE_LIMIT[el.type] ? placeScenes(el.scenes, PICTURE_LIMIT[el.type], from, to, byKey) : null,
     });
@@ -386,6 +389,32 @@ export const LOOK_FINISH = {
     angleClose: 1.2,
     captions: "clean",
   },
+  docu: {
+    ...STANDARD_FINISH,
+    grade: { saturation: 0.92, contrast: 1.04 },
+    angleClose: 1.15,
+    pace: "calm",
+    angleMove: "push",
+    captions: "clean",
+  },
+  cine3d: {
+    grade: {
+      saturation: 1.1,
+      contrast: 1.12,
+      curves: {
+        r: [0, 0.24, 0.52, 0.8, 1],
+        g: [0, 0.23, 0.49, 0.76, 0.98],
+        b: [0.03, 0.27, 0.5, 0.74, 0.95],
+      },
+    },
+    grain: 0.2,
+    vignette: true,
+    bars: false,
+    angleClose: 1.15,
+    pace: "calm",
+    angleMove: "push",
+    captions: "clean",
+  },
 };
 export const lookFinish = (look) => (Object.hasOwn(LOOK_FINISH, look ?? "") ? LOOK_FINISH[look] : STANDARD_FINISH);
 
@@ -667,6 +696,7 @@ export function baseSoundEvents(graphics, zooms) {
     const len = g.to - g.from;
     switch (g.type) {
       case "keyline":
+      case "metaphor":
         add(g, "enter", "whoosh-light", at - WHOOSH_LEAD_MS);
         add(g, "pop", "pop", at);
         break;

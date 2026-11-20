@@ -9,6 +9,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AudioLines,
@@ -59,7 +60,7 @@ type StepState = "waiting" | "active" | "done" | "skipped" | "failed";
 const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
   { id: "transcribe", label: "Transcribing what you say", icon: AudioLines },
   { id: "plan", label: "Planning the graphics (Claude)", icon: Wand2 },
-  { id: "pictures", label: "Making the story pictures (Higgsfield)", icon: ImageIcon },
+  { id: "pictures", label: "Making the pictures (Higgsfield)", icon: ImageIcon },
   { id: "render", label: "Rendering your video", icon: Film },
 ];
 
@@ -69,6 +70,8 @@ const LOOKS: { id: MotionLook; label: string }[] = [
   { id: "film", label: "Cinematic" },
   { id: "saas", label: "SaaS" },
   { id: "paper", label: "Paper" },
+  { id: "docu", label: "Documentary" },
+  { id: "cine3d", label: "3D Cinematic" },
 ];
 
 const RUNNING_JOB = ["queued", "transcribing", "planning", "rendering"];
@@ -174,9 +177,11 @@ function MakePage() {
   const pictures = useCallback(
     async (start: MotionPlan) => {
       if (!needsAutoPictures(start)) {
-        const made = start.elements.some((e) => e.type === "story" && e.scenes?.length);
+        const made = start.elements.some(
+          (e) => (e.type === "story" || e.type === "metaphor") && e.scenes?.some((sc) => sc.image),
+        );
         if (made) mark("pictures", "done", "Already made.");
-        else mark("pictures", "skipped", "No story in this video.");
+        else mark("pictures", "skipped", "No pictures needed in this video.");
         return start;
       }
       mark("pictures", "active");
@@ -196,7 +201,7 @@ function MakePage() {
               prompt: job.prompt,
               reference_path: reference,
               accent,
-              style: "cinematic",
+              style: job.style,
               with_speaker: false,
             },
           });
@@ -217,7 +222,7 @@ function MakePage() {
           jobs.length ? "done" : "skipped",
           jobs.length
             ? `${made} made (up to ${AUTO_PICTURES} a video).`
-            : "No story in this video.",
+            : "No pictures needed in this video.",
         );
       }
       return plan;
@@ -340,8 +345,34 @@ function MakePage() {
     fix(async () => {
       const st = await fetchPlan({ data: { project_id: projectId } });
       if (!st.plan) throw new Error("This video has no graphics to restyle.");
-      await saveFn({ data: { project_id: projectId, plan: { ...st.plan, look } } });
-      setPlanState({ ...st, plan: { ...st.plan, look } });
+      const restyled = { ...st.plan, look };
+      // 3D Cinematic shows its metaphors as AI object pictures: make any missing.
+      // Only the metaphors' pictures: graphics added in the editor stay as they are.
+      let made: MotionPlan = restyled;
+      if (look === "cine3d") {
+        const jobs = pictureJobs(restyled).filter((j) => j.style === "object");
+        const accent = motionAccent(restyled.colour, null).hex;
+        for (const job of jobs) {
+          try {
+            const r = await makeFn({
+              data: {
+                project_id: projectId,
+                prompt: job.prompt,
+                reference_path: null,
+                accent,
+                style: "object",
+                with_speaker: false,
+              },
+            });
+            made = withPicture(made, job.elementId, job.index, r.path);
+          } catch (e) {
+            toast.error(message(e, "Couldn't make a picture."));
+            break;
+          }
+        }
+      }
+      await saveFn({ data: { project_id: projectId, plan: made } });
+      setPlanState(await fetchPlan({ data: { project_id: projectId } }));
     });
 
   const redoGraphics = () =>

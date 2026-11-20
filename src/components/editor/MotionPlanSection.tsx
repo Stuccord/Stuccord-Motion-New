@@ -72,6 +72,7 @@ const TYPE_TINT: Record<MotionElement["type"], string> = {
   label: "text-neutral-300 border-white/15",
   cta: "text-red-300 border-red-400/30",
   screen: "text-blue-300 border-blue-400/30",
+  metaphor: "text-red-200 border-red-300/30",
   zoom: "text-neutral-400 border-white/10",
 };
 
@@ -533,6 +534,8 @@ const LOOKS: { id: MotionLook; label: string; hint: string }[] = [
   { id: "minimal", label: "Minimal", hint: "Clean type, thin lines, calm cuts" },
   { id: "film", label: "Cinematic", hint: "Film colour, grain, bars, slow push-ins" },
   { id: "saas", label: "SaaS", hint: "Light pages, white cards, app screens" },
+  { id: "docu", label: "Documentary", hint: "Drawn scenes on a light stage, one red accent" },
+  { id: "cine3d", label: "3D Cinematic", hint: "3D objects, red light, big glowing words" },
 ];
 
 function LookRow({ look }: { look: LookControls }) {

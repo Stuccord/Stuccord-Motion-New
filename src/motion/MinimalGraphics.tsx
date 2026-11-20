@@ -25,6 +25,8 @@ import {
 import type { PlacedGraphic } from "@/motion/timing";
 import { NotesGraphic } from "@/motion/NotesGraphic";
 import { MinimalScene, isMinimalScene } from "@/motion/MinimalScene";
+import { DocuScene, isDocuScene, DOCU_INK, DOCU_RED, DOCU_STAGE } from "@/motion/DocuScene";
+import { Cine3dScene, isCineScene, CINE_RED, CINE_STAGE } from "@/motion/Cine3dScene";
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import {
   ImagesContext,
@@ -146,6 +148,63 @@ const SAAS_SKIN: Skin = {
   numberWeight: 700,
   cards: true,
   lively: true,
+};
+
+/**
+ * Documentary: a light grey stage, near-black words in a bold sans, the key
+ * word in the one red; words over the footage on light cards. Key lines,
+ * chapters and metaphors are drawn scenes instead (DocuScene).
+ */
+const DOCU_SKIN: Skin = {
+  vars: {
+    "--cg-page": DOCU_STAGE,
+    "--cg-ink": DOCU_INK,
+    "--cg-soft": "rgba(29, 29, 31, 0.6)",
+    "--cg-line": "rgba(29, 29, 31, 0.16)",
+    "--cg-tile": "#D3D2CD",
+    "--cg-over": "none",
+    "--cg-title": SANS,
+    "--cg-track": "0.22em",
+    "--cg-card": "#EFEEEA",
+    "--cg-behind-ink": "#FFFFFF",
+    "--cg-behind-soft": "rgba(255, 255, 255, 0.78)",
+    "--cg-button": "#EFEEEA",
+    "--cg-button-edge": "rgba(29, 29, 31, 0.2)",
+  },
+  serif: false,
+  fadeFrames: 16,
+  leaks: false,
+  numberWeight: 800,
+  cards: true,
+  lively: false,
+};
+
+/**
+ * 3D Cinematic: near-black, warm white words in a bold sans, the key word in
+ * red; slow arrivals. Key lines, chapters and metaphors are its glowing
+ * scenes instead (Cine3dScene).
+ */
+const CINE3D_SKIN: Skin = {
+  vars: {
+    "--cg-page": CINE_STAGE,
+    "--cg-ink": "#FFF6F2",
+    "--cg-soft": "rgba(255, 246, 242, 0.7)",
+    "--cg-line": "rgba(255, 90, 80, 0.3)",
+    "--cg-tile": "#1A0C0D",
+    "--cg-over": "0 0 18px rgba(255, 40, 30, 0.45), 0 1px 10px rgba(0, 0, 0, 0.6)",
+    "--cg-title": SANS,
+    "--cg-track": "0.3em",
+    "--cg-behind-ink": "#FFF6F2",
+    "--cg-behind-soft": "rgba(255, 246, 242, 0.75)",
+    "--cg-button": "rgba(7, 4, 5, 0.45)",
+    "--cg-button-edge": "rgba(255, 90, 80, 0.6)",
+  },
+  serif: false,
+  fadeFrames: 20,
+  leaks: false,
+  numberWeight: 800,
+  cards: false,
+  lively: false,
 };
 
 /** Behind the speaker (a darkened room): the skin's light words. */
@@ -1716,6 +1775,7 @@ const MINIMAL_DRAW: Record<PlacedGraphic["type"], Draw> = {
   chapter: MinimalChapter,
   label: MinimalLabel,
   cta: MinimalCta,
+  metaphor: MinimalKeyLine,
   screen: function Screen({ g, theme }) {
     const { lively } = useSkin();
     return <ScreenGraphic g={g} theme={theme} background={PAGE} ink={INK} lively={lively} />;
@@ -1777,6 +1837,30 @@ export function MinimalGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTh
 /** One graphic in the cinematic look. */
 export function FilmGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   return <Skinned skin={FILM_SKIN} g={g} theme={theme} />;
+}
+
+/** One graphic in the Documentary look: its key moments as drawn scenes, the rest in its light skin. */
+export function DocuGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isDocuScene(g)) return <DocuScene g={g} />;
+  return (
+    <Skinned
+      skin={DOCU_SKIN}
+      g={g}
+      theme={{ ...theme, accent: DOCU_RED, glow: "rgba(215, 38, 46, 0.25)" }}
+    />
+  );
+}
+
+/** One graphic in the 3D Cinematic look: its key moments as glowing scenes, the rest dark and red-lit. */
+export function Cine3dGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isCineScene(g)) return <Cine3dScene g={g} />;
+  return (
+    <Skinned
+      skin={CINE3D_SKIN}
+      g={g}
+      theme={{ ...theme, accent: CINE_RED, glow: "rgba(255, 42, 42, 0.35)" }}
+    />
+  );
 }
 
 /** One graphic in the SaaS look. */

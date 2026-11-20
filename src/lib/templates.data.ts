@@ -21,8 +21,8 @@ export type TemplateDef = {
   ratio: "9:16" | "16:9" | "1:1";
   /** Suggested length; nothing trims the video to it. */
   duration: string;
-  /** One of NEW_PROJECT_STYLES' ids: gadzhi, minimal, film or saas. */
-  preset: "gadzhi" | "minimal" | "film" | "saas";
+  /** One of NEW_PROJECT_STYLES' ids: gadzhi, minimal, film, saas, docu or cine3d. */
+  preset: "gadzhi" | "minimal" | "film" | "saas" | "docu" | "cine3d";
   brief: string;
 };
 

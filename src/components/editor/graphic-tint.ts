@@ -20,5 +20,6 @@ export const GRAPHIC_TINT: Record<ElementType, string> = {
   label: "bg-white/10 border-white/25 text-neutral-200",
   cta: "bg-red-500/20 border-red-400/50 text-red-100",
   screen: "bg-blue-500/20 border-blue-400/50 text-blue-100",
+  metaphor: "bg-red-500/15 border-red-300/50 text-red-50",
   zoom: "bg-white/[0.06] border-white/20 text-neutral-300 border-dashed",
 };

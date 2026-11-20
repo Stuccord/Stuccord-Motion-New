@@ -8,9 +8,11 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { DraftPlan, SKETCH_IDS } from "@/lib/motion-plan";
+import { DraftPlan, MOTIFS, SKETCH_IDS } from "@/lib/motion-plan";
+import { METAPHOR_LOOKS, type MotionLookId } from "@/motion/looks";
 
 const SKETCHES = SKETCH_IDS.join(", ");
+const MOTIF_LIST = MOTIFS.join(", ");
 
 export const PLAN_MODEL = "claude-sonnet-5-5";
 
@@ -39,6 +41,7 @@ Graphic types (field "type"):
 - label: a small "you are here" label naming the current item or topic; it may stay up while other graphics come and go.
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
 - screen: when the speaker talks about an app, a website, a tool or software on screen ("I asked ChatGPT...", "my dashboard shows...", "on the landing page"). Full screen: a phone or browser window floats in, a cursor clicks, the camera zooms in. Set "screen" {kind, url}: kind "chat" for asking an AI or messaging ("text" is the question as typed, under 15 words; "items" the reply's 1-4 short lines), "dashboard" for results and stats ("text" the panel's title; "number" the headline figure if one was said, else null; "items" 1-5 short row labels), or "page" for a website or product ("text" the page's headline, under 8 words; "emphasis" one word from it; "items" 1-3 short feature lines). "url" is the site's address only if the speaker said it (like "stripe.com"), else "". Use only what was said. At most a few per video.
+- metaphor: ONLY when the request says metaphors are ON for this video's look; otherwise never use it. When the speaker states an idea that a picture says better than words - a saying or image ("time is money", "it's a long road", "you're at a crossroads", "climb step by step", "find the balance", "hit the target") - show it as a full-screen scene. "text" is the words on screen, short (2-6 words, the speaker's own), with "emphasis" the one word or short phrase to show biggest (e.g. text "time is money", emphasis "money"). "motif" is the drawn scene that fits best, one of: ${MOTIF_LIST} (road: a winding road to a flag - a journey or long way; stairs: steps up - progress; mountain: a path to a flag on top - a hard goal; crossroads: a choice; scale: balance or trade-off; chart: growth or results; clock: time; target: a goal or focus); null if none fits. "scenes" has exactly one scene: "from_word" the metaphor's first word, "text" "", "emphasis" null, "speaker" false, and "prompt" a photo-real object or still life that shows the idea (e.g. "a vintage brass alarm clock beside a stack of gold coins on a dark reflective surface"), one or two sentences, no people, no words or lettering, never a real brand or logo. Use it for the video's strongest ideas only: roughly one every 20-40 seconds, never two in a row, and in place of a keyline for that line.
 - zoom: a punch-in ("in") on an emphatic beat, or an ease back out ("out"). Use zooms to keep stretches without graphics moving.
 
 Behind the speaker (field "behind"):
@@ -48,15 +51,15 @@ Behind the speaker (field "behind"):
 
 Timing:
 - "from_word" is the first word that triggers the graphic; "to_word" the last word it stays up for (usually the end of the phrase or sentence, 1.5-8 seconds of speech). A list stays until its last item is said.
-- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, stream, profile, notes, chapter, cta and screen never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
+- One main graphic at a time: keyline, counter, list, card, compare, story, cartoon, steps, loop, coins, stream, profile, notes, chapter, cta, screen and metaphor never overlap each other. Zooms don't overlap other zooms; labels don't overlap other labels.
 - Pace: the opening (hook) is the densest - a visual every 3-4 seconds. Later, a graphic or a zoom roughly every 5-10 seconds. Leave the speaker on screen for personal, emotional moments.
 
 Writing:
 - Use the speaker's own words and language. Keep on-screen text short: titles under 6 words, items under 5 words, key lines under 12 words.
 - Never invent facts, numbers, names or claims that weren't said. If the script differs from what was said, follow what was said.
 - "reason" is a few words on why this graphic fits here (e.g. "number said", "three benefits listed", "new tip starts").
-- "swap" is null on every type but loop (and on most loops); "profile" is null on every type but profile; "screen" is null on every type but screen; "lines" is [] on every type but notes.
-- Use null for fields a type doesn't use, and [] for unused items and for "scenes" on every type but story and cartoon.
+- "swap" is null on every type but loop (and on most loops); "profile" is null on every type but profile; "screen" is null on every type but screen; "motif" is null on every type but metaphor; "lines" is [] on every type but notes.
+- Use null for fields a type doesn't use, and [] for unused items and for "scenes" on every type but story, cartoon and metaphor.
 - "language" is the transcript's language as a short code (e.g. "en").`;
 
 export type PlanRequest = {
@@ -66,7 +69,21 @@ export type PlanRequest = {
   brief?: string | null;
   numberedWords: string;
   wordCount: number;
+  /** The video's look: metaphors are planned only in the looks that draw them. */
+  look?: MotionLookId | null;
 };
+
+/** What the planner is told about metaphors for this look. */
+function metaphorNote(look: MotionLookId | null | undefined): string {
+  if (look && METAPHOR_LOOKS.has(look)) {
+    const how =
+      look === "docu"
+        ? "Documentary: each metaphor is drawn as its motif, so pick the motif with care"
+        : "3D Cinematic: each metaphor is shown as its photo-real object picture, so write that prompt with care";
+    return `Metaphors are ON for this video's look (${how}).`;
+  }
+  return "Metaphors are OFF for this video's look: never use the metaphor type.";
+}
 
 export type PlanResult = {
   draft: DraftPlan;
@@ -89,6 +106,7 @@ function userMessage(req: PlanRequest): string {
           `The creator's notes for this video (follow them where they fit the rules above):\n<notes>\n${req.brief.trim().slice(0, 4000)}\n</notes>`,
         ]
       : []),
+    metaphorNote(req.look),
     `The spoken words (${req.wordCount}), numbered:\n<words>\n${req.numberedWords}\n</words>`,
     "Plan the graphics for this video.",
   ];

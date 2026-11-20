@@ -1538,6 +1538,7 @@ const PAPER_DRAW: Record<PlacedGraphic["type"], Draw> = {
   chapter: PaperChapter,
   label: PaperLabel,
   cta: PaperCta,
+  metaphor: PaperKeyLine,
   screen: ({ g, theme }) => <ScreenGraphic g={g} theme={theme} background={DESK} ink={PAPER} />,
 };
 

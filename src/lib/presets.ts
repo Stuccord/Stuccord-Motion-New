@@ -2,7 +2,7 @@
 // existing projects keep working ("gadzhi" is the Motion Explainer style).
 // Projects made with the older preset ids are edited the Motion Explainer
 // way, so they show that name ("cinematic" included: the Cinematic style is
-// "film"). "minimal", "film" and "saas" start their graphics in that look
+// "film"). "minimal", "film", "saas", "docu" and "cine3d" start their graphics in that look
 // (src/motion/looks.ts defaultLook).
 
 const PRESET_LABEL: Record<string, string> = {
@@ -13,6 +13,8 @@ const PRESET_LABEL: Record<string, string> = {
   minimal: "Minimal",
   film: "Cinematic",
   saas: "SaaS",
+  docu: "Documentary",
+  cine3d: "3D Cinematic",
 };
 
 /** The styles a new project can pick. */
@@ -21,6 +23,8 @@ export const NEW_PROJECT_STYLES = [
   { id: "minimal", label: "Minimal — black frames, thin lines, quiet type" },
   { id: "film", label: "Cinematic — film colour, grain, bars, slow push-ins" },
   { id: "saas", label: "SaaS — light pages, white cards, app screens" },
+  { id: "docu", label: "Documentary — drawn scenes, a light stage, one red accent" },
+  { id: "cine3d", label: "3D Cinematic — 3D objects, red light, glowing words" },
 ] as const;
 
 /** The name shown for a preset id (the id itself if it's not a known one). */

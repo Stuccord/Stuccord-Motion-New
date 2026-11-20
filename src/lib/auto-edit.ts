@@ -7,7 +7,9 @@
 // profiles (need their pictures). Story scenes with the speaker are made as a
 // person who fits the scene. Only the first AUTO_PICTURES story scenes get a
 // picture (the owner's cost cap); the rest are dropped, and a story without
-// any picture is dropped.
+// any picture is dropped. In the 3D Cinematic look a metaphor's object
+// picture counts toward the same cap; one left without a picture shows its
+// glowing words alone.
 
 import type { MotionElement, MotionPlan } from "@/lib/motion-plan";
 
@@ -24,7 +26,18 @@ export type PictureJob = {
   prompt: string;
   /** The story's first scene, when this is a later one (its picture is the reference). */
   matchIndex: number | null;
+  /** A story scene (cinematic) or a metaphor's object (3D Cinematic). */
+  style: "cinematic" | "object";
 };
+
+/** The graphics whose pictures the automatic edit makes: stories, and metaphors in the 3D Cinematic look. */
+function pictured(plan: MotionPlan): MotionElement[] {
+  return plan.elements.filter(
+    (e) =>
+      (e.type === "story" || (e.type === "metaphor" && plan.look === "cine3d")) &&
+      e.scenes?.length,
+  );
+}
 
 /** The plan without the graphics the automatic edit leaves out, and with no speaker scenes. */
 export function prepareAutoPlan(plan: MotionPlan): MotionPlan {
@@ -45,7 +58,7 @@ export function prepareAutoPlan(plan: MotionPlan): MotionPlan {
  * ones already made); a story's first scene comes before its later ones.
  */
 export function pictureJobs(plan: MotionPlan, cap = AUTO_PICTURES): PictureJob[] {
-  const stories = plan.elements.filter((e) => e.type === "story" && e.scenes?.length);
+  const stories = pictured(plan);
   const made = stories.reduce((n, e) => n + (e.scenes ?? []).filter((sc) => sc.image).length, 0);
   const jobs: PictureJob[] = [];
   for (const e of stories) {
@@ -59,6 +72,7 @@ export function pictureJobs(plan: MotionPlan, cap = AUTO_PICTURES): PictureJob[]
         index: i,
         prompt: scenes[i].prompt,
         matchIndex: i > 0 ? 0 : null,
+        style: e.type === "metaphor" ? "object" : "cinematic",
       });
     }
   }
@@ -82,11 +96,18 @@ export function withPicture(plan: MotionPlan, elementId: string, index: number, 
   };
 }
 
-/** The plan as rendered: story scenes without a picture dropped, stories without any dropped. */
+/**
+ * The plan as rendered: story scenes without a picture dropped, stories
+ * without any dropped; a metaphor without its picture keeps its words (and
+ * its drawn scene) but not the unmade picture.
+ */
 export function finishAutoPlan(plan: MotionPlan): MotionPlan {
   return {
     ...plan,
     elements: plan.elements.flatMap((e) => {
+      if (e.type === "metaphor" && plan.look === "cine3d") {
+        return [{ ...e, scenes: (e.scenes ?? []).filter((sc) => sc.image) }];
+      }
       if (e.type !== "story") return [e];
       const scenes = (e.scenes ?? []).filter((sc) => sc.image);
       return scenes.length ? [{ ...e, scenes }] : [];
@@ -99,6 +120,9 @@ export function needsAutoPictures(plan: MotionPlan): boolean {
   return plan.elements.some(
     (e) =>
       LEFT_OUT.has(e.type) ||
-      (e.type === "story" && (e.scenes ?? []).some((sc) => !sc.image || sc.speaker)),
+      (e.type === "story" && (e.scenes ?? []).some((sc) => !sc.image || sc.speaker)) ||
+      (e.type === "metaphor" &&
+        plan.look === "cine3d" &&
+        (e.scenes ?? []).some((sc) => !sc.image)),
   );
 }

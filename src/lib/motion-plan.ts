@@ -53,6 +53,7 @@ export const ELEMENT_TYPES = [
   "label",
   "cta",
   "screen",
+  "metaphor",
   "zoom",
 ] as const;
 export type ElementType = (typeof ELEMENT_TYPES)[number];
@@ -75,7 +76,35 @@ export const ELEMENT_LABEL: Record<ElementType, string> = {
   label: "Label",
   cta: "Call to action",
   screen: "App screen",
+  metaphor: "Metaphor",
   zoom: "Zoom",
+};
+
+/**
+ * A metaphor's drawn scenes (the Documentary look draws them in code): a
+ * road to a flag, stairs, a mountain with a flag on top, a crossroads, a
+ * balance scale, a rising chart, a clock and a target.
+ */
+export const MOTIFS = [
+  "road",
+  "stairs",
+  "mountain",
+  "crossroads",
+  "scale",
+  "chart",
+  "clock",
+  "target",
+] as const;
+export type Motif = (typeof MOTIFS)[number];
+export const MOTIF_LABEL: Record<Motif, string> = {
+  road: "Road to a flag",
+  stairs: "Stairs",
+  mountain: "Mountain",
+  crossroads: "Crossroads",
+  scale: "Balance scale",
+  chart: "Rising chart",
+  clock: "Clock",
+  target: "Target",
 };
 
 /** Longest main text, and most graphics in one plan. */
@@ -100,6 +129,7 @@ export const PICTURE_TYPES: ReadonlySet<ElementType> = new Set([
   "stream",
   "profile",
   "screen",
+  "metaphor",
 ]);
 
 /** Most pictures each type holds. */
@@ -107,6 +137,7 @@ export function maxScenes(type: ElementType): number {
   switch (type) {
     case "cartoon":
     case "screen":
+    case "metaphor":
       return 1;
     case "stream":
       return MAX_STREAM;
@@ -255,6 +286,8 @@ export const DraftElement = z.object({
   ),
   /** An app screen: what it draws, and the site's address if one was said; null for other types. */
   screen: z.object({ kind: z.enum(["chat", "dashboard", "page"]), url: z.string() }).nullable(),
+  /** A metaphor's drawn scene; null for other types. */
+  motif: z.enum(MOTIFS).nullable(),
   /** A social profile's details, as far as they were said; null for other types. */
   profile: z
     .object({
@@ -370,6 +403,12 @@ export const MotionElement = z
     profile: ProfileDetails.optional(),
     /** An app screen's kind, device and address (screens only; its picture is scenes[0]). */
     screen: ScreenDetails.optional(),
+    /**
+     * A metaphor's drawn scene (metaphors only; the Documentary look draws
+     * it). Its photo-real object picture, for the 3D Cinematic look, is
+     * scenes[0] (the prompt, then the picture once made).
+     */
+    motif: z.enum(MOTIFS).optional(),
     /** A Notes page's lines, each written on its word (notes only). */
     lines: z.array(NoteLine).max(MAX_NOTE_LINES).optional(),
     /** "ai" as planned; "user" once added or changed by hand. */
@@ -509,6 +548,7 @@ const EXCLUSIVE: ReadonlySet<ElementType> = new Set([
   "chapter",
   "cta",
   "screen",
+  "metaphor",
 ]);
 
 /**
@@ -527,6 +567,7 @@ export const FULL_SCREEN_TYPES: ReadonlySet<ElementType> = new Set([
   "profile",
   "notes",
   "screen",
+  "metaphor",
 ]);
 
 const clean = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max);
@@ -603,6 +644,19 @@ export function draftsToElements(
             speaker: true,
           });
         }
+      } else if (d.type === "metaphor") {
+        // Its one object picture (for the 3D Cinematic look): from its first
+        // word, never the speaker, with no words of its own.
+        const sc = d.scenes.find((s) => clean(s.prompt, MAX_SCENE_PROMPT));
+        if (sc) {
+          scenes.push({
+            from_word: d.from_word,
+            text: "",
+            emphasis: null,
+            prompt: clean(sc.prompt, MAX_SCENE_PROMPT),
+            speaker: false,
+          });
+        }
       } else if (d.type === "story") {
         for (const sc of [...d.scenes].sort((a, b) => a.from_word - b.from_word)) {
           const sceneText = clean(sc.text, MAX_SCENE_TEXT);
@@ -647,6 +701,9 @@ export function draftsToElements(
           return true;
         case "notes":
           return noteLines(d).length >= 2;
+        case "metaphor":
+          // Its words, and a drawn scene or an object picture to show.
+          return d.text !== "" && (d.motif != null || d.scenes.length === 1);
         case "screen":
           // A chat needs its question, a page its headline, a dashboard a number or rows.
           return d.screen?.kind === "dashboard"
@@ -705,6 +762,18 @@ export function draftsToElements(
         ? {
             scenes: [],
             screen: { kind: d.screen.kind, device: "auto" as const, url: clean(d.screen.url, 200) },
+          }
+        : {}),
+      ...(d.type === "metaphor"
+        ? {
+            ...(d.motif && MOTIFS.includes(d.motif) ? { motif: d.motif } : {}),
+            scenes: d.scenes.map((sc) => ({
+              at: anchorOf(words[sc.from_word]),
+              text: "",
+              emphasis: null,
+              prompt: sc.prompt,
+              image: null,
+            })),
           }
         : {}),
       ...(d.type === "notes"
@@ -784,6 +853,8 @@ export function elementSummary(el: MotionElement): string {
       return el.text || (el.lines ?? []).map((l) => l.text).join(" · ");
     case "screen":
       return el.text || el.screen?.url || "App screen";
+    case "metaphor":
+      return [el.text, el.motif ? MOTIF_LABEL[el.motif] : ""].filter(Boolean).join(" · ");
     case "steps":
     case "loop":
       return [el.text, el.items.join(" → ") + (el.type === "loop" ? " ↻" : "")]
@@ -923,7 +994,11 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
     // keeps just one scene, always with the speaker.
     // Pictures only carry over between the picture-set types.
     scenes:
-      type === "stream" || type === "profile" || type === "screen"
+      type === "metaphor"
+        ? el.type === "metaphor"
+          ? (el.scenes ?? []).slice(0, 1)
+          : [{ at: el.start, text: "", emphasis: null, prompt: firstScene(el).prompt, image: null }]
+        : type === "stream" || type === "profile" || type === "screen"
         ? el.type === "stream" || el.type === "profile" || el.type === "screen"
           ? (el.scenes ?? []).slice(0, maxScenes(type))
           : []
@@ -936,6 +1011,7 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
               : [firstScene(el)],
     profile: type === "profile" ? (el.profile ?? { ...EMPTY_PROFILE }) : undefined,
     screen: type === "screen" ? (el.screen ?? { ...EMPTY_SCREEN }) : undefined,
+    motif: type === "metaphor" ? (el.motif ?? "road") : undefined,
     // A Notes page starts from the graphic's items (or two blank lines).
     lines:
       type === "notes"

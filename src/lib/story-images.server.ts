@@ -44,12 +44,22 @@ export function imageModel(): string {
 /** A problem the user can act on; its message is shown as is. */
 export class ImageError extends Error {}
 
-export type SceneStyle = "cinematic" | "cartoon";
+/**
+ * Cinematic (stories), 3D animated (cartoon graphics), or a photo-real object
+ * (the 3D Cinematic look's metaphors: one hero object, dark, red-lit).
+ */
+export type SceneStyle = "cinematic" | "cartoon" | "object";
 
 /** The house style, added to every scene's own description. */
 export function houseStyle(accentHex: string | null, style: SceneStyle = "cinematic"): string {
   return [
-    ...(style === "cartoon"
+    ...(style === "object"
+      ? [
+          "Photo-real 3D render of the object, like a premium product shot: one hero object, centred, with clear space around it.",
+          "Near-black background, dramatic low-key studio light, a strong red rim light on one side, soft warm highlights, shallow depth of field, macro lens, rich materials and reflections.",
+          "No people, no hands.",
+        ]
+      : style === "cartoon"
       ? [
           "Still from a modern 3D animated feature film: expressive characters, soft rounded shapes, rich materials.",
           "Cinematic lighting with a moody, low-key background and a soft rim light on the character.",
@@ -58,7 +68,7 @@ export function houseStyle(accentHex: string | null, style: SceneStyle = "cinema
           "Cinematic film still, 35mm photograph, shallow depth of field.",
           "Moody, low-key lighting with deep shadows and soft highlights, subtle film grain, realistic.",
         ]),
-    accentHex ? `A gentle colour cast toward ${accentHex} in the light and shadows.` : "",
+    accentHex && style !== "object" ? `A gentle colour cast toward ${accentHex} in the light and shadows.` : "",
     "No text, letters, numbers, captions, logos or watermarks anywhere in the picture.",
   ]
     .filter(Boolean)
