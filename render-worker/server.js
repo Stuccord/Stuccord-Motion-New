@@ -1463,6 +1463,14 @@ async function runRender(job) {
             musicPlan = { mode: "segments", segments: stretchesOf((i) => musicPaths[i % musicPaths.length]) };
           }
         }
+        // No graphics and no song (the automatic edit's captions-only
+        // fallback asks for this): a built-in bed under the whole video.
+        if (!placedMotion && musicOn && !musicClips.length && job.music?.bed === true) {
+          musicPlan = {
+            mode: "segments",
+            segments: [{ path: path.join(SOUNDS_DIR, `${MUSIC_BEDS[0]}.m4a`), startMs: 0, endMs: video.durationMs }],
+          };
+        }
 
         // SFX: one with no start plays on every cut (where each main clip
         // after the first starts), taking turns with the others; a placed

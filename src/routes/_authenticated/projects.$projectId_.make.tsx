@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AudioLines,
+  Scissors,
   CheckCircle2,
   Circle,
   Download,
@@ -32,6 +33,8 @@ import { isUnlimited } from "@/lib/plans";
 import { getProject, getRenderSignedUrl, submitRender } from "@/lib/projects.functions";
 import {
   getMotionPlan,
+  cutPausesForAutoEdit,
+  placeBrollForAutoEdit,
   planMotionGraphics,
   saveMotionPlan,
   transcribeForPlan,
@@ -54,11 +57,12 @@ export const Route = createFileRoute("/_authenticated/projects/$projectId_/make"
   component: MakePage,
 });
 
-type StepId = "transcribe" | "plan" | "pictures" | "render";
+type StepId = "transcribe" | "cut" | "plan" | "pictures" | "render";
 type StepState = "waiting" | "active" | "done" | "skipped" | "failed";
 
 const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
   { id: "transcribe", label: "Transcribing what you say", icon: AudioLines },
+  { id: "cut", label: "Cutting the pauses", icon: Scissors },
   { id: "plan", label: "Planning the graphics (Claude)", icon: Wand2 },
   { id: "pictures", label: "Making the pictures (Higgsfield)", icon: ImageIcon },
   { id: "render", label: "Rendering your video", icon: Film },
@@ -87,6 +91,8 @@ function MakePage() {
   const fetchPlan = useServerFn(getMotionPlan);
   const transcribeFn = useServerFn(transcribeForPlan);
   const planFn = useServerFn(planMotionGraphics);
+  const cutFn = useServerFn(cutPausesForAutoEdit);
+  const brollFn = useServerFn(placeBrollForAutoEdit);
   const saveFn = useServerFn(saveMotionPlan);
   const makeFn = useServerFn(makeSceneImage);
   const renderFn = useServerFn(submitRender);
@@ -95,6 +101,7 @@ function MakePage() {
   const [title, setTitle] = useState("");
   const [steps, setSteps] = useState<Record<StepId, StepState>>({
     transcribe: "waiting",
+    cut: "waiting",
     plan: "waiting",
     pictures: "waiting",
     render: "waiting",
@@ -166,7 +173,8 @@ function MakePage() {
       data: {
         project_id: projectId,
         captions: p.captions_enabled ?? true,
-        music: { enabled: p.music_enabled ?? true, volume: p.music_volume ?? 60 },
+        // A built-in bed even if the graphics couldn't be made (captions only).
+        music: { enabled: p.music_enabled ?? true, volume: p.music_volume ?? 60, bed: true },
       },
     });
     void qc.invalidateQueries({ queryKey: ["usage-stats"] });
@@ -259,7 +267,7 @@ function MakePage() {
       const job = r.latestJob as { status: string } | null;
       // Already made (or being rendered): just show it.
       if (r.project.status === "ready" || RUNNING_JOB.includes(job?.status ?? "")) {
-        for (const id of ["transcribe", "plan", "pictures"] as StepId[]) mark(id, "done");
+        for (const id of ["transcribe", "cut", "plan", "pictures"] as StepId[]) mark(id, "done");
         setPlanState(await fetchPlan({ data: { project_id: projectId } }));
         await waitForRender();
         return;
@@ -280,17 +288,43 @@ function MakePage() {
       }
       mark("transcribe", "done");
 
-      // 2. Plan the graphics (Claude), unless there's a plan already.
+      // 2. Cut the pauses (before planning: the plan is anchored to the cut clips).
+      if (st.plan) mark("cut", "done");
+      else {
+        mark("cut", "active");
+        try {
+          const c = await cutFn({ data: { project_id: projectId } });
+          mark(
+            "cut",
+            c.cutMs > 0 ? "done" : "skipped",
+            c.cutMs > 0
+              ? `${(c.cutMs / 1000).toFixed(1)} s of pauses cut. Change it in the editor (Auto-cut).`
+              : "No long pauses to cut.",
+          );
+        } catch (e) {
+          mark("cut", "skipped", `${message(e, "Couldn't cut the pauses.")} The pauses stay in.`);
+        }
+      }
+
+      // 3. Plan the graphics (Claude), unless there's a plan already.
       let plan = st.plan;
       if (plan) mark("plan", "done", `${plan.elements.length} graphics planned.`);
       else plan = await planGraphics();
 
-      // 3. The first story pictures (Higgsfield).
+      // 4. The pictures (Higgsfield).
       if (plan) plan = await pictures(plan);
       else mark("pictures", "skipped", "No graphics to make pictures for.");
       setPlanState(await fetchPlan({ data: { project_id: projectId } }));
 
-      // 4. Render.
+      // 5. Place the B-roll (off the full-screen graphics), then render.
+      try {
+        const b = await brollFn({ data: { project_id: projectId } });
+        if (b.of > b.placed) {
+          toast.message(`${b.of - b.placed} B-roll clip(s) didn't fit; place them in the editor.`);
+        }
+      } catch (e) {
+        toast.error(`${message(e, "Couldn't place the B-roll.")} It plays from the start.`);
+      }
       await render();
     } catch (e) {
       const text = message(
@@ -313,6 +347,8 @@ function MakePage() {
     projectId,
     render,
     transcribeFn,
+    cutFn,
+    brollFn,
     waitForRender,
   ]);
 
@@ -453,6 +489,13 @@ function MakePage() {
                   <p className="text-[11px] text-muted-foreground">
                     Re-renders the video (uses an export).
                   </p>
+                  {(look === "docu" || look === "cine3d") &&
+                    !planState.plan.elements.some((e) => e.type === "metaphor") && (
+                      <p className="text-[11px] text-amber-200/90">
+                        This look's drawn or 3D metaphor scenes are planned with the graphics:
+                        press Redo the graphics below to add them.
+                      </p>
+                    )}
                 </div>
               )}
 

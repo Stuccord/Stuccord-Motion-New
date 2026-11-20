@@ -22,6 +22,9 @@ import {
   MOTION_STYLE,
   MotionPlan as MotionPlanSchema,
   draftsToElements,
+  elementSpan,
+  FULL_SCREEN_TYPES,
+  wordsByKey,
   sceneImageFolder,
   mainSegments,
   numberedTranscript,
@@ -34,7 +37,8 @@ import {
 } from "@/lib/motion-plan";
 import { planFor, UNLIMITED, type Plan } from "@/lib/plans";
 import { defaultLook } from "@/motion/looks";
-import { projectAccess, projectForEdit } from "@/lib/projects.functions";
+import { applyClipCuts, projectAccess, projectForEdit } from "@/lib/projects.functions";
+import { pauseCuts, placeBroll } from "@/lib/auto-edit";
 
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 const ProjectInput = z.object({ project_id: z.string().uuid() });
@@ -216,6 +220,89 @@ export function projectCartoon(project: {
   const ok = (p: string) => p.startsWith(folder) && !p.includes("..");
   return c && ok(c.image) && ok(c.photo) ? c : null;
 }
+
+// ---------- the automatic edit's cut ----------
+
+/**
+ * Cuts the pauses out of the main track for the automatic edit, from the
+ * transcript's word times (src/lib/auto-edit.ts pauseCuts), saved like the
+ * editor's Auto-cut. Only before the graphics are planned: a plan is anchored
+ * to clips, and cutting moves words to new clip pieces. Returns how much
+ * was cut.
+ */
+export const cutPausesForAutoEdit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const db = context.supabase;
+    const { project } = await projectForEdit(db, data.project_id, context.userId);
+    if (parseMotionPlan(project.motion_plan)) return { cutMs: 0, clips: 0, skipped: "planned" };
+    const { clips, missing, transcripts } = await projectWords(db, project, context.userId);
+    if (missing.length) throw new Error("Some clips have no transcript yet.");
+    const cuts = pauseCuts(clips, transcripts);
+    if (!cuts.length) return { cutMs: 0, clips: 0, skipped: null };
+    const byId = new Map(clips.map((c) => [c.id, c]));
+    let cutMs = 0;
+    for (const c of cuts) {
+      const clip = byId.get(c.id);
+      const was = (clip?.trim_out_ms ?? clip?.duration_ms ?? 0) - (clip?.trim_in_ms ?? 0);
+      cutMs += Math.max(0, was - c.keep.reduce((n, k) => n + (k.out_ms - k.in_ms), 0));
+    }
+    await applyClipCuts(db, project.id, cuts);
+    return { cutMs, clips: cuts.length, skipped: null };
+  });
+
+/**
+ * Places the B-roll for the automatic edit (src/lib/auto-edit.ts
+ * placeBroll): spread over the video after the opening, each cut to a few
+ * seconds, off the full-screen graphics. Only B-roll not placed by hand (and
+ * only when there's a main track for it to go over).
+ */
+export const placeBrollForAutoEdit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const db = context.supabase;
+    const { project } = await projectForEdit(db, data.project_id, context.userId);
+    const { clips, transcripts } = await projectWords(db, project, context.userId);
+    const main = mainSegments(clips);
+    const mainIds = new Set(main.map((m) => m.clipId));
+    const broll = clips
+      .filter((c) => c.role === "broll" && !mainIds.has(c.id) && c.start_ms == null)
+      .sort((a, b) => a.ordinal - b.ordinal);
+    if (!broll.length || !main.length) return { placed: 0, of: broll.length };
+    const mainEndMs = Math.max(...main.map((m) => m.offsetMs + m.durationMs));
+
+    // Moments full-screen graphics already cover.
+    const plan = parseMotionPlan(project.motion_plan);
+    const byKey = wordsByKey(spokenWords(main, transcripts));
+    const busy = plan && plan.enabled !== false
+      ? plan.elements
+          .filter((e) => FULL_SCREEN_TYPES.has(e.type))
+          .map((e) => elementSpan(e, byKey))
+          .filter((x): x is { startMs: number; endMs: number } => !!x)
+          .map((x) => ({ fromMs: x.startMs, toMs: x.endMs }))
+      : [];
+
+    const places = placeBroll(
+      broll.map((c) => {
+        const inMs = c.trim_in_ms ?? 0;
+        const outMs = c.trim_out_ms ?? c.duration_ms ?? inMs + 4000;
+        return { id: c.id, trimInMs: inMs, lengthMs: Math.max(0, outMs - inMs) };
+      }),
+      mainEndMs,
+      busy,
+    );
+    for (const p of places) {
+      const { error } = await db
+        .from("clips")
+        .update({ start_ms: p.startMs, trim_in_ms: p.trimInMs, trim_out_ms: p.trimOutMs })
+        .eq("id", p.id)
+        .eq("project_id", project.id);
+      if (error) throw new Error(error.message);
+    }
+    return { placed: places.length, of: broll.length };
+  });
 
 // ---------- planning ----------
 

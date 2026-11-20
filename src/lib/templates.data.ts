@@ -7,9 +7,11 @@ import {
 // (NEW_PROJECT_STYLES in presets.ts) and a brief. The brief goes to Claude,
 // which plans the graphics (src/lib/motion-plan.server.ts) and writes the
 // opening hook (render-worker/ai.js), so it only asks for what those can do:
-// the planner's graphic types, zooms, graphics behind the speaker, AI story
-// pictures and the speaker's cartoon. Captions, music and cuts are set in the
-// editor, not by the brief. `duration` is a suggested length, not enforced.
+// the planner's graphic types, zooms, graphics behind the speaker and AI
+// story pictures - not the speaker's cartoon, card streams or profiles, which
+// the automatic edit leaves out (they need the user's own photos). Captions,
+// music and pause cuts are automatic, not set by the brief. `duration` is a
+// suggested length, not enforced.
 
 export type TemplateDef = {
   id: string;
@@ -43,21 +45,21 @@ export const TEMPLATES: TemplateDef[] = [
   },
   {
     id: "product", cat: "Product", title: "Product demo",
-    desc: "Landscape walkthrough with app screens, feature lists and numbers.",
+    desc: "Landscape walkthrough with app screens, feature lists and numbers. Add screenshots in the editor to show your real product.",
     icon: Rocket, gradient: "from-emerald-500 to-teal-500",
     ratio: "16:9", duration: "1:30", preset: "saas",
     brief: "A product walkthrough. Show an app screen whenever the product, a page or a result is mentioned. Features as short lists, results as counters or a dashboard screen, a chapter for each part of the demo. Calm pace.",
   },
   {
     id: "saas", cat: "Product", title: "SaaS launch",
-    desc: "Talk about your app with light motion design and app screens.",
+    desc: "Talk about your app with light motion design and app screens. Add screenshots in the editor to show your real app.",
     icon: Sparkles, gradient: "from-sky-400 to-indigo-500",
     ratio: "9:16", duration: "0:45", preset: "saas",
     brief: "Show the product whenever it's mentioned: an app screen for each feature, page or result. Numbers as clean counters, benefits as short lists. Bright, friendly and fast.",
   },
   {
     id: "podcast", cat: "Podcast", title: "Podcast clip",
-    desc: "Square clip from a podcast or interview, with calm type for the key lines.",
+    desc: "Square edit of a podcast or interview moment (upload just the part you want), with calm type for the key lines.",
     icon: Mic, gradient: "from-orange-500 to-rose-500",
     ratio: "1:1", duration: "0:60", preset: "minimal",
     brief: "A conversation clip. Few graphics: the strongest key line or two, any number said as a counter, a label naming the topic. Leave the speakers on screen most of the time.",
@@ -78,7 +80,7 @@ export const TEMPLATES: TemplateDef[] = [
   },
   {
     id: "minimal", cat: "Education", title: "Minimal explainer",
-    desc: "Clean type and thin lines over your talk, with calm cuts.",
+    desc: "Your key lines as quiet black scenes with thin hanging lines and serif type; calm and spacious.",
     icon: Type, gradient: "from-neutral-500 to-neutral-800",
     ratio: "9:16", duration: "0:60", preset: "minimal",
     brief: "Calm and clear. Few graphics, each with lots of space: one key line, a number or a short list at a time. No hype.",
@@ -95,7 +97,7 @@ export const TEMPLATES: TemplateDef[] = [
     desc: "A story told to camera, with AI pictures for each turn of it.",
     icon: MessageCircle, gradient: "from-indigo-500 to-violet-500",
     ratio: "9:16", duration: "0:60", preset: "gadzhi",
-    brief: "A story told to camera. Use a story with AI pictures for the journey, and the speaker's cartoon for a funny or painful moment. Key lines for the turning points; otherwise keep the speaker on screen.",
+    brief: "A story told to camera. Use a story with AI pictures for the journey (its first scenes matter most). Key lines for the turning points and a zoom on a funny or painful moment; otherwise keep the speaker on screen.",
   },
   {
     id: "explainer", cat: "Education", title: "Explainer breakdown",

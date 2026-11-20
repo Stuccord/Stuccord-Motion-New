@@ -1134,6 +1134,76 @@ export const splitClip = createServerFn({ method: "POST" })
   });
 
 /**
+ * Saves cuts: each clip keeps its id for its first piece; the others are new
+ * clips right after it. One upsert, so the timeline is never left half cut.
+ * Used by Auto-cut in the editor and by the automatic edit.
+ */
+export async function applyClipCuts(
+  supabase: SupabaseClient<Database>,
+  projectId: string,
+  cutList: { id: string; keep: { in_ms: number; out_ms: number }[] }[],
+): Promise<{ pieces: Record<string, string[]> }> {
+  const { data: all, error: aErr } = await supabase
+    .from("clips")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("ordinal", { ascending: true });
+  if (aErr) throw new Error(aErr.message);
+  const clips = all ?? [];
+  const byId = new Map(clips.map((c) => [c.id, c]));
+  const cuts = new Map(cutList.map((c) => [c.id, c.keep]));
+  for (const [id, keep] of cuts) {
+    const c = byId.get(id);
+    if (!c) throw new Error("A clip to cut isn't in this project any more");
+    if (isAudioRole(c.role)) throw new Error("Only video clips can be cut");
+    const end = c.duration_ms ?? Infinity;
+    let at = 0;
+    for (const k of keep) {
+      if (k.out_ms - k.in_ms < 50 || k.in_ms < at || k.out_ms > end) {
+        throw new Error("The parts to keep don't fit the clip; find the pauses again");
+      }
+      at = k.out_ms;
+    }
+  }
+
+  // Every clip after a cut one moves down by the number of new pieces.
+  const rows: ClipRow[] = [];
+  const pieces: Record<string, string[]> = {};
+  let shift = 0;
+  const now = new Date().toISOString();
+  for (const c of clips) {
+    const keep = cuts.get(c.id);
+    if (!keep) {
+      if (shift > 0) rows.push({ ...c, ordinal: c.ordinal + shift });
+      continue;
+    }
+    const ordinal = c.ordinal + shift;
+    rows.push({ ...c, ordinal, trim_in_ms: keep[0].in_ms, trim_out_ms: keep[0].out_ms });
+    pieces[c.id] = [c.id];
+    keep.slice(1).forEach((k, i) => {
+      const id = crypto.randomUUID();
+      pieces[c.id].push(id);
+      rows.push({
+        ...c,
+        id,
+        ordinal: ordinal + 1 + i,
+        trim_in_ms: k.in_ms,
+        trim_out_ms: k.out_ms,
+        ...("start_ms" in c ? { start_ms: null } : {}),
+        ...("thumbnail_path" in c ? { thumbnail_path: null } : {}),
+        parent_clip_id: c.parent_clip_id ?? c.id,
+        created_at: now,
+      });
+    });
+    shift += keep.length - 1;
+  }
+  const { error } = await supabase.from("clips").upsert(rows, { onConflict: "id" });
+  if (error) throw new Error(error.message);
+  await markProjectEdited(supabase, projectId);
+  return { pieces };
+}
+
+/**
  * Auto-cut: replaces clips with the pieces of them to keep (pauses cut out).
  * Each clip keeps its id for its first piece; the others are new clips right
  * after it, like split halves. Every change goes out as one upsert, so the
@@ -1165,66 +1235,9 @@ export const cutClipRanges = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { data: all, error: aErr } = await context.supabase
-      .from("clips")
-      .select("*")
-      .eq("project_id", data.project_id)
-      .order("ordinal", { ascending: true });
-    if (aErr) throw new Error(aErr.message);
-    const clips = all ?? [];
-    const byId = new Map(clips.map((c) => [c.id, c]));
-    const cuts = new Map(data.cuts.map((c) => [c.id, c.keep]));
-    for (const [id, keep] of cuts) {
-      const c = byId.get(id);
-      if (!c) throw new Error("A clip to cut isn't in this project any more");
-      if (isAudioRole(c.role)) throw new Error("Only video clips can be cut");
-      const end = c.duration_ms ?? Infinity;
-      let at = 0;
-      for (const k of keep) {
-        if (k.out_ms - k.in_ms < 50 || k.in_ms < at || k.out_ms > end) {
-          throw new Error("The parts to keep don't fit the clip; find the pauses again");
-        }
-        at = k.out_ms;
-      }
-    }
-
-    // Every clip after a cut one moves down by the number of new pieces.
-    const rows: ClipRow[] = [];
-    const pieces: Record<string, string[]> = {};
-    let shift = 0;
-    const now = new Date().toISOString();
-    for (const c of clips) {
-      const keep = cuts.get(c.id);
-      if (!keep) {
-        if (shift > 0) rows.push({ ...c, ordinal: c.ordinal + shift });
-        continue;
-      }
-      const ordinal = c.ordinal + shift;
-      rows.push({ ...c, ordinal, trim_in_ms: keep[0].in_ms, trim_out_ms: keep[0].out_ms });
-      pieces[c.id] = [c.id];
-      keep.slice(1).forEach((k, i) => {
-        const id = crypto.randomUUID();
-        pieces[c.id].push(id);
-        rows.push({
-          ...c,
-          id,
-          ordinal: ordinal + 1 + i,
-          trim_in_ms: k.in_ms,
-          trim_out_ms: k.out_ms,
-          ...("start_ms" in c ? { start_ms: null } : {}),
-          ...("thumbnail_path" in c ? { thumbnail_path: null } : {}),
-          parent_clip_id: c.parent_clip_id ?? c.id,
-          created_at: now,
-        });
-      });
-      shift += keep.length - 1;
-    }
-    const { error } = await context.supabase.from("clips").upsert(rows, { onConflict: "id" });
-    if (error) throw new Error(error.message);
-    await markProjectEdited(context.supabase, data.project_id);
-    return { pieces };
-  });
+  .handler(async ({ data, context }) =>
+    applyClipCuts(context.supabase, data.project_id, data.cuts),
+  );
 
 /**
  * Undoes an Auto-cut: removes the pieces it added and puts the clips' trims
@@ -1515,7 +1528,7 @@ function resolveCallbackWebhookEndpoint(rawBaseUrl: string | undefined): URL {
 export type CloudRenderInput = {
   project_id: string;
   captions: boolean;
-  music: { enabled: boolean; volume: number };
+  music: { enabled: boolean; volume: number; bed?: boolean };
 };
 
 /** The first moment of this month (UTC): allowances reset then. */
@@ -1913,8 +1926,14 @@ export const submitRender = createServerFn({ method: "POST" })
         captions: z.boolean().default(true),
         // Mix uploaded music (looped, ducked under the voice) and SFX (on cuts)
         // into the export, from the editor's Music switch and volume (0-100).
+        // `bed`: with no song added, a built-in music bed plays even when the
+        // video has no graphics (the automatic edit's captions-only fallback).
         music: z
-          .object({ enabled: z.boolean(), volume: z.number().min(0).max(100) })
+          .object({
+            enabled: z.boolean(),
+            volume: z.number().min(0).max(100),
+            bed: z.boolean().optional(),
+          })
           .default({ enabled: true, volume: 60 }),
       })
       .parse(d),

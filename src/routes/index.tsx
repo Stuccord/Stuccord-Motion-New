@@ -1303,7 +1303,7 @@ const FAQS = [
   },
   {
     q: "What style does it edit in?",
-    a: "The Motion Explainer style: premium motion graphics on every key line, number, list and story, with zooms, sound design and music, in a dark glass or a paper-on-a-desk look. More styles are coming.",
+    a: "Motion graphics on every key line, number, list and story, with zooms, sound design and music, in the look you pick: Motion Explainer (dark glass), Paper, Minimal, Cinematic, SaaS, Documentary (drawn scenes) or 3D Cinematic (AI 3D objects). You can switch the look after the video is made.",
   },
   {
     q: "What footage does it accept?",
