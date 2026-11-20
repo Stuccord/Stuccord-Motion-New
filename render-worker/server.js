@@ -58,6 +58,19 @@ import {
 import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 import { CaptureError, capturePage } from "./capture.js";
 import { limitThreads } from "./threads.js";
+import {
+  buildAudioMixArgs,
+  masterArgs,
+  measureLoudness,
+  musicGainDb,
+  sfxGainDb,
+  limitFor,
+  limiterArgs,
+  VOICE_MEASURE,
+  voiceChainMeasure,
+  voiceGainDb,
+  voiceTrimDb,
+} from "./audio.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -822,191 +835,9 @@ function placeWordsOnTimeline(segments) {
   return placed;
 }
 
-// ---------- music & SFX mix ----------
+// ---------- music & SFX mix (see audio.js) ----------
 
-const MUSIC_FADE_IN_S = 0.5;
-const MUSIC_FADE_OUT_S = 1.5;
 const SFX_LEAD_MS = 150; // start an SFX just before the cut so it leads in
-const SFX_GAIN = 0.8;
-const MAX_SFX = 100;
-const VO_GAIN = 1.0;
-const MAX_VO = 50;
-const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
-
-/** Music level (linear gain) from the editor's 0–100 volume slider. */
-function musicGain(volume) {
-  const v = Math.min(100, Math.max(0, Number(volume ?? 60)));
-  return Number(((v / 100) * 0.5).toFixed(3));
-}
-
-/**
- * ffmpeg arguments that keep the video stream of `videoPath` and replace its
- * audio with a mix of:
- *  - the voice (the video's own audio; silence if it has none),
- *  - the music, faded in and out and ducked while the voice is speaking:
- *    musicPlan { mode: "sequence", paths } plays the files one after another
- *    from 0:00, looped to the end of the video; { mode: "segments",
- *    segments: [{ path, startMs, endMs }] } loops each file over its own span,
- *  - sfxEvents: [{ path, atMs, gain? }], each SFX played once at its time,
- *  - voiceovers: [{ path, atMs, inMs, outMs }], each played once at its
- *    time (the part from inMs to outMs); the video's own sound and the
- *    music get quieter under them.
- */
-function buildAudioMixArgs({
-  videoPath,
-  hasVoice,
-  durationMs,
-  musicPlan,
-  sfxEvents,
-  voiceovers = [],
-  volume,
-  out,
-}) {
-  const D = (durationMs / 1000).toFixed(3);
-  const inputs = ["-i", videoPath];
-  const graph = [];
-  const mixInputs = [];
-  const musicPaths = musicPlan.mode === "sequence" ? musicPlan.paths : [];
-  const segments = musicPlan.mode === "segments" ? musicPlan.segments : [];
-  const hasMusic = musicPaths.length > 0 || segments.length > 0;
-  const vos = voiceovers.slice(0, MAX_VO);
-  const hasVo = vos.length > 0;
-  // Inputs: the video, the music files, the SFX, then the voiceovers.
-  const firstVo = 1 + musicPaths.length + segments.length + Math.min(sfxEvents.length, MAX_SFX);
-
-  // Voiceovers: each part at its time, all on one bus the length of the video.
-  if (hasVo) {
-    vos.forEach((vo, k) => {
-      const from = (Math.max(0, vo.inMs) / 1000).toFixed(3);
-      const to = vo.outMs != null ? `:end=${(vo.outMs / 1000).toFixed(3)}` : "";
-      const at = Math.max(0, Math.round(vo.atMs));
-      graph.push(
-        `[${firstVo + k}:a]${AUDIO_FMT},atrim=start=${from}${to},asetpts=PTS-STARTPTS,` +
-          `volume=${VO_GAIN},adelay=${at}:all=1[vo${k}]`,
-      );
-    });
-    // Mixed onto silence the length of the video, which places each one by
-    // its delayed timestamps (adelay shifts them at the start of a stream).
-    graph.push(`anullsrc=r=48000:cl=stereo,atrim=0:${D}[vosil]`);
-    graph.push(
-      `[vosil]${vos.map((_, k) => `[vo${k}]`).join("")}amix=inputs=${vos.length + 1}:` +
-        `duration=first:dropout_transition=0:normalize=0,asplit=${hasMusic ? 3 : 2}[vo][vokey]` +
-        (hasMusic ? "[vokeym]" : ""),
-    );
-  }
-
-  // Voice: the video's audio (quieter under a voiceover), or silence the
-  // length of the video.
-  if (hasVoice) {
-    graph.push(
-      `[0:a]${AUDIO_FMT}${hasMusic ? ",asplit=2[voiceraw][voicekey]" : "[voiceraw]"}`,
-    );
-    graph.push(
-      hasVo
-        ? "[voiceraw][vokey]sidechaincompress=threshold=0.02:ratio=6:attack=20:release=400[voice]"
-        : "[voiceraw]anull[voice]",
-    );
-  } else {
-    graph.push(`anullsrc=r=48000:cl=stereo,atrim=0:${D}[voice]`);
-    if (hasVo) graph.push("[vokey]anullsink");
-  }
-  mixInputs.push("[voice]");
-
-  // Music: looped to fill, faded, ducked under the voice.
-  if (hasMusic) {
-    const first = 1;
-    const fadeOutStart = Math.max(0, durationMs / 1000 - MUSIC_FADE_OUT_S).toFixed(3);
-    if (musicPaths.length) {
-      // One after another from 0:00, the whole run looped.
-      musicPaths.forEach((p, i) => {
-        inputs.push("-i", p);
-        graph.push(`[${first + i}:a]${AUDIO_FMT}[m${i}]`);
-      });
-      const joined = musicPaths.map((_, i) => `[m${i}]`).join("");
-      graph.push(
-        musicPaths.length > 1
-          ? `${joined}concat=n=${musicPaths.length}:v=0:a=1[mjoined]`
-          : `[m0]anull[mjoined]`,
-      );
-      graph.push(
-        `[mjoined]aloop=loop=-1:size=2147483647,atrim=0:${D},asetpts=N/SR/TB,` +
-          `afade=t=in:st=0:d=${MUSIC_FADE_IN_S}[mbus]`,
-      );
-    } else {
-      // Each song over its own span, looped to fill it, with short fades
-      // where one song hands over to the next.
-      segments.forEach((seg, i) => {
-        inputs.push("-i", seg.path);
-        const len = ((seg.endMs - seg.startMs) / 1000).toFixed(3);
-        const fade = Math.min(MUSIC_FADE_IN_S, (seg.endMs - seg.startMs) / 4000).toFixed(3);
-        const outAt = Math.max(0, (seg.endMs - seg.startMs) / 1000 - Number(fade)).toFixed(3);
-        graph.push(
-          `[${first + i}:a]${AUDIO_FMT},aloop=loop=-1:size=2147483647,atrim=0:${len},` +
-            `asetpts=N/SR/TB,afade=t=in:st=0:d=${fade},afade=t=out:st=${outAt}:d=${fade},` +
-            `adelay=${Math.round(seg.startMs)}:all=1[ms${i}]`,
-        );
-      });
-      graph.push(
-        segments.length > 1
-          ? `${segments.map((_, i) => `[ms${i}]`).join("")}amix=inputs=${segments.length}:` +
-              "duration=longest:dropout_transition=0:normalize=0[mseq]"
-          : "[ms0]anull[mseq]",
-      );
-      graph.push(`[mseq]apad,atrim=0:${D},asetpts=N/SR/TB[mbus]`);
-    }
-    const ducked = hasVoice || hasVo;
-    graph.push(
-      `[mbus]volume=${musicGain(volume)},afade=t=out:st=${fadeOutStart}:d=${MUSIC_FADE_OUT_S}` +
-        (ducked ? "[mraw]" : "[music]"),
-    );
-    if (ducked) {
-      // Ducked under the voice and any voiceover.
-      if (hasVoice && hasVo) {
-        graph.push("[voicekey][vokeym]amix=inputs=2:normalize=0[mkey]");
-      } else {
-        graph.push(`${hasVoice ? "[voicekey]" : "[vokeym]"}anull[mkey]`);
-      }
-      // About an 8 dB dip under normal speech (~-20 dBFS), less for quiet
-      // speech, more for shouting; back up within ~0.4s of a pause.
-      graph.push(
-        "[mraw][mkey]sidechaincompress=threshold=0.03:ratio=4:attack=15:release=350[music]",
-      );
-    }
-    mixInputs.push("[music]");
-  }
-
-  // SFX: each one once, at its time.
-  const firstSfx = 1 + musicPaths.length + segments.length;
-  sfxEvents.slice(0, MAX_SFX).forEach((ev, k) => {
-    inputs.push("-i", ev.path);
-    const at = Math.max(0, Math.round(ev.atMs));
-    const gain = Number.isFinite(ev.gain) ? ev.gain : SFX_GAIN;
-    graph.push(`[${firstSfx + k}:a]${AUDIO_FMT},volume=${gain},adelay=${at}:all=1[s${k}]`);
-    mixInputs.push(`[s${k}]`);
-  });
-
-  // Voiceover inputs (their filters are above).
-  if (hasVo) {
-    vos.forEach((vo) => inputs.push("-i", vo.path));
-    mixInputs.push("[vo]");
-  }
-
-  graph.push(
-    `${mixInputs.join("")}amix=inputs=${mixInputs.length}:duration=first:dropout_transition=0:normalize=0,` +
-      "alimiter=limit=0.95[aout]",
-  );
-
-  return [
-    "-y",
-    ...inputs,
-    "-filter_complex", graph.join(";"),
-    "-map", "0:v", "-map", "[aout]",
-    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-    "-t", D,
-    "-movflags", "+faststart",
-    out,
-  ];
-}
 
 // ---------- captions ----------
 
@@ -1553,10 +1384,11 @@ async function runRender(job) {
       composedOut = overlayOut;
     }
 
-    // 4c. Music and SFX (best-effort; skipped when the user turned Music
-    //     off). Music loops under the whole video and ducks while the voice
-    //     speaks; an SFX plays at each cut between main clips.
-    //     Voiceovers are mixed in either way.
+    // 4c. The sound (best-effort): the voice cleaned and levelled, music
+    //     (skipped when the user turned Music off) looped under the whole
+    //     video and ducked while the voice speaks, an SFX at each cut
+    //     between main clips, voiceovers either way, then mastered to the
+    //     platforms' loudness. See audio.js.
     const musicOn = job.music?.enabled !== false;
     const musicClips = musicOn
       ? job.clips.filter((c) => c.download_url && c.role === "music")
@@ -1570,10 +1402,14 @@ async function runRender(job) {
     const placedMotion = motionJob ? placeGraphics(motionJob.elements, placedWords) : null;
     const graphicsSounds = !!placedMotion && motionJob.sound?.enabled !== false;
     const builtInMusic = !!placedMotion && musicOn && musicClips.length === 0;
-    if (musicClips.length || sfxClips.length || voClips.length || graphicsSounds || builtInMusic) {
+    const composedProbe = await probeMedia(composedOut);
+    if (
+      composedProbe.hasAudio ||
+      musicClips.length || sfxClips.length || voClips.length || graphicsSounds || builtInMusic
+    ) {
       await callback(job.callback_url, {
         job_id: job.job_id, status: "rendering", progress: 80,
-        stage_message: voClips.length ? "Mixing voiceover & music" : "Mixing music & SFX",
+        stage_message: "Mixing and mastering the sound",
       });
       try {
         const fetchAudio = async (clips, prefix) => {
@@ -1658,7 +1494,51 @@ async function runRender(job) {
           }
         }
 
-        const mixedOut = path.join(workdir, "mixed.mp4");
+        // Measure, so each part is set by its real loudness: the voice
+        // (through the cleanup it gets), each voiceover, each song, and the
+        // user's own SFX (the graphics' sounds are calibrated in motion.js).
+        const measure = (file, opts) =>
+          measureLoudness(ffmpegPath, file, opts).catch((e) => {
+            console.warn(`[Worker] Measuring ${path.basename(file)} failed:`, e?.message || e);
+            return null;
+          });
+        // A voice is set in two measurements: its level into the compressor,
+        // then a trim for what the compressor took off.
+        const levelVoice = async (file) => {
+          const before = await measure(file, { filters: VOICE_MEASURE });
+          const gainDb = voiceGainDb(before?.i);
+          const after = before ? await measure(file, { filters: voiceChainMeasure(gainDb) }) : null;
+          return { lufs: before?.i ?? null, gainDb, trimDb: voiceTrimDb(after?.i) };
+        };
+        const voiceLevel = video.hasAudio ? await levelVoice(composedOut) : null;
+        const musicGains = new Map();
+        const musicFiles = musicPlan.mode === "sequence"
+          ? musicPlan.paths
+          : musicPlan.segments.map((sg) => sg.path);
+        for (const p of new Set(musicFiles)) {
+          musicGains.set(p, musicGainDb((await measure(p))?.i, job.music?.volume));
+        }
+        const sfxGain = new Map();
+        for (const p of new Set(sfxPaths)) {
+          sfxGain.set(p, sfxGainDb((await measure(p, { momentary: true }))?.momentaryMax));
+        }
+        const voiceovers = [];
+        for (let i = 0; i < voClips.length; i++) {
+          const c = voClips[i];
+          const atMs = Number(c.start_ms ?? 0);
+          if (!Number.isFinite(atMs) || atMs >= video.durationMs) continue;
+          const level = await levelVoice(voPaths[i]);
+          voiceovers.push({
+            path: voPaths[i],
+            atMs,
+            inMs: Number(c.trim_in_ms ?? 0),
+            outMs: c.trim_out_ms != null ? Number(c.trim_out_ms) : null,
+            gainDb: level.gainDb,
+            trimDb: level.trimDb,
+          });
+        }
+
+        let mixPath = path.join(workdir, "mix.wav");
         await run(
           ffmpegPath,
           buildAudioMixArgs({
@@ -1666,20 +1546,46 @@ async function runRender(job) {
             hasVoice: video.hasAudio,
             durationMs: video.durationMs,
             musicPlan,
-            sfxEvents: sfxEvents.filter((e) => e.atMs < video.durationMs),
-            voiceovers: voClips
-              .map((c, i) => ({
-                path: voPaths[i],
-                atMs: Number(c.start_ms ?? 0),
-                inMs: Number(c.trim_in_ms ?? 0),
-                outMs: c.trim_out_ms != null ? Number(c.trim_out_ms) : null,
-              }))
-              .filter((v) => Number.isFinite(v.atMs) && v.atMs < video.durationMs),
-            volume: job.music?.volume,
+            sfxEvents: sfxEvents
+              .filter((e) => e.atMs < video.durationMs)
+              .map((e) => (sfxGain.has(e.path) ? { ...e, gainDb: sfxGain.get(e.path) } : e)),
+            voiceovers,
+            voiceGain: voiceLevel?.gainDb ?? 0,
+            voiceTrim: voiceLevel?.trimDb ?? 0,
+            musicGains,
+            out: mixPath,
+          }),
+        );
+        // Mastered in loudnorm's second pass from the mix's measurement
+        // (linear gain, so no pumping), under the video: peak-limited first
+        // when the gain would push its peaks past the ceiling.
+        let mixLevel = await measure(mixPath);
+        const limit = limitFor(mixLevel);
+        if (limit) {
+          const limitedPath = path.join(workdir, "mix-limited.wav");
+          await run(ffmpegPath, limiterArgs(mixPath, limit, limitedPath));
+          mixPath = limitedPath;
+          mixLevel = await measure(mixPath);
+        }
+        const mixedOut = path.join(workdir, "mixed.mp4");
+        await run(
+          ffmpegPath,
+          masterArgs({
+            videoPath: composedOut,
+            mixPath,
+            measured: mixLevel,
+            durationMs: video.durationMs,
             out: mixedOut,
           }),
         );
         composedOut = mixedOut;
+        editPlan = {
+          ...(editPlan ?? {}),
+          sound: {
+            voice_lufs: voiceLevel?.lufs ?? null,
+            mix_lufs: mixLevel?.i ?? null,
+          },
+        };
       } catch (e) {
         console.warn(`[Worker] Music mix failed for job=${job.job_id}:`, e?.message || e);
         editPlan = { ...(editPlan ?? {}), music_error: String(e?.message ?? e).slice(0, 300) };

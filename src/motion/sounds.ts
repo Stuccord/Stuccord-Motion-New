@@ -63,6 +63,22 @@ const KIND_GAIN: Record<SoundKind, number> = {
   hit: 0.9,
 };
 
+// Each sound file's level correction (dB), measured so that at gain 1 a
+// whoosh, riser or hit peaks at -22 LUFS momentary and a click, pop, blip or
+// glitch at -26: under a voice at -20 LUFS (render-worker/audio.js), not
+// over it. Measured from the files' loudest 400 ms; re-measure if a file
+// changes.
+const LEVEL_TRIM_DB: Record<SoundKind, number> = {
+  "whoosh-light": -9.4,
+  "whoosh-deep": -9.1,
+  click: -3.7,
+  pop: -6.7,
+  "ui-blip": -6.5,
+  glitch: -8.0,
+  riser: -7.8,
+  hit: -9.9,
+};
+
 /** The music beds, used in turn at each chapter. */
 export const MUSIC_BEDS = ["bed-calm", "bed-focus", "bed-drive"] as const;
 export type MusicBed = (typeof MUSIC_BEDS)[number];
@@ -252,7 +268,8 @@ export function soundEvents(
 /** A sound's level: its own level times the volume slider. */
 export function soundGain(kind: SoundKind, settings: SoundSettings | undefined): number {
   const v = Math.min(100, Math.max(0, settings?.volume ?? DEFAULT_SOUND_VOLUME));
-  return Number(((KIND_GAIN[kind] * v) / 100).toFixed(3));
+  const trim = 10 ** (LEVEL_TRIM_DB[kind] / 20);
+  return Number(((KIND_GAIN[kind] * trim * v) / 100).toFixed(3));
 }
 
 /** Shorter stretches between chapters keep the music they started with (ms). */
