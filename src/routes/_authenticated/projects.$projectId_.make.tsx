@@ -22,6 +22,7 @@ import {
   ImageIcon,
   Loader2,
   MinusCircle,
+  Music2,
   PenTool,
   RefreshCw,
   Wand2,
@@ -42,6 +43,7 @@ import {
   type MotionPlanState,
 } from "@/lib/motion-plan.functions";
 import { makeSceneImage } from "@/lib/story-images.functions";
+import { makeAiMusic } from "@/lib/music.functions";
 import type { MotionLook, MotionPlan } from "@/lib/motion-plan";
 import {
   AUTO_PICTURES,
@@ -58,7 +60,7 @@ export const Route = createFileRoute("/_authenticated/projects/$projectId_/make"
   component: MakePage,
 });
 
-type StepId = "transcribe" | "cut" | "plan" | "pictures" | "render";
+type StepId = "transcribe" | "cut" | "plan" | "pictures" | "music" | "render";
 type StepState = "waiting" | "active" | "done" | "skipped" | "failed";
 
 const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
@@ -66,6 +68,7 @@ const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
   { id: "cut", label: "Cutting the pauses", icon: Scissors },
   { id: "plan", label: "Planning the graphics (Claude)", icon: Wand2 },
   { id: "pictures", label: "Making the pictures (Higgsfield)", icon: ImageIcon },
+  { id: "music", label: "Making the music (ElevenLabs)", icon: Music2 },
   { id: "render", label: "Rendering your video", icon: Film },
 ];
 
@@ -104,6 +107,7 @@ function MakePage() {
   const brollFn = useServerFn(placeBrollForAutoEdit);
   const saveFn = useServerFn(saveMotionPlan);
   const makeFn = useServerFn(makeSceneImage);
+  const musicFn = useServerFn(makeAiMusic);
   const renderFn = useServerFn(submitRender);
   const signFn = useServerFn(getRenderSignedUrl);
 
@@ -113,6 +117,7 @@ function MakePage() {
     cut: "waiting",
     plan: "waiting",
     pictures: "waiting",
+    music: "waiting",
     render: "waiting",
   });
   const [notes, setNotes] = useState<Partial<Record<StepId, string>>>({});
@@ -277,7 +282,7 @@ function MakePage() {
       const job = r.latestJob as { status: string } | null;
       // Already made (or being rendered): just show it.
       if (r.project.status === "ready" || RUNNING_JOB.includes(job?.status ?? "")) {
-        for (const id of ["transcribe", "cut", "plan", "pictures"] as StepId[]) mark(id, "done");
+        for (const id of ["transcribe", "cut", "plan", "pictures", "music"] as StepId[]) mark(id, "done");
         setPlanState(await fetchPlan({ data: { project_id: projectId } }));
         await waitForRender();
         return;
@@ -326,7 +331,23 @@ function MakePage() {
       else mark("pictures", "skipped", "No graphics to make pictures for.");
       setPlanState(await fetchPlan({ data: { project_id: projectId } }));
 
-      // 5. Place the B-roll (off the full-screen graphics), then render.
+      // 5. The music (ElevenLabs), matched to the look and length; the
+      // user's own song wins, and the built-in music plays if it can't be made.
+      mark("music", "active");
+      try {
+        const m = await musicFn({
+          data: { project_id: projectId, look: plan?.look ?? null, skip_if_music: true },
+        });
+        mark(
+          "music",
+          m.made ? "done" : "skipped",
+          m.made ? "Made for this video." : "Your own music is used.",
+        );
+      } catch (e) {
+        mark("music", "skipped", `${message(e, "Couldn't make the music.")} The built-in music plays instead.`);
+      }
+
+      // 6. Place the B-roll (off the full-screen graphics), then render.
       try {
         const b = await brollFn({ data: { project_id: projectId } });
         if (b.of > b.placed) {
@@ -352,6 +373,7 @@ function MakePage() {
   }, [
     fetchPlan,
     fetchProject,
+    musicFn,
     pictures,
     planGraphics,
     projectId,

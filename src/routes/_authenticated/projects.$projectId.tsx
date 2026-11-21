@@ -231,16 +231,19 @@ import {
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId")({
   head: () => ({ meta: [{ title: "Editor — Stuccord Motion" }] }),
-  // ?thumbnail=1 opens the Thumbnail maker, ?autocut=1 Auto-cut silences and
-  // ?voiceover=1 the voiceover recorder (Home's tools link here).
+  // ?thumbnail=1 opens the Thumbnail maker, ?autocut=1 Auto-cut silences,
+  // ?voiceover=1 the voiceover recorder, ?music=1 the music settings and AI
+  // music, and ?captions=1 the captions (Home's tools link here).
   validateSearch: (
     s: Record<string, unknown>,
-  ): { thumbnail?: 1; autocut?: 1; voiceover?: 1 } => {
+  ): { thumbnail?: 1; autocut?: 1; voiceover?: 1; music?: 1; captions?: 1 } => {
     const on = (v: unknown) => v === 1 || v === "1" || v === true;
     return {
       ...(on(s.thumbnail) ? { thumbnail: 1 as const } : {}),
       ...(on(s.autocut) ? { autocut: 1 as const } : {}),
       ...(on(s.voiceover) ? { voiceover: 1 as const } : {}),
+      ...(on(s.music) ? { music: 1 as const } : {}),
+      ...(on(s.captions) ? { captions: 1 as const } : {}),
     };
   },
   component: EditorPage,
@@ -475,6 +478,34 @@ function EditorPage() {
     // Only when the flag arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.voiceover]);
+  // Home's Captions (?captions=1): open the Captions tab, then drop the flag.
+  useEffect(() => {
+    if (!search.captions) return;
+    setRightTab("captions");
+    void navigate({
+      to: "/projects/$projectId",
+      params: { projectId },
+      search: search.thumbnail ? { thumbnail: 1 } : {},
+      replace: true,
+    });
+    // Only when the flag arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.captions]);
+  // Home's Music & SFX (?music=1): show the music settings, then drop the flag.
+  const [focusMusic, setFocusMusic] = useState(!!search.music);
+  useEffect(() => {
+    if (!search.music) return;
+    setFocusMusic(true);
+    setRightTab("edit");
+    void navigate({
+      to: "/projects/$projectId",
+      params: { projectId },
+      search: search.thumbnail ? { thumbnail: 1 } : {},
+      replace: true,
+    });
+    // Only when the flag arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.music]);
   // Source-file time (ms) to jump to once the selected clip's video loads.
   const pendingSourceSeekMs = useRef<number | null>(null);
 
@@ -2852,6 +2883,10 @@ function EditorPage() {
               ) : (
                 <AIMotionPanel
                   projectId={projectId}
+                  look={motion.plan?.look ?? defaultLook(data?.project.style_preset)}
+                  onOpenVoiceover={() => setVoiceoverOpen(true)}
+                  onMusicMade={() => void refetch()}
+                  focusMusic={focusMusic}
                   status={project.status}
                   latestJob={latestJob}
                   clipCount={clips.length}

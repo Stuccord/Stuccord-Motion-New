@@ -261,6 +261,47 @@ app.post("/tts", async (req, res) => {
   }
 });
 
+// ---------- AI music (ElevenLabs Music) ----------
+// Composes an instrumental track { prompt, length_ms } and returns the MP3.
+// Signed like /jobs; the app checks the user's monthly limit first.
+
+const MUSIC_MIN_MS = 10_000;
+const MUSIC_MAX_MS = 300_000;
+
+app.post("/music", async (req, res) => {
+  if (!verifySignature(req)) return res.status(401).send("bad signature");
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return res.status(503).json({ ok: false, error: "AI music isn't set up" });
+  const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+  const lengthMs = Math.round(Number(req.body?.length_ms));
+  if (!prompt || prompt.length > 1000) {
+    return res.status(400).json({ ok: false, error: "The music description must be 1-1000 characters" });
+  }
+  if (!Number.isFinite(lengthMs) || lengthMs < MUSIC_MIN_MS || lengthMs > MUSIC_MAX_MS) {
+    return res.status(400).json({ ok: false, error: `Music length must be ${MUSIC_MIN_MS / 1000}-${MUSIC_MAX_MS / 1000} s` });
+  }
+  try {
+    const r = await fetch("https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128", {
+      method: "POST",
+      headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
+      body: JSON.stringify({ prompt, music_length_ms: lengthMs, force_instrumental: true }),
+      // A few minutes of music can take a while to compose.
+      signal: AbortSignal.timeout(5 * 60 * 1000),
+    });
+    if (!r.ok) {
+      const detail = await r.text().catch(() => "");
+      console.warn(`[Worker] Music failed: ${r.status} ${detail.slice(0, 200)}`);
+      return res.status(502).json({ ok: false, error: elevenLabsError(r.status, detail, "The AI music") });
+    }
+    const audio = Buffer.from(await r.arrayBuffer());
+    res.setHeader("content-type", "audio/mpeg");
+    res.send(audio);
+  } catch (e) {
+    console.warn("[Worker] Music failed:", e?.message || e);
+    res.status(502).json({ ok: false, error: "The AI music couldn't be made" });
+  }
+});
+
 // Posting to YouTube (and later TikTok and Instagram), and the scheduled-post tick.
 registerPublishing(app, { verifySignature, callback, signBody });
 

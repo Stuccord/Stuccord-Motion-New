@@ -84,7 +84,11 @@ function render(name, args) {
   }
 }
 
-for (const [name, s] of Object.entries(SOUNDS)) {
+// The sound effects are now a fixed ElevenLabs pack (2026-11-21): this only
+// remakes them when asked (node make-sounds.mjs --sfx), so the beds can be
+// remade without overwriting the pack.
+const remakeSfx = process.argv.includes("--sfx");
+for (const [name, s] of Object.entries(remakeSfx ? SOUNDS : {})) {
   const src = s.src ?? `aevalsrc='${s.expr}':d=${s.d}:s=${RATE}`;
   const fx = [s.fx, "aformat=channel_layouts=stereo", "alimiter=limit=0.9"].filter(Boolean).join(",");
   render(name, ["-f", "lavfi", "-i", src, "-af", fx]);

@@ -12,7 +12,15 @@ import {
   Wand2,
   Volume2,
   Mic,
+  Music2,
 } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { getAiMusicUsage, makeAiMusic } from "@/lib/music.functions";
+import type { MotionLookId } from "@/motion/looks";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,6 +57,84 @@ export interface AIMotionPanelProps {
   onCaptionsEnabledChange: (enabled: boolean) => void;
   /** The Motion Explainer graphics section, shown first in the AI Director tab. */
   graphics?: React.ReactNode;
+  /** The graphics' look (picks the AI music's style). */
+  look?: MotionLookId | null;
+  /** Opens the voiceover tool (record, or an AI voice). */
+  onOpenVoiceover?: () => void;
+  /** A new AI track was put on the music track. */
+  onMusicMade?: () => void;
+  /** Scroll the music section into view (opened from Home's Music & SFX). */
+  focusMusic?: boolean;
+}
+
+/** Makes an AI track for this video (ElevenLabs Music) and puts it on the music track. */
+function AiMusicMaker({
+  projectId,
+  look,
+  onMade,
+}: {
+  projectId: string;
+  look?: MotionLookId | null;
+  onMade?: () => void;
+}) {
+  const qc = useQueryClient();
+  const usageFn = useServerFn(getAiMusicUsage);
+  const makeFn = useServerFn(makeAiMusic);
+  const usage = useQuery({ queryKey: ["ai-music-usage"], queryFn: () => usageFn() });
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const left = usage.data?.limit == null ? null : Math.max(0, usage.data.limit - usage.data.used);
+  const make = async () => {
+    setBusy(true);
+    try {
+      await makeFn({ data: { project_id: projectId, look: look ?? null, note: note.trim() || undefined } });
+      toast.success("AI music added to the music track");
+      setNote("");
+      onMade?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't make the music");
+    } finally {
+      setBusy(false);
+      void qc.invalidateQueries({ queryKey: ["ai-music-usage"] });
+    }
+  };
+  return (
+    <div className="mt-3 rounded-lg border border-white/10 bg-black/30 p-2.5">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-200">
+          <Music2 className="h-3 w-3 text-violet-400" /> AI music for this video
+        </span>
+        <span className="text-[10px] text-neutral-500">
+          {left == null ? "Unlimited" : `${left} left this month`}
+        </span>
+      </div>
+      <p className="mb-2 text-[10px] leading-snug text-neutral-500">
+        Made to fit this video's look and length, instrumental, under your voice. It's added to the
+        music track; delete the old one there if you don't want both.
+      </p>
+      <Input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        maxLength={300}
+        placeholder="Optional: more upbeat, add guitar…"
+        className="mb-2 h-7 border-white/10 bg-black/40 text-[11px]"
+      />
+      <Button
+        size="sm"
+        className="h-7 w-full text-[11px]"
+        disabled={busy || left === 0}
+        onClick={make}
+      >
+        {busy ? (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin" /> Making the music (up to a minute or two)…
+          </>
+        ) : (
+          "Make AI music"
+        )}
+      </Button>
+    </div>
+  );
 }
 
 /* ---------- sub-components ---------- */
@@ -246,7 +332,16 @@ export function AIMotionPanel({
   onMusicVolumeCommit,
   onCaptionsEnabledChange,
   graphics,
+  projectId,
+  look,
+  onOpenVoiceover,
+  onMusicMade,
+  focusMusic,
 }: AIMotionPanelProps) {
+  const musicRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (focusMusic) musicRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusMusic]);
   const [activeTab, setActiveTab] = useState<"director" | "notes">("director");
 
   const jobStatus = latestJob?.status ?? "idle";
@@ -391,7 +486,7 @@ export function AIMotionPanel({
             </div>
 
             {/* Music */}
-            <div>
+            <div ref={musicRef}>
               <SectionHeader label="Music" icon={Volume2} />
               <div className="flex items-center gap-2 mb-2">
                 <Switch
@@ -399,7 +494,9 @@ export function AIMotionPanel({
                   onCheckedChange={onMusicEnabledChange}
                   className="data-[state=checked]:bg-violet-600"
                 />
-                <span className="text-[11px] text-neutral-400">Auto-score &amp; duck under VO</span>
+                <span className="text-[11px] text-neutral-400">
+                  Music under the video, lowered under your voice
+                </span>
               </div>
               {musicEnabled && (
                 <div className="flex items-center gap-2">
@@ -417,14 +514,21 @@ export function AIMotionPanel({
                   </span>
                 </div>
               )}
+              {musicEnabled && <AiMusicMaker projectId={projectId} look={look} onMade={onMusicMade} />}
             </div>
 
-            {/* Voice-over placeholder */}
+            {/* Voice-over */}
             <div>
               <SectionHeader label="Voice-over" icon={Mic} />
-              <div className="rounded-lg border border-dashed border-white/10 p-3 text-center text-[11px] text-neutral-600">
-                AI voice-over coming in Phase 3
-              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 w-full border-white/10 text-[11px]"
+                onClick={onOpenVoiceover}
+                disabled={!onOpenVoiceover}
+              >
+                <Mic className="h-3 w-3" /> Record or make an AI voiceover
+              </Button>
             </div>
           </>
         )}

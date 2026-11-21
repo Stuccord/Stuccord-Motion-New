@@ -513,6 +513,33 @@ export type Database = {
         }
         Relationships: []
       }
+      music_usage: {
+        Row: {
+          created_at: string
+          id: string
+          length_ms: number
+          project_id: string | null
+          prompt: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          length_ms: number
+          project_id?: string | null
+          prompt?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          length_ms?: number
+          project_id?: string | null
+          prompt?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       motion_plan_runs: {
         Row: {
           created_at: string

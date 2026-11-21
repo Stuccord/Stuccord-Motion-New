@@ -766,16 +766,16 @@ const KIND_GAIN = {
 // whoosh, riser or hit peaks at -22 LUFS momentary and a click, pop, blip or
 // glitch at -26: under a voice at -20 LUFS (render-worker/audio.js), not
 // over it. Measured from the files' loudest 400 ms; re-measure if a file
-// changes.
+// changes. (2026-11-21: the ElevenLabs sound-effect pack.)
 const LEVEL_TRIM_DB = {
-  "whoosh-light": -9.4,
-  "whoosh-deep": -9.1,
-  click: -3.7,
-  pop: -6.7,
-  "ui-blip": -6.5,
-  glitch: -8.0,
-  riser: -7.8,
-  hit: -9.9,
+  "whoosh-light": -6.9,
+  "whoosh-deep": -15.6,
+  click: 0.2,
+  pop: -6.0,
+  "ui-blip": -0.7,
+  glitch: -16.1,
+  riser: -16.9,
+  hit: -11.7,
 };
 
 export const MUSIC_BEDS = ["bed-calm", "bed-focus", "bed-drive"];

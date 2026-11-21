@@ -229,9 +229,16 @@ function Home() {
         {/* Quick tools */}
         <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           {/* Tools that aren't built yet say so and do nothing. */}
-          {/* Voiceover, Auto-cut and Thumbnail open in the latest project (or start one). */}
+          {/* Captions, Voiceover, Music & SFX, Auto-cut and Thumbnail open in the latest project (or start one). */}
           {[
-            { label: "Captions", icon: Captions, to: "/projects/new" },
+            {
+              label: "Captions",
+              icon: Captions,
+              to: recent[0] ? "/projects/$projectId" : "/projects/new",
+              params: recent[0] ? { projectId: recent[0].id } : undefined,
+              search: recent[0] ? { captions: 1 as const } : undefined,
+              title: recent[0] ? `Opens in “${recent[0].title}”` : "Start a project first",
+            },
             {
               label: "Voiceover",
               icon: Mic,
@@ -240,7 +247,14 @@ function Home() {
               search: recent[0] ? { voiceover: 1 as const } : undefined,
               title: recent[0] ? `Opens in “${recent[0].title}”` : "Start a project first",
             },
-            { label: "Music & SFX", icon: Music2, to: "/projects/new" },
+            {
+              label: "Music & SFX",
+              icon: Music2,
+              to: recent[0] ? "/projects/$projectId" : "/projects/new",
+              params: recent[0] ? { projectId: recent[0].id } : undefined,
+              search: recent[0] ? { music: 1 as const } : undefined,
+              title: recent[0] ? `Opens in “${recent[0].title}”` : "Start a project first",
+            },
             {
               label: "Auto-cut",
               icon: Scissors,
