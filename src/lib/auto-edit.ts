@@ -13,6 +13,7 @@
 
 import { mainSegments, type MotionElement, type MotionPlan, type PlanClip } from "@/lib/motion-plan";
 import type { TranscriptWord } from "@/lib/captions";
+import { OBJECT_PICTURE_LOOKS } from "@/motion/looks";
 
 /** Most AI pictures one automatic edit makes. */
 export const AUTO_PICTURES = 3;
@@ -35,7 +36,7 @@ export type PictureJob = {
 function pictured(plan: MotionPlan): MotionElement[] {
   return plan.elements.filter(
     (e) =>
-      (e.type === "story" || (e.type === "metaphor" && plan.look === "cine3d")) &&
+      (e.type === "story" || (e.type === "metaphor" && OBJECT_PICTURE_LOOKS.has(plan.look ?? ""))) &&
       e.scenes?.length,
   );
 }
@@ -106,7 +107,7 @@ export function finishAutoPlan(plan: MotionPlan): MotionPlan {
   return {
     ...plan,
     elements: plan.elements.flatMap((e) => {
-      if (e.type === "metaphor" && plan.look === "cine3d") {
+      if (e.type === "metaphor" && OBJECT_PICTURE_LOOKS.has(plan.look ?? "")) {
         return [{ ...e, scenes: (e.scenes ?? []).filter((sc) => sc.image) }];
       }
       if (e.type !== "story") return [e];
@@ -123,7 +124,7 @@ export function needsAutoPictures(plan: MotionPlan): boolean {
       LEFT_OUT.has(e.type) ||
       (e.type === "story" && (e.scenes ?? []).some((sc) => !sc.image || sc.speaker)) ||
       (e.type === "metaphor" &&
-        plan.look === "cine3d" &&
+        OBJECT_PICTURE_LOOKS.has(plan.look ?? "") &&
         (e.scenes ?? []).some((sc) => !sc.image)),
   );
 }

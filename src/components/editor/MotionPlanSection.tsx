@@ -536,6 +536,14 @@ const LOOKS: { id: MotionLook; label: string; hint: string }[] = [
   { id: "saas", label: "SaaS", hint: "Light pages, white cards, app screens" },
   { id: "docu", label: "Documentary", hint: "Drawn scenes on a light stage, one red accent" },
   { id: "cine3d", label: "3D Cinematic", hint: "3D objects, red light, big glowing words" },
+  { id: "bulletin", label: "Bulletin", hint: "Newsroom: headline bars, stat boxes, red and navy" },
+  { id: "impact", label: "Impact", hint: "Huge stamped capitals, black and acid yellow" },
+  { id: "noir", label: "Noir", hint: "Black and white, typewriter type, one red word" },
+  { id: "monument", label: "Monument", hint: "Quotes as gold-and-ivory inscriptions, marble sculptures" },
+  { id: "talk", label: "Studio Talk", hint: "Warm podcast cards: pull quotes, topic pills, amber" },
+  { id: "notebook", label: "Notebook", hint: "Grid paper, handwriting, marker and red pen" },
+  { id: "hud", label: "Spec HUD", hint: "Tech readout: callouts, scan lines, lime on black" },
+  { id: "studio", label: "Studio 3D", hint: "App screens in a light 3D studio, one blue" },
 ];
 
 function LookRow({ look }: { look: LookControls }) {

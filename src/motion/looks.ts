@@ -13,6 +13,14 @@ export const MOTION_LOOK_IDS = [
   "saas",
   "docu",
   "cine3d",
+  "bulletin",
+  "impact",
+  "noir",
+  "monument",
+  "talk",
+  "notebook",
+  "hud",
+  "studio",
 ] as const;
 export type MotionLookId = (typeof MOTION_LOOK_IDS)[number];
 
@@ -141,10 +149,122 @@ export const LOOK_FINISH: Record<MotionLookId, LookFinish> = {
     angleMove: "push",
     captions: "clean",
   },
+  // Bulletin: crisp and true to life - a touch more contrast, cool neutral
+  // colour, quick cuts to the close angle at the normal pace, bold captions.
+  bulletin: {
+    ...STANDARD,
+    grade: { saturation: 1.0, contrast: 1.07 },
+    angleClose: 1.25,
+  },
+  // Impact: loud - rich colour and hard contrast, tight close shots cut in
+  // often (the normal pace's shortest shots), bold captions.
+  impact: {
+    ...STANDARD,
+    grade: { saturation: 1.18, contrast: 1.12 },
+    angleClose: 1.4,
+  },
+  // Noir: black and white with deep blacks and bright highlights, heavy
+  // grain, a vignette, thin bars and slow push-ins.
+  noir: {
+    grade: {
+      saturation: 0,
+      contrast: 1.18,
+      curves: {
+        r: [0, 0.2, 0.5, 0.8, 1],
+        g: [0, 0.2, 0.5, 0.8, 1],
+        b: [0, 0.2, 0.5, 0.8, 1],
+      },
+    },
+    grain: 0.7,
+    vignette: true,
+    bars: true,
+    angleClose: 1.12,
+    pace: "slow",
+    angleMove: "push",
+    captions: "clean",
+  },
+  // Monument: warm and rich - deep blacks, gold-leaning highlights, colour
+  // held back a little, light grain, a vignette and slow push-ins.
+  monument: {
+    grade: {
+      saturation: 0.9,
+      contrast: 1.1,
+      curves: {
+        r: [0, 0.24, 0.52, 0.8, 1],
+        g: [0, 0.23, 0.5, 0.78, 0.98],
+        b: [0, 0.21, 0.46, 0.72, 0.92],
+      },
+    },
+    grain: 0.25,
+    vignette: true,
+    bars: false,
+    angleClose: 1.12,
+    pace: "slow",
+    angleMove: "push",
+    captions: "clean",
+  },
+  // Studio Talk: warm and soft - gentle contrast, warmer highlights, calm
+  // shots and gentle close angles, clean captions.
+  talk: {
+    ...STANDARD,
+    grade: {
+      saturation: 1.02,
+      contrast: 0.98,
+      curves: {
+        r: [0.02, 0.27, 0.53, 0.79, 1],
+        g: [0.02, 0.26, 0.51, 0.77, 0.99],
+        b: [0.02, 0.24, 0.48, 0.73, 0.95],
+      },
+    },
+    angleClose: 1.15,
+    pace: "calm",
+    captions: "clean",
+  },
+  // Notebook: bright and clean - a touch more colour and contrast, the
+  // normal pace, clean captions.
+  notebook: {
+    ...STANDARD,
+    grade: { saturation: 1.04, contrast: 1.03 },
+    angleClose: 1.2,
+    captions: "clean",
+  },
+  // Spec HUD: crisp and a little cool, more contrast, tight close shots to
+  // see the product, the normal pace, clean captions.
+  hud: {
+    ...STANDARD,
+    grade: {
+      saturation: 1.0,
+      contrast: 1.08,
+      curves: {
+        r: [0, 0.24, 0.5, 0.76, 0.98],
+        g: [0, 0.25, 0.5, 0.77, 0.99],
+        b: [0.01, 0.26, 0.52, 0.79, 1],
+      },
+    },
+    angleClose: 1.3,
+    captions: "clean",
+  },
+  // Studio 3D: clean and bright, gentle colour, calm shots with slow
+  // push-ins, clean captions.
+  studio: {
+    ...STANDARD,
+    grade: { saturation: 1.03, contrast: 1.04 },
+    angleClose: 1.15,
+    pace: "calm",
+    angleMove: "push",
+    captions: "clean",
+  },
 };
 
 /** Looks that draw metaphor scenes; in the others a metaphor shows as a key line. */
-export const METAPHOR_LOOKS: ReadonlySet<MotionLookId> = new Set(["docu", "cine3d"]);
+export const METAPHOR_LOOKS: ReadonlySet<MotionLookId> = new Set(["docu", "cine3d", "monument"]);
+
+/**
+ * Looks that show a metaphor as its AI object picture (made with the
+ * automatic edit, within the picture cap): 3D Cinematic's red-lit object,
+ * Monument's marble sculpture.
+ */
+export const OBJECT_PICTURE_LOOKS: ReadonlySet<string> = new Set(["cine3d", "monument"]);
 
 /** A look's finish (unknown looks: the standard one). */
 export function lookFinish(look: string | null | undefined): LookFinish {

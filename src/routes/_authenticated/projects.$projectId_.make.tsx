@@ -6,6 +6,7 @@
 // (worker). If the graphics can't be planned, the video is still made with
 // captions.
 
+import { METAPHOR_LOOKS, OBJECT_PICTURE_LOOKS } from "@/motion/looks";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -76,6 +77,14 @@ const LOOKS: { id: MotionLook; label: string }[] = [
   { id: "paper", label: "Paper" },
   { id: "docu", label: "Documentary" },
   { id: "cine3d", label: "3D Cinematic" },
+  { id: "bulletin", label: "Bulletin" },
+  { id: "impact", label: "Impact" },
+  { id: "noir", label: "Noir" },
+  { id: "monument", label: "Monument" },
+  { id: "talk", label: "Studio Talk" },
+  { id: "notebook", label: "Notebook" },
+  { id: "hud", label: "Spec HUD" },
+  { id: "studio", label: "Studio 3D" },
 ];
 
 const RUNNING_JOB = ["queued", "transcribing", "planning", "rendering"];
@@ -211,6 +220,7 @@ function MakePage() {
               accent,
               style: job.style,
               with_speaker: false,
+              look: plan.look ?? null,
             },
           });
           plan = withPicture(plan, job.elementId, job.index, r.path);
@@ -382,10 +392,11 @@ function MakePage() {
       const st = await fetchPlan({ data: { project_id: projectId } });
       if (!st.plan) throw new Error("This video has no graphics to restyle.");
       const restyled = { ...st.plan, look };
-      // 3D Cinematic shows its metaphors as AI object pictures: make any missing.
-      // Only the metaphors' pictures: graphics added in the editor stay as they are.
+      // 3D Cinematic and Monument show their metaphors as AI object pictures:
+      // make any missing. Only the metaphors' pictures: graphics added in the
+      // editor stay as they are.
       let made: MotionPlan = restyled;
-      if (look === "cine3d") {
+      if (OBJECT_PICTURE_LOOKS.has(look)) {
         const jobs = pictureJobs(restyled).filter((j) => j.style === "object");
         const accent = motionAccent(restyled.colour, null).hex;
         for (const job of jobs) {
@@ -398,6 +409,7 @@ function MakePage() {
                 accent,
                 style: "object",
                 with_speaker: false,
+                look,
               },
             });
             made = withPicture(made, job.elementId, job.index, r.path);
@@ -489,7 +501,7 @@ function MakePage() {
                   <p className="text-[11px] text-muted-foreground">
                     Re-renders the video (uses an export).
                   </p>
-                  {(look === "docu" || look === "cine3d") &&
+                  {look && METAPHOR_LOOKS.has(look) &&
                     !planState.plan.elements.some((e) => e.type === "metaphor") && (
                       <p className="text-[11px] text-amber-200/90">
                         This look's drawn or 3D metaphor scenes are planned with the graphics:

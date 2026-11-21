@@ -20,10 +20,28 @@ export type MotionTheme = {
 /** Font families the graphics use (see MOTION_FONTS). */
 export const SANS = "'SM Inter', 'Inter', system-ui, sans-serif";
 export const SERIF = "'SM Instrument Serif', 'Instrument Serif', Georgia, serif";
+/** Condensed display capitals (the Impact look). */
+export const DISPLAY = "'SM Anton', 'Anton', Impact, sans-serif";
+/** Typewriter type (the Noir look). */
+/** A warm, soft serif (the Studio Talk look). */
+export const WARM_SERIF = "'SM Fraunces', 'Fraunces', Georgia, serif";
+/** Handwriting (the Notebook look). */
+export const HAND = "'SM Caveat', 'Caveat', 'Comic Sans MS', cursive";
+/** A technical monospace (the Spec HUD look). */
+export const MONO = "'SM JetBrains Mono', 'JetBrains Mono', Consolas, monospace";
+/** A geometric display sans (the Studio 3D look). */
+export const GROTESK = "'SM Space Grotesk', 'Space Grotesk', 'Inter', sans-serif";
+export const TYPEWRITER = "'SM Special Elite', 'Special Elite', 'Courier New', monospace";
 
 /** Font files under the fonts folder (public/fonts, render-worker/fonts). */
 export const MOTION_FONTS = [
   { family: "SM Inter", file: "Inter-Variable.ttf", style: "normal", weight: "100 900" },
+  { family: "SM Anton", file: "Anton-Regular.ttf", style: "normal", weight: "400" },
+  { family: "SM Fraunces", file: "Fraunces-Variable.ttf", style: "normal", weight: "100 900" },
+  { family: "SM Caveat", file: "Caveat-Variable.ttf", style: "normal", weight: "400 700" },
+  { family: "SM JetBrains Mono", file: "JetBrainsMono-Variable.ttf", style: "normal", weight: "100 800" },
+  { family: "SM Space Grotesk", file: "SpaceGrotesk-Variable.ttf", style: "normal", weight: "300 700" },
+  { family: "SM Special Elite", file: "SpecialElite-Regular.ttf", style: "normal", weight: "400" },
   {
     family: "SM Instrument Serif",
     file: "InstrumentSerif-Regular.ttf",

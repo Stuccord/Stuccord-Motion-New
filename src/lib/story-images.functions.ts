@@ -33,6 +33,7 @@ import {
 } from "@/lib/motion-plan.functions";
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
+import { MOTION_LOOK_IDS } from "@/motion/looks";
 
 const Hex = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 const LINK_SECONDS = 60 * 60;
@@ -107,6 +108,8 @@ export const makeSceneImage = createServerFn({ method: "POST" })
         style: z.enum(["cinematic", "cartoon", "object"]).default("cinematic"),
         /** The speaker is in the picture: send their cartoon along. */
         with_speaker: z.boolean().default(false),
+        /** The video's look: picks the story pictures' style. */
+        look: z.enum(MOTION_LOOK_IDS).nullable().optional(),
       })
       .parse(d),
   )
@@ -140,6 +143,7 @@ export const makeSceneImage = createServerFn({ method: "POST" })
         reference,
         style: data.style,
         character,
+        look: data.look ?? null,
       });
     } catch (e) {
       throw new Error(e instanceof ImageError ? e.message : "Couldn't make the picture.");

@@ -7,6 +7,7 @@
 // Stage 9b: card streams' and profiles' pictures: the user's uploads, or
 // frames of their footage (filled in automatically when the AI plans one).
 
+import { OBJECT_PICTURE_LOOKS } from "@/motion/looks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -172,6 +173,7 @@ export function useStoryImages(
             accent,
             style: el.type === "cartoon" ? "cartoon" : el.type === "metaphor" ? "object" : "cinematic",
             with_speaker: speaker,
+            look: latestPlan.current?.look ?? null,
           },
         });
         if (r.url) setFresh((f) => ({ ...f, [r.path]: r.url as string }));
@@ -263,7 +265,7 @@ export function useStoryImages(
     for (const el of plan.elements) {
       // Metaphors get their object picture only in the look that shows it.
       const pictured =
-        SCENE_TYPES.has(el.type) || (el.type === "metaphor" && plan.look === "cine3d");
+        SCENE_TYPES.has(el.type) || (el.type === "metaphor" && OBJECT_PICTURE_LOOKS.has(plan.look ?? ""));
       if (!pictured || el.source !== "ai") continue;
       const waiting = (el.scenes ?? []).some((sc, i) => !sc.image && withSpeaker(el, i));
       const key = `${plan.created_at}:${el.id}:${waiting ? (character?.image ?? "-") : ""}`;

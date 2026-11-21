@@ -185,6 +185,211 @@ function Overlay({
           </div>
         </>
       );
+    case "studio":
+      // Studio 3D: a light studio stage, a browser window floating at an
+      // angle with a soft shadow, the line on a white card.
+      return (
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,#f6f6f4_0%,#eeeeeb_62%,#e2e2de_100%)] [perspective:600px]">
+          <div className="absolute left-1/2 top-[18%] w-[66%] -translate-x-1/2 rounded-[0.35em] border border-[#d9d9d4] bg-white p-[0.35em] shadow-[0_1.2em_2em_-0.8em_rgba(20,22,26,0.45)] [transform:translateX(-50%)_rotateY(-16deg)_rotateX(6deg)]">
+            <div className="mb-[0.25em] h-[0.3em] w-1/2 rounded bg-[#2b5cff]" />
+            <div className="mb-[0.18em] h-[0.2em] w-[90%] rounded bg-[#e3e3de]" />
+            <div className="mb-[0.18em] h-[0.2em] w-[72%] rounded bg-[#e3e3de]" />
+            <div className="h-[0.9em] w-[40%] rounded bg-[#eef2ff]" />
+          </div>
+          <div
+            className="absolute inset-x-[10%] bottom-[10%] rounded-[0.4em] bg-white px-[0.5em] py-[0.3em] text-center font-bold leading-tight tracking-[-0.03em] text-[#14161a] shadow-lg"
+            style={{ fontFamily: "'Space Grotesk', Inter, sans-serif" }}
+          >
+            {emphasis && line.includes(emphasis) ? (
+              <>
+                {line.split(emphasis)[0]}
+                <span className="text-[#2b5cff]">{emphasis}</span>
+                {line.split(emphasis)[1]}
+              </>
+            ) : (
+              line
+            )}
+          </div>
+        </div>
+      );
+    case "hud":
+      // Spec HUD: corner brackets, a target ring with a callout tag, lime
+      // mono on dark panels.
+      return (
+        <div className="absolute inset-0 text-[#b6ff3b]" style={{ fontFamily: "'JetBrains Mono', Consolas, monospace" }}>
+          {[
+            "left-[5%] top-[4%] border-l-2 border-t-2",
+            "right-[5%] top-[4%] border-r-2 border-t-2",
+            "left-[5%] bottom-[4%] border-b-2 border-l-2",
+            "right-[5%] bottom-[4%] border-b-2 border-r-2",
+          ].map((c) => (
+            <span key={c} className={cn("absolute h-[8%] aspect-square border-[#b6ff3b]", c)} />
+          ))}
+          <span className="absolute left-[30%] top-[50%] h-[12%] aspect-square rounded-full border-2 border-dashed border-[#b6ff3b]" />
+          <div className="absolute inset-x-[8%] bottom-[12%] bg-black/80 px-[0.4em] py-[0.25em] text-center text-[0.8em] font-bold uppercase leading-tight text-white">
+            <span className="text-[#b6ff3b]">[ </span>
+            {emphasis && line.includes(emphasis) ? (
+              <>
+                {line.split(emphasis)[0]}
+                <span className="text-[#b6ff3b]">{emphasis}</span>
+                {line.split(emphasis)[1]}
+              </>
+            ) : (
+              line
+            )}
+            <span className="text-[#b6ff3b]"> ]</span>
+          </div>
+        </div>
+      );
+    case "notebook":
+      // Notebook: a torn grid-paper strip over the footage, the line in ink
+      // blue, the key word under a yellow marker.
+      return (
+        <div
+          className="absolute inset-x-[4%] bottom-[10%] px-[0.5em] py-[0.45em] text-center font-extrabold leading-tight text-[#1f3a93] shadow-lg"
+          style={{
+            backgroundColor: "#fafaf6",
+            backgroundImage: "linear-gradient(#dde6f0 1px, transparent 1px), linear-gradient(90deg, #dde6f0 1px, transparent 1px)",
+            backgroundSize: "0.6em 0.6em",
+          }}
+        >
+          {emphasis && line.includes(emphasis) ? (
+            <>
+              {line.split(emphasis)[0]}
+              <span className="bg-[#ffe45c] px-[0.1em]">{emphasis}</span>
+              {line.split(emphasis)[1]}
+            </>
+          ) : (
+            line
+          )}
+        </div>
+      );
+    case "talk":
+      // Studio Talk: a cream pull-quote card rising from the bottom, an amber
+      // quote mark, a small waveform under the line.
+      return (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-t from-[#1c1a17]/55 to-transparent" />
+          <div className="absolute inset-x-[5%] bottom-[6%] rounded-[0.5em] bg-[#f2e8d5] px-[0.55em] pb-[0.45em] pt-[0.3em] shadow-lg">
+            <div className="h-[0.45em] text-[1.6em] leading-[0.7] text-[#e0a84e]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+              &ldquo;
+            </div>
+            <div className="font-semibold leading-tight text-[#1c1a17]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>
+              {emphasis && line.includes(emphasis) ? (
+                <>
+                  {line.split(emphasis)[0]}
+                  <span className="text-[#b7791f]">{emphasis}</span>
+                  {line.split(emphasis)[1]}
+                </>
+              ) : (
+                line
+              )}
+            </div>
+            <div className="mt-[0.3em] flex h-[0.45em] items-end gap-[0.08em]">
+              {[40, 90, 60, 100, 50, 80, 35, 70, 95, 45, 65, 85].map((h, i) => (
+                <span key={i} className="w-[0.09em] rounded-full bg-[#e0a84e]" style={{ height: `${h}%` }} />
+              ))}
+            </div>
+          </div>
+        </>
+      );
+    case "monument":
+      // Monument: a dark stage lit warm from the upper left, the line in
+      // large ivory serif italic, the key word in gold.
+      return (
+        <div className="absolute inset-0 bg-[#0d0b08]">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_32%_28%,rgba(201,164,92,0.18),transparent_70%)]" />
+          <div
+            className="absolute inset-x-[7%] top-1/2 -translate-y-1/2 text-center text-[1.35em] italic leading-[1.08] text-[#ede6da]"
+            style={{ fontFamily: SERIF }}
+          >
+            {emphasis && line.includes(emphasis) ? (
+              <>
+                {line.split(emphasis)[0]}
+                <span className="text-[#c9a45c]">{emphasis}</span>
+                {line.split(emphasis)[1]}
+              </>
+            ) : (
+              line
+            )}
+          </div>
+        </div>
+      );
+    case "noir":
+      // Noir: the footage in black and white (the grade), grain, a
+      // vignette, thin bars, and the line typed low with a red key word.
+      return (
+        <>
+          <div className="absolute inset-x-0 top-0 z-10 h-[6%] bg-black" />
+          <div className="absolute inset-x-0 bottom-0 z-10 h-[6%] bg-black" />
+          <div
+            className="absolute inset-0 opacity-[0.18] mix-blend-overlay"
+            style={{ backgroundImage: "repeating-radial-gradient(circle at 30% 40%, #fff 0 1px, transparent 1px 3px)" }}
+          />
+          <div className="absolute inset-0 shadow-[inset_0_0_70px_rgba(0,0,0,0.9)]" />
+          <div
+            className="absolute inset-x-[8%] bottom-[14%] text-center leading-tight text-[#ededed] [text-shadow:0_2px_10px_rgba(0,0,0,0.8)]"
+            style={{ fontFamily: "'Special Elite', 'Courier New', monospace" }}
+          >
+            {emphasis && line.includes(emphasis) ? (
+              <>
+                {line.split(emphasis)[0]}
+                <span className="text-[#d7262e]">{emphasis}</span>
+                {line.split(emphasis)[1]}
+              </>
+            ) : (
+              line
+            )}
+            <span className="opacity-80">_</span>
+          </div>
+        </>
+      );
+    case "impact": {
+      // Impact: the footage darkened, huge condensed capitals, the key word
+      // on an acid-yellow block.
+      const words = line.toUpperCase().split(/\s+/);
+      const key = emphasis?.toUpperCase();
+      return (
+        <>
+          <div className="absolute inset-0 bg-black/60" />
+          <div
+            className="absolute inset-x-[6%] top-1/2 -translate-y-1/2 text-center text-[1.5em] leading-[1.02] text-white"
+            style={{ fontFamily: "'Anton', Impact, sans-serif" }}
+          >
+            {words.map((w, i) => (
+              <span
+                key={i}
+                className={cn("mx-[0.1em] inline-block", key && key.split(/\s+/).includes(w) && "bg-[#e6ff00] px-[0.12em] text-[#0a0a0a]")}
+              >
+                {w}
+              </span>
+            ))}
+          </div>
+        </>
+      );
+    }
+    case "bulletin": {
+      // Bulletin: the headline bar over the footage - a red UPDATE tag and
+      // a navy bar with a red base, the key word in a red box.
+      const [a, b] = emphasis && line.includes(emphasis) ? line.split(emphasis) : [line, ""];
+      return (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-t from-[#040a16]/60 via-transparent to-transparent" />
+          <div className="absolute inset-x-[5%] bottom-[12%]">
+            <span className="inline-block bg-[#d7262e] px-[0.35em] py-[0.1em] text-[0.42em] font-extrabold tracking-[0.12em] text-white">
+              UPDATE
+            </span>
+            <div className="border-b-[0.12em] border-[#d7262e] bg-[#0b1f3a] px-[0.3em] py-[0.18em] font-extrabold leading-tight tracking-[-0.02em] text-white">
+              {a}
+              {emphasis && line.includes(emphasis) && (
+                <span className="bg-[#d7262e] px-[0.15em]">{emphasis}</span>
+              )}
+              {b}
+            </div>
+          </div>
+        </>
+      );
+    }
     case "paper":
       return (
         <div className="absolute inset-x-[7%] bottom-[6%] -rotate-2 rounded-[0.4em] bg-[#f5efe3] p-[0.55em] text-[#2a2420] shadow-lg">

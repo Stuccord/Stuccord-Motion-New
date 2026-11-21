@@ -13,7 +13,7 @@
 import React from "react";
 import { AbsoluteFill, Img } from "remotion";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
-import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
+import { DISPLAY, GROTESK, HAND, MONO as MONO_FONT, SANS, SERIF, TYPEWRITER, WARM_SERIF, type MotionTheme } from "@/motion/theme";
 import {
   coinBeats,
   coinCount,
@@ -28,6 +28,20 @@ import { MinimalScene, isMinimalScene } from "@/motion/MinimalScene";
 import { DocuScene, isDocuScene, DOCU_INK, DOCU_RED, DOCU_STAGE } from "@/motion/DocuScene";
 import { Cine3dScene, isCineScene, CINE_RED, CINE_STAGE } from "@/motion/Cine3dScene";
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
+import { StudioScene, isStudioScene, STUDIO_BLUE, STUDIO_INK, STUDIO_STAGE } from "@/motion/StudioScene";
+import { HudScene, isHudScene, HUD_BLACK, HUD_LIME } from "@/motion/HudScene";
+import { NotebookScene, isNotebookScene, NOTE_INK, NOTE_MARKER, NOTE_PAPER, NOTE_RED } from "@/motion/NotebookScene";
+import { TalkScene, isTalkScene, TALK_AMBER, TALK_CHARCOAL, TALK_CREAM } from "@/motion/TalkScene";
+import {
+  MonumentScene,
+  isMonumentScene,
+  MONUMENT_BLACK,
+  MONUMENT_GOLD,
+  MONUMENT_IVORY,
+} from "@/motion/MonumentScene";
+import { NoirScene, isNoirScene, NOIR_BLACK, NOIR_INK, NOIR_RED } from "@/motion/NoirScene";
+import { ImpactScene, isImpactScene, IMPACT_BLACK, IMPACT_YELLOW } from "@/motion/ImpactScene";
+import { BulletinScene, isBulletinScene, NEWS_NAVY, NEWS_PAGE, NEWS_RED } from "@/motion/BulletinScene";
 import {
   ImagesContext,
   LogoContext,
@@ -146,6 +160,242 @@ const SAAS_SKIN: Skin = {
   fadeFrames: 14,
   leaks: false,
   numberWeight: 700,
+  cards: true,
+  lively: true,
+};
+
+/**
+ * Studio 3D (Product demo): a light studio stage, graphite words, one blue,
+ * Space Grotesk titles, words over the footage on white cards, lively
+ * arrivals. App screens, key lines, chapters, numbers and lists are its own
+ * 3D studio scenes instead (StudioScene).
+ */
+const STUDIO_SKIN: Skin = {
+  vars: {
+    "--cg-page": STUDIO_STAGE,
+    "--cg-ink": STUDIO_INK,
+    "--cg-soft": "rgba(20, 22, 26, 0.6)",
+    "--cg-line": "rgba(20, 22, 26, 0.14)",
+    "--cg-tile": "#E2E2DE",
+    "--cg-over": "none",
+    "--cg-title": GROTESK,
+    "--cg-track": "0.12em",
+    "--cg-card": "#FFFFFF",
+    "--cg-behind-ink": "#FFFFFF",
+    "--cg-behind-soft": "rgba(255, 255, 255, 0.8)",
+    "--cg-button": "#FFFFFF",
+    "--cg-button-edge": "rgba(20, 22, 26, 0.16)",
+  },
+  serif: false,
+  fadeFrames: 12,
+  leaks: false,
+  numberWeight: 700,
+  cards: true,
+  lively: true,
+};
+
+/**
+ * Spec HUD (Unboxing): black, white monospace, the key word in lime, thin
+ * lines, quick arrivals. Labels, key lines, numbers, lists and chapters are
+ * its own readout scenes instead (HudScene).
+ */
+const HUD_SKIN: Skin = {
+  vars: {
+    "--cg-page": HUD_BLACK,
+    "--cg-page-pattern":
+      "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
+    "--cg-page-pattern-size": "6vmin 6vmin",
+    "--cg-ink": "#F4F4F4",
+    "--cg-soft": "rgba(244, 244, 244, 0.6)",
+    "--cg-line": "rgba(182, 255, 59, 0.35)",
+    "--cg-tile": "#141414",
+    "--cg-over": "0 1px 10px rgba(0, 0, 0, 0.7)",
+    "--cg-title": MONO_FONT,
+    "--cg-track": "0.1em",
+    "--cg-behind-ink": "#F4F4F4",
+    "--cg-behind-soft": "rgba(244, 244, 244, 0.75)",
+    "--cg-button": "rgba(5, 5, 5, 0.8)",
+    "--cg-button-edge": HUD_LIME,
+  },
+  serif: false,
+  fadeFrames: 8,
+  leaks: false,
+  numberWeight: 700,
+  cards: false,
+  lively: true,
+};
+
+/**
+ * Notebook (Micro-lesson): off-white grid paper, ink-blue words, handwritten
+ * titles, the key word in red pen; words over the footage on paper cards.
+ * Chapters, key lines, lists, numbers and labels are its own notebook
+ * scenes instead (NotebookScene).
+ */
+const NOTEBOOK_SKIN: Skin = {
+  vars: {
+    "--cg-page": NOTE_PAPER,
+    "--cg-page-pattern":
+      "linear-gradient(#DDE6F0 1px, transparent 1px), linear-gradient(90deg, #DDE6F0 1px, transparent 1px)",
+    "--cg-page-pattern-size": "4.5vmin 4.5vmin",
+    "--cg-ink": NOTE_INK,
+    "--cg-soft": "rgba(31, 58, 147, 0.62)",
+    "--cg-line": "rgba(31, 58, 147, 0.18)",
+    "--cg-tile": "#E9EEF5",
+    "--cg-over": "none",
+    "--cg-title": HAND,
+    "--cg-track": "0.12em",
+    "--cg-card": NOTE_PAPER,
+    "--cg-behind-ink": "#FFFFFF",
+    "--cg-behind-soft": "rgba(255, 255, 255, 0.8)",
+    "--cg-button": NOTE_MARKER,
+    "--cg-button-edge": NOTE_INK,
+  },
+  serif: false,
+  fadeFrames: 10,
+  leaks: false,
+  numberWeight: 800,
+  cards: true,
+  lively: true,
+};
+
+/**
+ * Studio Talk (Podcast clip): warm charcoal, cream words, a soft serif for
+ * titles, the key word in amber, calm arrivals. Key lines, labels, numbers
+ * and chapters are its own studio graphics instead (TalkScene).
+ */
+const TALK_SKIN: Skin = {
+  vars: {
+    "--cg-page": TALK_CHARCOAL,
+    "--cg-ink": TALK_CREAM,
+    "--cg-soft": "rgba(242, 232, 213, 0.65)",
+    "--cg-line": "rgba(224, 168, 78, 0.3)",
+    "--cg-tile": "#2A2723",
+    "--cg-over": "0 1px 12px rgba(0, 0, 0, 0.5)",
+    "--cg-title": WARM_SERIF,
+    "--cg-track": "0.2em",
+    "--cg-behind-ink": TALK_CREAM,
+    "--cg-behind-soft": "rgba(242, 232, 213, 0.78)",
+    "--cg-button": TALK_CHARCOAL,
+    "--cg-button-edge": TALK_AMBER,
+  },
+  serif: false,
+  fadeFrames: 14,
+  leaks: false,
+  numberWeight: 600,
+  cards: false,
+  lively: false,
+};
+
+/**
+ * Monument (Quote reel): near-black, warm ivory serif titles, gold accents,
+ * slow fades. Key lines, metaphors, chapters and labels are its own
+ * inscription scenes instead (MonumentScene).
+ */
+const MONUMENT_SKIN: Skin = {
+  vars: {
+    "--cg-page": MONUMENT_BLACK,
+    "--cg-ink": MONUMENT_IVORY,
+    "--cg-soft": "rgba(237, 230, 218, 0.62)",
+    "--cg-line": "rgba(201, 164, 92, 0.35)",
+    "--cg-tile": "#1A1712",
+    "--cg-over": "0 1px 12px rgba(0, 0, 0, 0.6)",
+    "--cg-title": SERIF,
+    "--cg-track": "0.32em",
+    "--cg-behind-ink": MONUMENT_IVORY,
+    "--cg-behind-soft": "rgba(237, 230, 218, 0.75)",
+    "--cg-button": "rgba(13, 11, 8, 0.4)",
+    "--cg-button-edge": MONUMENT_GOLD,
+  },
+  serif: true,
+  fadeFrames: 22,
+  leaks: false,
+  numberWeight: 400,
+  cards: false,
+  lively: false,
+};
+
+/**
+ * Noir (Cinematic story): black, off-white typewriter type, the key word in
+ * red, slow fades. Key lines, chapters, stories, labels and numbers are its
+ * own typed scenes instead (NoirScene).
+ */
+const NOIR_SKIN: Skin = {
+  vars: {
+    "--cg-page": NOIR_BLACK,
+    "--cg-ink": NOIR_INK,
+    "--cg-soft": "rgba(237, 237, 237, 0.62)",
+    "--cg-line": "rgba(237, 237, 237, 0.2)",
+    "--cg-tile": "#1A1A1A",
+    "--cg-over": "0 2px 10px rgba(0, 0, 0, 0.8)",
+    "--cg-title": TYPEWRITER,
+    "--cg-track": "0.28em",
+    "--cg-behind-ink": NOIR_INK,
+    "--cg-behind-soft": "rgba(237, 237, 237, 0.75)",
+    "--cg-button": "rgba(12, 12, 12, 0.4)",
+    "--cg-button-edge": "rgba(237, 237, 237, 0.6)",
+  },
+  serif: false,
+  fadeFrames: 22,
+  leaks: false,
+  numberWeight: 400,
+  cards: false,
+  lively: false,
+};
+
+/**
+ * Impact (3-second hook): black, white words in condensed display capitals,
+ * the key word in acid yellow; fast, lively arrivals. Key lines, chapters,
+ * numbers and labels are its own stamped graphics instead (ImpactScene).
+ */
+const IMPACT_SKIN: Skin = {
+  vars: {
+    "--cg-page": IMPACT_BLACK,
+    "--cg-ink": "#FFFFFF",
+    "--cg-soft": "rgba(255, 255, 255, 0.7)",
+    "--cg-line": "rgba(255, 255, 255, 0.2)",
+    "--cg-tile": "#1C1C1C",
+    "--cg-over": "0 2px 14px rgba(0, 0, 0, 0.6)",
+    "--cg-title": DISPLAY,
+    "--cg-track": "0.12em",
+    "--cg-behind-ink": "#FFFFFF",
+    "--cg-behind-soft": "rgba(255, 255, 255, 0.8)",
+    "--cg-button": IMPACT_YELLOW,
+    "--cg-button-edge": IMPACT_YELLOW,
+  },
+  serif: false,
+  fadeFrames: 6,
+  leaks: false,
+  numberWeight: 400,
+  cards: false,
+  lively: true,
+};
+
+/**
+ * Bulletin (News drop): a clean light page, navy words in a heavy sans, the
+ * key word in news red; words over the footage on white cards; quick, lively
+ * arrivals. Key lines, chapters, numbers, labels and comparisons are its own
+ * newsroom graphics instead (BulletinScene).
+ */
+const BULLETIN_SKIN: Skin = {
+  vars: {
+    "--cg-page": NEWS_PAGE,
+    "--cg-ink": NEWS_NAVY,
+    "--cg-soft": "rgba(11, 31, 58, 0.62)",
+    "--cg-line": "rgba(11, 31, 58, 0.16)",
+    "--cg-tile": "#DDE2EA",
+    "--cg-over": "none",
+    "--cg-title": SANS,
+    "--cg-track": "0.14em",
+    "--cg-card": "#FFFFFF",
+    "--cg-behind-ink": "#FFFFFF",
+    "--cg-behind-soft": "rgba(255, 255, 255, 0.8)",
+    "--cg-button": "#FFFFFF",
+    "--cg-button-edge": "rgba(11, 31, 58, 0.18)",
+  },
+  serif: false,
+  fadeFrames: 10,
+  leaks: false,
+  numberWeight: 800,
   cards: true,
   lively: true,
 };
@@ -375,7 +625,16 @@ function Wash({ side, opacity }: { side: "bottom" | "left" | "right"; opacity: n
 function Page({ opacity, children }: { opacity: number; children: React.ReactNode }) {
   return (
     <AbsoluteFill
-      style={{ opacity, background: PAGE, fontFamily: SANS, color: INK, overflow: "hidden" }}
+      style={{
+        opacity,
+        backgroundColor: PAGE,
+        // A skin's paper pattern, if it has one (Notebook's grid).
+        backgroundImage: "var(--cg-page-pattern, none)",
+        backgroundSize: "var(--cg-page-pattern-size, auto)",
+        fontFamily: SANS,
+        color: INK,
+        overflow: "hidden",
+      }}
     >
       {children}
     </AbsoluteFill>
@@ -1866,4 +2125,100 @@ export function Cine3dGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionThe
 /** One graphic in the SaaS look. */
 export function SaasGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   return <Skinned skin={SAAS_SKIN} g={g} theme={theme} />;
+}
+
+/** One graphic in the Bulletin look: newsroom graphics for its key moments, the rest in its light skin. */
+export function BulletinGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isBulletinScene(g)) return <BulletinScene g={g} />;
+  return (
+    <Skinned
+      skin={BULLETIN_SKIN}
+      g={g}
+      theme={{ ...theme, accent: NEWS_RED, glow: "rgba(215, 38, 46, 0.25)" }}
+    />
+  );
+}
+
+/** One graphic in the Impact look: stamped graphics for its key moments, the rest in its black skin. */
+export function ImpactGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isImpactScene(g)) return <ImpactScene g={g} />;
+  return (
+    <Skinned
+      skin={IMPACT_SKIN}
+      g={g}
+      theme={{ ...theme, accent: IMPACT_YELLOW, glow: "rgba(230, 255, 0, 0.3)" }}
+    />
+  );
+}
+
+/** One graphic in the Noir look: typed scenes for its key moments, the rest in its black skin. */
+export function NoirGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isNoirScene(g)) return <NoirScene g={g} />;
+  return (
+    <Skinned
+      skin={NOIR_SKIN}
+      g={g}
+      theme={{ ...theme, accent: NOIR_RED, glow: "rgba(215, 38, 46, 0.25)" }}
+    />
+  );
+}
+
+/** One graphic in the Monument look: inscription scenes for its key moments, the rest in its dark skin. */
+export function MonumentGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isMonumentScene(g)) return <MonumentScene g={g} />;
+  return (
+    <Skinned
+      skin={MONUMENT_SKIN}
+      g={g}
+      theme={{ ...theme, accent: MONUMENT_GOLD, glow: "rgba(201, 164, 92, 0.3)" }}
+    />
+  );
+}
+
+/** One graphic in the Studio Talk look: studio graphics for its key moments, the rest in its warm skin. */
+export function TalkGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isTalkScene(g)) return <TalkScene g={g} />;
+  return (
+    <Skinned
+      skin={TALK_SKIN}
+      g={g}
+      theme={{ ...theme, accent: TALK_AMBER, glow: "rgba(224, 168, 78, 0.3)" }}
+    />
+  );
+}
+
+/** One graphic in the Notebook look: notebook scenes for its key moments, the rest in its paper skin. */
+export function NotebookGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isNotebookScene(g)) return <NotebookScene g={g} />;
+  return (
+    <Skinned
+      skin={NOTEBOOK_SKIN}
+      g={g}
+      theme={{ ...theme, accent: NOTE_RED, glow: "rgba(229, 72, 77, 0.25)" }}
+    />
+  );
+}
+
+/** One graphic in the Spec HUD look: readout scenes for its key moments, the rest in its black skin. */
+export function HudGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isHudScene(g)) return <HudScene g={g} />;
+  return (
+    <Skinned
+      skin={HUD_SKIN}
+      g={g}
+      theme={{ ...theme, accent: HUD_LIME, glow: "rgba(182, 255, 59, 0.3)" }}
+    />
+  );
+}
+
+/** One graphic in the Studio 3D look: 3D studio scenes for its key moments, the rest in its light skin. */
+export function StudioGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
+  if (isStudioScene(g)) return <StudioScene g={g} theme={theme} />;
+  return (
+    <Skinned
+      skin={STUDIO_SKIN}
+      g={g}
+      theme={{ ...theme, accent: STUDIO_BLUE, glow: "rgba(43, 92, 255, 0.25)" }}
+    />
+  );
 }

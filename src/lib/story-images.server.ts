@@ -1,8 +1,9 @@
 // Makes story scenes' pictures with Higgsfield's image model (Grok Image 2.0,
 // server only: HF_API_KEY_ID / HF_API_KEY_SECRET), or Google's Gemini as the
 // fallback (GEMINI_API_KEY); IMAGE_PROVIDER=higgsfield|gemini picks one, else
-// Higgsfield whenever its key is set. One cinematic house style for every video,
-// tinted toward the video's colour (stage 5); later scenes of a story get
+// Higgsfield whenever its key is set. A cinematic house style, or the video's
+// look's own picture style (LOOK_PICTURE), tinted toward the video's colour
+// where the look allows it (stage 5); later scenes of a story get
 // its first picture as a reference so the story looks like one series.
 // Stage 8: the speaker's cartoon (a 3D animated character made from a photo
 // of them, with consent) is sent along for scenes with the speaker in them,
@@ -16,6 +17,7 @@ import {
   uploadToHiggsfield,
   waitForGeneration,
 } from "@/lib/higgsfield.server";
+import type { MotionLookId } from "@/motion/looks";
 
 /** Google's current image model (Nano Banana 2.1; Imagen was shut down in 2026). */
 export const GEMINI_IMAGE_MODEL = "gemini-nano-banana-2.1";
@@ -50,10 +52,119 @@ export class ImageError extends Error {}
  */
 export type SceneStyle = "cinematic" | "cartoon" | "object";
 
-/** The house style, added to every scene's own description. */
-export function houseStyle(accentHex: string | null, style: SceneStyle = "cinematic"): string {
+/**
+ * Each look's own picture style for story scenes, so Higgsfield's pictures
+ * belong to the look they sit in (docs/templates-unique-plan.md). Looks not
+ * listed (glass, the default) keep the cinematic house style. `tint`: whether
+ * the video's colour may tint the picture (fixed-palette looks say no).
+ */
+const LOOK_PICTURE: Partial<Record<MotionLookId, { lines: string[]; tint: boolean }>> = {
+  film: {
+    lines: [
+      "Cinematic film still shot on 35mm film: golden-hour sunlight, warm skin tones, teal-green shadows, natural film grain, gentle halation on the highlights.",
+      "Real place, real light, observational framing like a travel documentary, shallow depth of field.",
+    ],
+    tint: false,
+  },
+  paper: {
+    lines: [
+      "Hand-painted gouache storybook illustration on warm textured paper: soft visible brush strokes, simple rounded shapes, a limited warm palette of cream, ink brown and one accent colour.",
+      "Gentle storybook lighting, calm composition with one clear subject, like a page from a modern picture book.",
+    ],
+    tint: true,
+  },
+  minimal: {
+    lines: [
+      "Fine white line-art illustration on a pure black background: thin, even, continuous lines, no fills, no shading, no colour.",
+      "Lots of empty black space around one simple subject, calm and elegant.",
+    ],
+    tint: false,
+  },
+  docu: {
+    lines: [
+      "Simple flat documentary explainer illustration: a light grey stage with a soft vignette, near-black solid shapes, and one small red accent.",
+      "Clean geometric shapes, no outlines, no texture, no gradients, lots of space, one clear idea in the centre.",
+    ],
+    tint: false,
+  },
+  saas: {
+    lines: [
+      "Glossy soft 3D clay-style render: rounded, friendly shapes with a satin finish, floating on a clean light pastel background.",
+      "Soft studio light from one side, gentle contact shadow, bright and optimistic, like a modern app's launch illustration.",
+    ],
+    tint: true,
+  },
+  notebook: {
+    lines: [
+      "Flat vector editorial illustration: simple geometric shapes, clean outlines, a limited palette of ink blue, warm yellow and a little red on an off-white background.",
+      "Friendly and clear like a textbook or explainer illustration, one idea in the centre, lots of white space, no gradients, no photo-realism.",
+    ],
+    tint: false,
+  },
+  monument: {
+    lines: [
+      "Classical marble statue scene in a dark museum: white marble figures and objects, chiaroscuro light from one warm source, deep black background, soft gold highlights.",
+      "Timeless, still and monumental, like a Renaissance sculpture photographed at night; shallow depth of field.",
+    ],
+    tint: false,
+  },
+  noir: {
+    lines: [
+      "Black-and-white film noir still: hard low-key light, deep black shadows, venetian-blind or streetlamp shadows, wet streets, smoke or rain where it fits.",
+      "1940s crime film photography, high contrast, fine film grain, dramatic angles; monochrome only, no colour.",
+    ],
+    tint: false,
+  },
+  impact: {
+    lines: [
+      "Bold pop-art hero shot: one object, centred, big in the frame, on a flat solid acid-yellow (#E6FF00) background.",
+      "Hard graphic studio light, crisp edges, punchy saturated colour, a clean hard shadow; simple and instantly readable at a glance.",
+    ],
+    tint: false,
+  },
+  bulletin: {
+    lines: [
+      "Editorial news photograph, photojournalism style: natural available light, true-to-life colour, crisp focus, a real place and a real moment.",
+      "Clean, credible framing like a front-page news photo, slightly cool neutral tones, no drama filters.",
+    ],
+    tint: false,
+  },
+  cine3d: {
+    lines: [
+      "Photo-real cinematic still: near-black surroundings, dramatic low-key light, a strong red rim light on one side, soft warm highlights.",
+      "Shallow depth of field, rich materials and reflections, like a high-end film trailer.",
+    ],
+    tint: false,
+  },
+};
+
+/** The Monument look's metaphor object: a white marble sculpture of it. */
+const MARBLE = {
+  lines: [
+    "A classical white marble sculpture of the object, carved in stone: one sculpture, centred, with clear space around it, standing on a simple dark plinth.",
+    "Chiaroscuro museum lighting: one warm light from the upper left, deep black background, soft gold highlights on the polished marble, visible carving detail, shallow depth of field.",
+    "No people, no hands.",
+  ],
+  tint: false,
+};
+
+/** The house style, added to every scene's own description (`look`: the video's look). */
+export function houseStyle(
+  accentHex: string | null,
+  style: SceneStyle = "cinematic",
+  look?: string | null,
+): string {
+  const own =
+    style === "object" && look === "monument"
+      ? MARBLE
+      : style === "cinematic" && look && Object.hasOwn(LOOK_PICTURE, look)
+        ? LOOK_PICTURE[look as MotionLookId]
+        : undefined;
+  const tint = own ? own.tint : style !== "object";
   return [
-    ...(style === "object"
+    ...(own
+      ? own.lines
+      : style === "object"
       ? [
           "Photo-real 3D render of the object, like a premium product shot: one hero object, centred, with clear space around it.",
           "Near-black background, dramatic low-key studio light, a strong red rim light on one side, soft warm highlights, shallow depth of field, macro lens, rich materials and reflections.",
@@ -68,7 +179,7 @@ export function houseStyle(accentHex: string | null, style: SceneStyle = "cinema
           "Cinematic film still, 35mm photograph, shallow depth of field.",
           "Moody, low-key lighting with deep shadows and soft highlights, subtle film grain, realistic.",
         ]),
-    accentHex && style !== "object" ? `A gentle colour cast toward ${accentHex} in the light and shadows.` : "",
+    accentHex && tint ? `A gentle colour cast toward ${accentHex} in the light and shadows.` : "",
     "No text, letters, numbers, captions, logos or watermarks anywhere in the picture.",
   ]
     .filter(Boolean)
@@ -91,6 +202,8 @@ export type ImageRequest = {
   style?: SceneStyle;
   /** The speaker's cartoon, when they're in the scene. */
   character?: ImageBytes | null;
+  /** The video's look, which picks the story pictures' style. */
+  look?: string | null;
 };
 
 const toBase64 = (b: Uint8Array) => Buffer.from(b).toString("base64");
@@ -120,9 +233,9 @@ export function scenePromptText(req: ImageRequest): string {
   const character = req.character ?? null;
   return [
     req.prompt.trim(),
-    houseStyle(req.accentHex, style),
+    houseStyle(req.accentHex, style, req.look),
     character
-      ? `The first attached picture is the speaker's cartoon character. Show the speaker as exactly this character: the same face, hairstyle, skin tone, facial hair, glasses and clothes${style === "cinematic" ? ", as a 3D animated character in the cinematic scene" : ""}. Change only their pose, expression and setting to fit the scene.`
+      ? `The first attached picture is the speaker's cartoon character. Show the speaker as exactly this character: the same face, hairstyle, skin tone, facial hair, glasses and clothes${style === "cinematic" ? (req.look && Object.hasOwn(LOOK_PICTURE, req.look) ? ", drawn in this scene's style" : ", as a 3D animated character in the cinematic scene") : ""}. Change only their pose, expression and setting to fit the scene.`
       : "",
     req.reference
       ? `The ${character ? "second" : "first"} attached picture is the previous shot of this series. Match its style, colour grading, lighting and look exactly, as the next shot of the same series; show the new scene described above, not that picture's content.`

@@ -23,9 +23,23 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { PaperGraphic } from "@/motion/PaperGraphics";
-import { Cine3dGraphic, DocuGraphic, FilmGraphic, MinimalGraphic, SaasGraphic } from "@/motion/MinimalGraphics";
+import {
+  BulletinGraphic,
+  ImpactGraphic,
+  NoirGraphic,
+  MonumentGraphic,
+  TalkGraphic,
+  NotebookGraphic,
+  HudGraphic,
+  StudioGraphic,
+  Cine3dGraphic,
+  DocuGraphic,
+  FilmGraphic,
+  MinimalGraphic,
+  SaasGraphic,
+} from "@/motion/MinimalGraphics";
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
-import type { MotionLookId } from "@/motion/looks";
+import { METAPHOR_LOOKS, type MotionLookId } from "@/motion/looks";
 import { NotesGraphic } from "@/motion/NotesGraphic";
 import {
   BASE_FPS,
@@ -1806,7 +1820,7 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
           {graphics.map((graphic) => {
             // A metaphor is a key line in the looks that don't draw it as a scene.
             const g: PlacedGraphic =
-              graphic.type === "metaphor" && look !== "docu" && look !== "cine3d"
+              graphic.type === "metaphor" && !(look && METAPHOR_LOOKS.has(look))
                 ? { ...graphic, type: "keyline" }
                 : graphic;
             const Draw =
@@ -1822,7 +1836,23 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
                         ? DocuGraphic
                         : look === "cine3d"
                           ? Cine3dGraphic
-                          : DRAW[g.type];
+                          : look === "bulletin"
+                            ? BulletinGraphic
+                            : look === "impact"
+                              ? ImpactGraphic
+                              : look === "noir"
+                                ? NoirGraphic
+                                : look === "monument"
+                                  ? MonumentGraphic
+                                  : look === "talk"
+                                    ? TalkGraphic
+                                    : look === "notebook"
+                                      ? NotebookGraphic
+                                      : look === "hud"
+                                        ? HudGraphic
+                                        : look === "studio"
+                                          ? StudioGraphic
+                                          : DRAW[g.type];
             return (
               <Sequence
                 key={g.id}

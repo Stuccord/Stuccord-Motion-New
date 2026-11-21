@@ -79,7 +79,9 @@ function metaphorNote(look: MotionLookId | null | undefined): string {
     const how =
       look === "docu"
         ? "Documentary: each metaphor is drawn as its motif, so pick the motif with care"
-        : "3D Cinematic: each metaphor is shown as its photo-real object picture, so write that prompt with care";
+        : look === "monument"
+          ? "Monument: each metaphor is shown as a white marble sculpture of its one object, so write that object prompt as a single simple, recognisable object (an hourglass, a key, a crown) with care"
+          : "3D Cinematic: each metaphor is shown as its photo-real object picture, so write that prompt with care";
     return `Metaphors are ON for this video's look (${how}).`;
   }
   return "Metaphors are OFF for this video's look: never use the metaphor type.";

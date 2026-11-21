@@ -415,6 +415,95 @@ export const LOOK_FINISH = {
     angleMove: "push",
     captions: "clean",
   },
+  bulletin: {
+    ...STANDARD_FINISH,
+    grade: { saturation: 1.0, contrast: 1.07 },
+    angleClose: 1.25,
+  },
+  impact: {
+    ...STANDARD_FINISH,
+    grade: { saturation: 1.18, contrast: 1.12 },
+    angleClose: 1.4,
+  },
+  noir: {
+    grade: {
+      saturation: 0,
+      contrast: 1.18,
+      curves: {
+        r: [0, 0.2, 0.5, 0.8, 1],
+        g: [0, 0.2, 0.5, 0.8, 1],
+        b: [0, 0.2, 0.5, 0.8, 1],
+      },
+    },
+    grain: 0.7,
+    vignette: true,
+    bars: true,
+    angleClose: 1.12,
+    pace: "slow",
+    angleMove: "push",
+    captions: "clean",
+  },
+  monument: {
+    grade: {
+      saturation: 0.9,
+      contrast: 1.1,
+      curves: {
+        r: [0, 0.24, 0.52, 0.8, 1],
+        g: [0, 0.23, 0.5, 0.78, 0.98],
+        b: [0, 0.21, 0.46, 0.72, 0.92],
+      },
+    },
+    grain: 0.25,
+    vignette: true,
+    bars: false,
+    angleClose: 1.12,
+    pace: "slow",
+    angleMove: "push",
+    captions: "clean",
+  },
+  talk: {
+    ...STANDARD_FINISH,
+    grade: {
+      saturation: 1.02,
+      contrast: 0.98,
+      curves: {
+        r: [0.02, 0.27, 0.53, 0.79, 1],
+        g: [0.02, 0.26, 0.51, 0.77, 0.99],
+        b: [0.02, 0.24, 0.48, 0.73, 0.95],
+      },
+    },
+    angleClose: 1.15,
+    pace: "calm",
+    captions: "clean",
+  },
+  notebook: {
+    ...STANDARD_FINISH,
+    grade: { saturation: 1.04, contrast: 1.03 },
+    angleClose: 1.2,
+    captions: "clean",
+  },
+  hud: {
+    ...STANDARD_FINISH,
+    grade: {
+      saturation: 1.0,
+      contrast: 1.08,
+      curves: {
+        r: [0, 0.24, 0.5, 0.76, 0.98],
+        g: [0, 0.25, 0.5, 0.77, 0.99],
+        b: [0.01, 0.26, 0.52, 0.79, 1],
+      },
+    },
+    angleClose: 1.3,
+    captions: "clean",
+  },
+  studio: {
+    ...STANDARD_FINISH,
+    grade: { saturation: 1.03, contrast: 1.04 },
+    angleClose: 1.15,
+    pace: "calm",
+    angleMove: "push",
+    captions: "clean",
+  },
 };
 export const lookFinish = (look) => (Object.hasOwn(LOOK_FINISH, look ?? "") ? LOOK_FINISH[look] : STANDARD_FINISH);
 
