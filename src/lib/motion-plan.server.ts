@@ -47,6 +47,7 @@ Graphic types (field "type"):
 Behind the speaker (field "behind"):
 - true draws the graphic behind the speaker: the person is cut out and stays in front, and the room behind them darkens and softly blurs, so the words sit between the room and the person. It is the style's strongest emphasis.
 - Use it for the biggest moments only: the hook's key line, chapter titles, a headline number - roughly one graphic in five, never two in a row.
+- A keyline behind the speaker is huge text above their head, so keep its "text" to 2-6 words: the punchiest part of the line as said (e.g. "what actually works"), not the whole sentence; "emphasis" one word of it.
 - Only keyline, counter, list, card, compare and chapter can go behind; false for every other type.
 
 Timing:

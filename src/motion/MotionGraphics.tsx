@@ -1255,12 +1255,29 @@ function cardPlace(portrait: boolean, unit: number): React.CSSProperties {
 
 // ---------- the graphics ----------
 
+/**
+ * A behind-the-speaker key line's letter size (px): as big as fits the line
+ * in two lines across the space it has (at most twice the front size; a
+ * bold letter is about 0.58 of its size wide), never so small it stops
+ * reading as the video's big moment.
+ */
+function behindKeySize(text: string, unit: number, portrait: boolean): number {
+  const chars = Math.max(6, text.trim().length);
+  const across = portrait ? 92 : 120; // the text's width, in units
+  const fit = (across * 2) / (chars * 0.58);
+  const [lo, hi] = portrait ? [6.5, 12.8] : [5.5, 10.4];
+  return unit * Math.min(hi, Math.max(lo, fit));
+}
+
 function KeyLine({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   const frame = useStepFrame();
   const { unit, portrait } = useUnit();
   const words = splitWords(g.text, g.emphasis);
-  // Behind the speaker: twice the size, at head height.
-  const size = unit * (portrait ? 6.4 : 5.2) * (g.behind ? 2 : 1);
+  // Behind the speaker: big, but sized so the line fits in two lines at most
+  // (a long line gets smaller letters, never four lines down over the face),
+  // and set just above the head so the head only overlaps the bottom of the
+  // letters. Front: the usual size, low in the frame.
+  const size = g.behind ? behindKeySize(g.text, unit, portrait) : unit * (portrait ? 6.4 : 5.2);
   return (
     <AbsoluteFill style={{ opacity: exitOpacity(frame, g.to - g.from) }}>
       {/* Darker, softer bottom so the words read over any footage (behind
@@ -1278,7 +1295,12 @@ function KeyLine({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
         style={{
           position: "absolute",
           ...(g.behind
-            ? { left: unit * 3, right: unit * 3, top: portrait ? "22%" : "14%" }
+            ? // The block's foot sits just above head height and grows upward.
+              // (a talking head filling a tall frame has the top of the
+              // head at about 25-30% down: the words stay above it).
+              portrait
+              ? { left: unit * 4, right: unit * 4, bottom: "76%" }
+              : { left: "16%", right: "16%", bottom: "70%" }
             : { left: unit * 7, right: unit * 7, bottom: portrait ? "24%" : "13%" }),
           textAlign: "center",
           fontFamily: SANS,
