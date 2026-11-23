@@ -15,6 +15,22 @@ import { limitThreads } from "./threads.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const PERSON_MODEL = path.join(here, "models", "selfie_segmenter.onnx");
+// Robust Video Matting (MobileNetV3, ONNX; GPL-3.0, see models/README.md): a
+// real video matte, a soft alpha for every pixel (hair strands, beard,
+// fingers) that carries what it saw in earlier frames, so edges hold still
+// as the speaker moves. Used when it's in the image; else the selfie
+// segmenter above (a coarse mask, refined in behindFilters).
+export const MATTING_MODEL = path.join(here, "models", "rvm_mobilenetv3_fp32.onnx");
+const mattingModelReady = () => fs.existsSync(MATTING_MODEL);
+// The matte is made with the frame's long side at this size (then scaled to
+// the frame): fine enough for hair, and quick enough on one processor.
+const MATTE_LONG = 1280;
+// The model's own working size inside (its downsample ratio aims the long
+// side here): what it decides "person" at, before its refiner adds detail.
+const MATTE_BASE = 512;
+// Frames run before each stretch, so its memory has settled when the
+// stretch starts (the first frames of a fresh start are less sure).
+const MATTE_PREROLL = 15;
 
 const FPS = 30;
 export const BEHIND_FADE_FRAMES = 9;
@@ -77,7 +93,162 @@ export function maskAlpha(confidence) {
   return Math.round(t * t * (3 - 2 * t) * 255);
 }
 
-export const personModelReady = () => fs.existsSync(PERSON_MODEL);
+export const personModelReady = () => fs.existsSync(PERSON_MODEL) || mattingModelReady();
+
+/**
+ * RVM on one frame: its matte (`pha`, 0-1); the recurrent state is kept in
+ * `state`.
+ */
+async function runMatte(ort, session, rgb, mw, mh, state) {
+  const n = mw * mh;
+  const src = new Float32Array(3 * n);
+  for (let i = 0, j = 0; i < n; i++, j += 3) {
+    src[i] = rgb[j] / 255;
+    src[n + i] = rgb[j + 1] / 255;
+    src[2 * n + i] = rgb[j + 2] / 255;
+  }
+  const feeds = {
+    src: new ort.Tensor("float32", src, [1, 3, mh, mw]),
+    r1i: state.r1,
+    r2i: state.r2,
+    r3i: state.r3,
+    r4i: state.r4,
+    downsample_ratio: state.ratio,
+  };
+  const out = await session.run(feeds);
+  state.r1 = out.r1o;
+  state.r2 = out.r2o;
+  state.r3 = out.r3o;
+  state.r4 = out.r4o;
+  return out.pha.data;
+}
+
+/**
+ * The speaker's matte for the stretches with RVM: one grey video per stretch
+ * at MATTE_LONG (white: the speaker, soft at hair and edges). The model
+ * starts fresh before each stretch and runs MATTE_PREROLL frames first.
+ */
+async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
+  const ort = await import("onnxruntime-node");
+  const session = await ort.InferenceSession.create(MATTING_MODEL, {
+    intraOpNumThreads: 2,
+    graphOptimizationLevel: "all",
+  });
+  const s = Math.min(1, MATTE_LONG / Math.max(w, h));
+  const mw = Math.max(2, Math.round((w * s) / 2) * 2);
+  const mh = Math.max(2, Math.round((h * s) / 2) * 2);
+  const ratio = Math.min(1, MATTE_BASE / Math.max(mw, mh));
+  const zero = () => new ort.Tensor("float32", new Float32Array([0]), [1, 1, 1, 1]);
+  // Each stretch with its run-in (never reaching back into the stretch before).
+  const runs = [];
+  let prevEnd = 0;
+  for (const [a, b] of ranges) {
+    const start = Math.max(prevEnd, a - MATTE_PREROLL, 0);
+    runs.push({ start, a, b });
+    prevEnd = b;
+  }
+  const pick = runs.map((r) => `between(n\\,${r.start}\\,${r.b - 1})`).join("+");
+  const filters = [zoom, `select=${pick}`, `scale=${mw}:${mh}:flags=area`, "format=rgb24"]
+    .filter(Boolean)
+    .join(",");
+  const decoder = spawn(
+    ffmpegPath,
+    limitThreads(["-v", "error", "-i", input, "-an", "-vf", filters, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1"]),
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let decodeErr = "";
+  decoder.stderr.on("data", (d) => (decodeErr += d));
+
+  const frameBytes = mw * mh * 3;
+  const total = runs.reduce((t, r) => t + (r.b - r.start), 0);
+  const bytes = Buffer.alloc(mw * mh);
+  const out = [];
+  const encoded = [];
+  let encoder = null;
+  const encode = (file, pixFmt, codec) => {
+    let err = "";
+    const p = spawn(
+      ffmpegPath,
+      limitThreads(["-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", pixFmt, "-s", `${mw}x${mh}`,
+        "-r", String(FPS), "-i", "pipe:0", ...codec, file]),
+      { stdio: ["pipe", "ignore", "pipe"] },
+    );
+    p.stderr.on("data", (d) => (err += d));
+    encoded.push(
+      new Promise((resolve, reject) =>
+        p.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`matte encode exited ${code}: ${err.slice(-300)}`)))),
+      ),
+    );
+    return p;
+  };
+  // Per stretch: the matte, lossless grey.
+  const openEncoder = (i) => {
+    const file = path.join(workdir, `matte_${i}.mkv`);
+    out.push({ file, from: runs[i].a, to: runs[i].b, matte: true });
+    return encode(file, "gray", ["-c:v", "ffv1"]);
+  };
+  const write = (p, buf) =>
+    new Promise((resolve, reject) => p.stdin.write(buf, (e) => (e ? reject(e) : resolve())));
+
+  let runIndex = 0;
+  let at = runs[0].start; // the frame number of the next frame from the decoder
+  let state = null;
+  let personShare = 0;
+  let written = 0;
+  let done = 0;
+  let pending = Buffer.alloc(0);
+  for await (const chunk of decoder.stdout) {
+    pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+    while (pending.length >= frameBytes && runIndex < runs.length) {
+      const run = runs[runIndex];
+      if (at === run.start) {
+        state = { r1: zero(), r2: zero(), r3: zero(), r4: zero(), ratio: new ort.Tensor("float32", new Float32Array([ratio]), [1]) };
+      }
+      const pha = await runMatte(ort, session, pending.subarray(0, frameBytes), mw, mh, state);
+      pending = pending.subarray(frameBytes);
+      if (at >= run.a) {
+        let sure = 0;
+        const n = bytes.length;
+        const byte = (v) => (v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255));
+        for (let i = 0; i < n; i++) {
+          const v = pha[i];
+          bytes[i] = byte(v);
+          if (v > 0.5) sure++;
+        }
+        personShare += sure / n;
+        written++;
+        if (!encoder) encoder = openEncoder(runIndex);
+        await write(encoder, bytes);
+      }
+      done++;
+      onProgress?.(done / total);
+      at++;
+      if (at >= run.b) {
+        encoder?.stdin.end();
+        encoder = null;
+        runIndex++;
+        if (runIndex < runs.length) at = runs[runIndex].start;
+      }
+    }
+  }
+  if (encoder) {
+    // The video ended inside this stretch.
+    out[out.length - 1].to = runs[runIndex].a + Math.max(0, at - runs[runIndex].a);
+    encoder.stdin.end();
+  }
+  const code = await new Promise((resolve) =>
+    decoder.exitCode != null ? resolve(decoder.exitCode) : decoder.on("close", resolve),
+  );
+  await Promise.all(encoded);
+  if (code !== 0) throw new Error(`matte decode exited ${code}: ${decodeErr.slice(-300)}`);
+  if (written && personShare / written < MIN_PERSON_SHARE) {
+    console.warn(
+      `[cutout] Speaker too small to cut out (${((100 * personShare) / written).toFixed(1)}% of the picture): graphics go in front`,
+    );
+    return [];
+  }
+  return out.filter((m) => m.to > m.from);
+}
 
 /**
  * How the picture is fed to the model, which takes 256x256 squares: the
@@ -108,6 +279,10 @@ export function maskTiles(w, h) {
  */
 export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w = 1080, h = 1920 }) {
   if (!ranges.length) return [];
+  // The real video matte when its model is in the image (see MATTING_MODEL).
+  if (mattingModelReady()) {
+    return personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h });
+  }
   const ort = await import("onnxruntime-node");
   const session = await ort.InferenceSession.create(PERSON_MODEL, {
     intraOpNumThreads: 2,
@@ -275,14 +450,22 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   const reach = Math.max(1, h * edge.reach).toFixed(2);
   masks.forEach((m, i) => {
     const input = firstInput + pieces.length + i;
-    graph.push(`[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`);
-    graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=3[pg${i}][pb${i}][pd${i}]`);
-    graph.push(`[pg${i}]format=gray[gd${i}]`);
-    graph.push(
-      `[gd${i}][mu${i}]guided=radius=${radius}:eps=${edge.eps}:mode=fast:sub=${edge.sub}:guidance=on,` +
-        // (median: no lone specks where the fit wavered on texture)
-        `${tighten},median=radius=1,${erode}gblur=sigma=${edgeBlur},split=3[ad${i}][an${i}][am${i}]`,
-    );
+    if (m.matte) {
+      // A real video matte (RVM): already soft and exact at hair, beard and
+      // fingers, and steady over time, so it's only scaled to the frame; the
+      // fixes below for a coarse mask would only blur or shrink it.
+      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=2[pb${i}][pd${i}]`);
+      graph.push(`[${input}:v]format=gray,scale=${w}:${h}:flags=bicubic,split=3[ad${i}][an${i}][am${i}]`);
+    } else {
+      graph.push(`[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`);
+      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=3[pg${i}][pb${i}][pd${i}]`);
+      graph.push(`[pg${i}]format=gray[gd${i}]`);
+      graph.push(
+        `[gd${i}][mu${i}]guided=radius=${radius}:eps=${edge.eps}:mode=fast:sub=${edge.sub}:guidance=on,` +
+          // (median: no lone specks where the fit wavered on texture)
+          `${tighten},median=radius=1,${erode}gblur=sigma=${edgeBlur},split=3[ad${i}][an${i}][am${i}]`,
+      );
+    }
     // Where the room is: everything but the speaker and a margin round them.
     graph.push(`[ad${i}]gblur=sigma=${reach},lut=y='if(gt(val,4),0,255)'[wr${i}g]`);
     rgb(`wr${i}g`, `wr${i}`);

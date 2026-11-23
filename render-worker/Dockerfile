@@ -26,6 +26,19 @@ ENV ONNXRUNTIME_NODE_INSTALL=skip
 RUN npm ci --omit=dev
 
 COPY render-worker/ ./
+# The speaker's video matte (Robust Video Matting, GPL-3.0; see
+# models/README.md): downloaded here, not kept in the repository, and
+# checked against its known sha256 so a changed file fails the build.
+RUN node -e "\
+  const fs = require('fs'), crypto = require('crypto');\
+  const url = 'https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx';\
+  const want = '88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828';\
+  fetch(url).then(r => { if (!r.ok) throw new Error('download ' + r.status); return r.arrayBuffer(); })\
+    .then(b => { const buf = Buffer.from(b);\
+      const got = crypto.createHash('sha256').update(buf).digest('hex');\
+      if (got !== want) throw new Error('sha256 ' + got);\
+      fs.writeFileSync('models/rvm_mobilenetv3_fp32.onnx', buf); })\
+    .catch(e => { console.error(e); process.exit(1); });"
 # The graphics are drawn by the app's own composition.
 COPY src/motion /app/src/motion
 # Bundles the graphics and downloads the headless Chrome into the image.

@@ -36,3 +36,6 @@ dist-ssr
 
 # Render worker: the graphics bundle is built at deploy (render-worker/build-graphics.mjs)
 render-worker/graphics-bundle
+
+# Robust Video Matting model: downloaded by the Docker build (models/README.md)
+render-worker/models/rvm_*.onnx

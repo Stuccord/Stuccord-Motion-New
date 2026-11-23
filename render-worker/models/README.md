@@ -13,3 +13,17 @@ behind the speaker (`../cutout.js`).
   sha256 `d5b32452ff6fda379ad4848b0dcbbbdfa7a1586f8c3188cab66f0937239bbbc1`.
 - Input `input_1`: 1×256×256×3 RGB, 0-1. Output `activation_10`:
   1×256×256×1, the chance each pixel is the person.
+
+`rvm_mobilenetv3_fp32.onnx` is the real video matte used instead when it's
+there (`MATTING_MODEL` in `../cutout.js`): a soft alpha for every pixel
+(hair strands, beard, fingers), steady over time.
+
+- Source: Robust Video Matting by Shanchuan Lin et al., MobileNetV3, fp32
+  ONNX, release v1.0.0 of github.com/PeterL1n/RobustVideoMatting.
+  **Licence: GPL-3.0.** Running it on our own server is fine; giving the
+  worker's code to others would bring GPL-3.0's terms with it.
+- Not kept in the repository: the worker's Docker build downloads it and
+  checks its sha256 (`Dockerfile`). To use it locally, put the file here.
+- Inputs: `src` 1×3×H×W RGB 0-1, `r1i`..`r4i` the recurrent state
+  (1×1×1×1 zeros to start), `downsample_ratio` [1]. Outputs: `fgr`, `pha`
+  (1×1×H×W alpha 0-1), `r1o`..`r4o` (the next state).
