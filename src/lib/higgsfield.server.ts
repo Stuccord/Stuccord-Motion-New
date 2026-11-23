@@ -9,7 +9,18 @@
 const BASE = "https://api.higgsfield.ai";
 
 /** A problem the user can act on; its message is shown as is. */
-export class HiggsfieldError extends Error {}
+export class HiggsfieldError extends Error {
+  /** True for a network failure or a 5xx/429: worth trying the same call again. */
+  transient = false;
+}
+
+const isTransient = (e: HiggsfieldError) => e.transient;
+
+function transientError(message: string): HiggsfieldError {
+  const e = new HiggsfieldError(message);
+  e.transient = true;
+  return e;
+}
 
 export type Bytes = { data: Uint8Array; mimeType: string };
 
@@ -51,16 +62,17 @@ function explain(status: number, body: unknown, what: string): HiggsfieldError {
     return new HiggsfieldError("AI generation is paused: the Higgsfield balance has run out.");
   }
   if (status === 429) {
-    return new HiggsfieldError("The AI service is busy right now. Try again in a minute.");
+    return transientError("The AI service is busy right now. Try again in a minute.");
   }
   if (status === 423 || status === 503) {
-    return new HiggsfieldError("This AI model is unavailable right now. Try again later.");
+    return transientError("This AI model is unavailable right now. Try again later.");
   }
   if (status === 400 || status === 422) {
     return new HiggsfieldError(
       "The AI service couldn't use this request. Try describing it differently.",
     );
   }
+  if (status >= 500) return transientError("The AI service had a problem. Try again in a moment.");
   return new HiggsfieldError("The AI service had a problem. Try again in a moment.");
 }
 
@@ -85,7 +97,7 @@ async function call(
   } catch (e) {
     if (e instanceof HiggsfieldError) throw e;
     console.warn(`[higgsfield] ${what} failed:`, e);
-    throw new HiggsfieldError("Couldn't reach the AI service. Try again in a moment.");
+    throw transientError("Couldn't reach the AI service. Try again in a moment.");
   }
   const body = await res.json().catch(() => null);
   if (!res.ok) throw explain(res.status, body, what);
@@ -169,9 +181,24 @@ export async function waitForGeneration(
 ): Promise<HfResult> {
   const until = Date.now() + timeoutMs;
   let delay = 2000;
+  // A status check that hits a network blip or a 5xx is retried (Higgsfield's
+  // polling guide): the picture is already being made and paid for, so one
+  // dropped check mustn't throw it away. A run of 5 failures in a row ends it.
+  let misses = 0;
   for (;;) {
     await wait(delay + Math.random() * 300);
-    const result = await generationStatus(requestId, fetchFn);
+    let result: HfResult;
+    try {
+      result = await generationStatus(requestId, fetchFn);
+      misses = 0;
+    } catch (e) {
+      if (!(e instanceof HiggsfieldError) || !isTransient(e) || ++misses >= 5) throw e;
+      if (Date.now() + delay > until) {
+        throw new HiggsfieldError("The AI service is taking too long. Try again in a moment.");
+      }
+      delay = Math.min(10_000, delay * 1.5);
+      continue;
+    }
     if (result.status === "completed") return result;
     if (result.status === "nsfw") {
       throw new HiggsfieldError(
