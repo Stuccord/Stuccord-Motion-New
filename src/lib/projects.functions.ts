@@ -1770,8 +1770,9 @@ export async function startCloudRender(
         ...new Set(
           motionPlan.elements
             .flatMap((e) => e.scenes ?? [])
-            .map((sc) => sc.image?.path)
-            .filter((x): x is string => !!x && x.startsWith(folder)),
+            // The picture, and its animated clip when it has one.
+            .flatMap((sc) => [sc.image?.path, sc.image?.clip])
+            .filter((x): x is string => !!x && x.startsWith(folder) && !x.includes("..")),
         ),
       ];
       if (paths.length) {

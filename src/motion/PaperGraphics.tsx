@@ -7,7 +7,8 @@
 // sounds as the glass look; only the drawing changes.
 
 import React from "react";
-import { AbsoluteFill, Img } from "remotion";
+import { AbsoluteFill } from "remotion";
+import { SceneImg as Img } from "./scene-media";
 import { Bell, Link2, MessageCircle, ThumbsUp } from "lucide-react";
 import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
 import {

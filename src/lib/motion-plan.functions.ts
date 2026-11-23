@@ -30,6 +30,7 @@ import {
   numberedTranscript,
   parseMotionPlan,
   parseSpeakerCartoon,
+  SCENE_CLIP_MODEL,
   spokenWords,
   type MotionPlan,
   type PlanClip,
@@ -100,6 +101,9 @@ async function monthlyAllowance(
     .from(table)
     .select("id", { count: "exact", head: true })
     .gte("created_at", monthStartIso());
+  // Animated clips are counted in the same table but have their own
+  // allowance (story-clips.functions.ts), so they don't use up pictures.
+  if (table === "motion_image_runs") q = q.neq("model", SCENE_CLIP_MODEL);
   if (teamId) {
     const { data: team } = await admin
       .from("teams")
@@ -472,6 +476,10 @@ export const saveMotionPlan = createServerFn({ method: "POST" })
       }
       if (sc.image && (!sc.image.path.startsWith(folder) || sc.image.path.includes(".."))) {
         throw new Error("A scene picture isn't one of this project's.");
+      }
+      const clip = sc.image?.clip;
+      if (clip && (!clip.startsWith(folder) || clip.includes("..") || !clip.endsWith(".mp4"))) {
+        throw new Error("A scene clip isn't one of this project's.");
       }
     }
     // Notes lines: on this project's clips.

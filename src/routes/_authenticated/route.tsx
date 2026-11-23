@@ -1,10 +1,14 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { OnboardingGate } from "@/components/onboarding";
+import { PageLoading } from "@/components/page-loading";
 import { supabase } from "@/integrations/supabase/client";
 import { needsCode } from "@/lib/account-security";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
+  // Drawn by the server in place of the page (which loads in the browser),
+  // so a slow connection sees a loading screen, not a blank one.
+  pendingComponent: PageLoading,
   beforeLoad: async ({ location }) => {
     const { data } = await supabase.auth.getSession();
     const session = data?.session;

@@ -11,7 +11,8 @@
 // app imports: the worker bundles src/motion on its own.
 
 import React from "react";
-import { AbsoluteFill, Img } from "remotion";
+import { AbsoluteFill } from "remotion";
+import { SceneImg as Img } from "./scene-media";
 import { SANS, SERIF } from "@/motion/theme";
 import type { PlacedGraphic } from "@/motion/timing";
 import {

@@ -93,7 +93,9 @@ function placeScenes(
     from: starts[i],
     text: sc.text,
     emphasis: sc.emphasis,
-    image: sc.image?.path ?? null,
+    // The animated clip when there is one (the looks draw it in place of
+    // the still; see scene-media.tsx), else the picture.
+    image: sc.image?.clip ?? sc.image?.path ?? null,
   }));
 }
 

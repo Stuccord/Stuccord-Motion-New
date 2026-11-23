@@ -9,7 +9,8 @@
 // and graphics stepped at 15 fps for a hand-made feel.
 
 import React from "react";
-import { AbsoluteFill, Img, Sequence, useVideoConfig } from "remotion";
+import { AbsoluteFill, Sequence, useVideoConfig } from "remotion";
+import { SceneImg as Img } from "./scene-media";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
 import { SANS, SERIF, type MotionTheme } from "@/motion/theme";
 import { storyCamera } from "@/motion/camera";

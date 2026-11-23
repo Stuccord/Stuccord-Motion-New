@@ -11,7 +11,8 @@
 // changes (each look's video finish - grade, grain, bars - is in looks.ts).
 
 import React from "react";
-import { AbsoluteFill, Img } from "remotion";
+import { AbsoluteFill } from "remotion";
+import { SceneImg as Img } from "./scene-media";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
 import { DISPLAY, GROTESK, HAND, MONO as MONO_FONT, SANS, SERIF, TYPEWRITER, WARM_SERIF, type MotionTheme } from "@/motion/theme";
 import {

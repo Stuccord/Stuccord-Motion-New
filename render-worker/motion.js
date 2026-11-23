@@ -190,7 +190,14 @@ function placeScenes(scenes, limit, from, to, byKey) {
     from: starts[i],
     text: str(sc.text, 80),
     emphasis: typeof sc.emphasis === "string" ? sc.emphasis.slice(0, 60) : null,
-    image: typeof sc.image?.path === "string" ? sc.image.path.slice(0, 300) : null,
+    // The animated clip when there is one (drawn in place of the still,
+    // src/motion/scene-media.tsx), else the picture.
+    image:
+      typeof sc.image?.clip === "string"
+        ? sc.image.clip.slice(0, 300)
+        : typeof sc.image?.path === "string"
+          ? sc.image.path.slice(0, 300)
+          : null,
   }));
 }
 

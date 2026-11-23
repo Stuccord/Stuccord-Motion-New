@@ -193,6 +193,19 @@ const MAX_SWAP = 40;
 /** Longest scene text on screen, and longest image description. */
 const MAX_SCENE_TEXT = 80;
 export const MAX_SCENE_PROMPT = 600;
+/** Longest description of the speaker's look (added to story picture prompts). */
+export const SPEAKER_LOOK_MAX = 200;
+
+/**
+ * A story scene's picture description with the speaker's look added, so a
+ * person in it looks like them; kept within the prompt limit.
+ */
+export function withSpeakerLook(prompt: string, look: string | null | undefined): string {
+  const l = look?.trim();
+  if (!l) return prompt.slice(0, MAX_SCENE_PROMPT);
+  const add = ` The main person in this scene, if there is one, looks like this: ${l}.`;
+  return prompt.slice(0, Math.max(3, MAX_SCENE_PROMPT - add.length)).trimEnd() + add;
+}
 
 /**
  * Types that can go behind the speaker (the person cut out in front of
@@ -323,12 +336,23 @@ export type Anchor = z.infer<typeof Anchor>;
 
 /** Story pictures' storage bucket, and a project's folder in it (by its owner). */
 export const SCENE_BUCKET = "motion-images";
+
+/** The Higgsfield model that brings a story picture to life (5 s, 2K, about $0.65 a clip). */
+export const SCENE_CLIP_MODEL = "minimax/h3/image-to-video";
+/** Videos a month a person (or team) may have with animated pictures; the app's owner has no limit. */
+export const SCENE_CLIP_MONTHLY_VIDEOS = 3;
 export const sceneImageFolder = (ownerId: string, projectId: string) => `${ownerId}/${projectId}/`;
 
 /** A scene's picture in storage (bucket motion-images): made by the AI, uploaded, a frame of the footage, or a captured web page. */
 const SceneImage = z.object({
   path: z.string().min(1).max(300),
   source: z.enum(["ai", "upload", "footage", "capture"]),
+  /**
+   * The picture brought to life: an AI clip (MP4, same folder) made from it
+   * on Higgsfield, played in place of the still. It belongs to this picture,
+   * so a new picture drops it.
+   */
+  clip: z.string().min(1).max(300).optional(),
 });
 export type SceneImage = z.infer<typeof SceneImage>;
 
@@ -469,6 +493,13 @@ export const MotionPlan = z.object({
         .optional(),
     })
     .optional(),
+  /**
+   * What the speaker looks like (visible appearance only: apparent age,
+   * skin tone, hair, facial hair, glasses, clothes), read by the AI from a
+   * frame of the footage, so story pictures show someone like them rather
+   * than a random person. Missing until it's read.
+   */
+  speaker_look: z.string().max(SPEAKER_LOOK_MAX).optional(),
   elements: z.array(MotionElement).max(MAX_ELEMENTS),
 });
 export type MotionPlan = z.infer<typeof MotionPlan>;

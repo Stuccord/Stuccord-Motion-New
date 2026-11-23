@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AudioLines,
+  Clapperboard,
   Scissors,
   CheckCircle2,
   Circle,
@@ -32,7 +33,15 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isUnlimited } from "@/lib/plans";
-import { getProject, getRenderSignedUrl, submitRender } from "@/lib/projects.functions";
+import {
+  getClipSignedUrl,
+  getProject,
+  getRenderSignedUrl,
+  submitRender,
+} from "@/lib/projects.functions";
+import { checkSceneClip, startSceneClip } from "@/lib/story-clips.functions";
+import { describeSpeaker } from "@/lib/speaker-look.functions";
+import { grabFrames } from "@/lib/speaker-frames";
 import {
   getMotionPlan,
   cutPausesForAutoEdit,
@@ -44,9 +53,11 @@ import {
 } from "@/lib/motion-plan.functions";
 import { makeSceneImage } from "@/lib/story-images.functions";
 import { makeAiMusic } from "@/lib/music.functions";
-import type { MotionLook, MotionPlan } from "@/lib/motion-plan";
+import { withSpeakerLook, type MotionLook, type MotionPlan } from "@/lib/motion-plan";
 import {
   AUTO_PICTURES,
+  clipJobs,
+  withClip,
   finishAutoPlan,
   needsAutoPictures,
   pictureJobs,
@@ -60,7 +71,7 @@ export const Route = createFileRoute("/_authenticated/projects/$projectId_/make"
   component: MakePage,
 });
 
-type StepId = "transcribe" | "cut" | "plan" | "pictures" | "music" | "render";
+type StepId = "transcribe" | "cut" | "plan" | "pictures" | "animate" | "music" | "render";
 type StepState = "waiting" | "active" | "done" | "skipped" | "failed";
 
 const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
@@ -68,6 +79,7 @@ const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
   { id: "cut", label: "Cutting the pauses", icon: Scissors },
   { id: "plan", label: "Planning the graphics (Claude)", icon: Wand2 },
   { id: "pictures", label: "Making the pictures (Higgsfield)", icon: ImageIcon },
+  { id: "animate", label: "Bringing the pictures to life (Higgsfield)", icon: Clapperboard },
   { id: "music", label: "Making the music (ElevenLabs)", icon: Music2 },
   { id: "render", label: "Rendering your video", icon: Film },
 ];
@@ -91,6 +103,8 @@ const LOOKS: { id: MotionLook; label: string }[] = [
 ];
 
 const RUNNING_JOB = ["queued", "transcribing", "planning", "rendering"];
+/** Longest the page waits for an animated clip before keeping the still picture. */
+const CLIP_WAIT_MS = 12 * 60 * 1000;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** An error's words, or the fallback when it has none (an empty message must still show). */
 const message = (e: unknown, fallback: string) =>
@@ -108,6 +122,10 @@ function MakePage() {
   const saveFn = useServerFn(saveMotionPlan);
   const makeFn = useServerFn(makeSceneImage);
   const musicFn = useServerFn(makeAiMusic);
+  const startClipFn = useServerFn(startSceneClip);
+  const checkClipFn = useServerFn(checkSceneClip);
+  const describeFn = useServerFn(describeSpeaker);
+  const clipUrlFn = useServerFn(getClipSignedUrl);
   const renderFn = useServerFn(submitRender);
   const signFn = useServerFn(getRenderSignedUrl);
 
@@ -117,6 +135,7 @@ function MakePage() {
     cut: "waiting",
     plan: "waiting",
     pictures: "waiting",
+    animate: "waiting",
     music: "waiting",
     render: "waiting",
   });
@@ -195,6 +214,44 @@ function MakePage() {
     await waitForRender();
   }, [fetchProject, projectId, qc, renderFn, waitForRender]);
 
+  /**
+   * What the speaker looks like, read by Claude from one frame of the main
+   * footage (visible appearance only), so story pictures show someone like
+   * them. Null when it can't be read: the pictures then show anyone.
+   */
+  const readSpeakerLook = useCallback(async (): Promise<string | null> => {
+    try {
+      const r = await fetchProject({ data: { id: projectId } });
+      const clips = (r.clips ?? []) as {
+        role: string;
+        storage_path: string;
+        filename: string;
+        trim_in_ms?: number | null;
+        duration_ms?: number | null;
+      }[];
+      const main = clips.find(
+        (c) =>
+          (c.role === "auto" || c.role === "aroll") && !/\.(jpe?g|png|webp|gif)$/i.test(c.filename),
+      );
+      if (!main) return null;
+      const { url } = await clipUrlFn({ data: { path: main.storage_path } });
+      // A moment in, where the speaker is settled and talking.
+      const at = (main.trim_in_ms ?? 0) + Math.min(1500, (main.duration_ms ?? 3000) / 2);
+      const frames = await grabFrames(url, [at], 768);
+      const frame = frames?.[0];
+      if (!frame) return null;
+      const bytes = new Uint8Array(await frame.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      const { look } = await describeFn({ data: { project_id: projectId, frame: btoa(bin) } });
+      return look;
+    } catch {
+      return null;
+    }
+  }, [clipUrlFn, describeFn, fetchProject, projectId]);
+
   /** Makes the first story pictures and saves the plan as the automatic edit keeps it. */
   const pictures = useCallback(
     async (start: MotionPlan) => {
@@ -210,6 +267,11 @@ function MakePage() {
       let plan = prepareAutoPlan(start);
       const jobs = pictureJobs(plan);
       const accent = motionAccent(plan.colour, null).hex;
+      // So a person in the story looks like the speaker (once per video).
+      if (jobs.some((j) => j.style === "cinematic") && plan.speaker_look === undefined) {
+        const look = await readSpeakerLook();
+        if (look) plan = { ...plan, speaker_look: look };
+      }
       let made = 0;
       // (Typed this way so TypeScript doesn't narrow it to null: the waves set it.)
       let problem = null as string | null;
@@ -225,7 +287,10 @@ function MakePage() {
           const r = await makeFn({
             data: {
               project_id: projectId,
-              prompt: job.prompt,
+              prompt:
+                job.style === "cinematic"
+                  ? withSpeakerLook(job.prompt, plan.speaker_look)
+                  : job.prompt,
               reference_path: reference,
               accent,
               style: job.style,
@@ -258,7 +323,84 @@ function MakePage() {
       }
       return plan;
     },
-    [makeFn, projectId, saveFn],
+    [makeFn, projectId, saveFn, readSpeakerLook],
+  );
+
+  /**
+   * Brings the story pictures to life: each becomes a 5-second AI clip
+   * (Higgsfield), all at the same time, checked every few seconds; saved
+   * on the plan as they arrive. A picture that can't be animated stays a
+   * still, and so does every picture once the month's allowance is used.
+   */
+  const animate = useCallback(
+    async (start: MotionPlan): Promise<MotionPlan> => {
+      const jobs = clipJobs(start);
+      if (!jobs.length) {
+        const any = start.elements.some((e) => e.scenes?.some((sc) => sc.image?.clip));
+        mark(
+          "animate",
+          any ? "done" : "skipped",
+          any ? "Already done." : "No pictures to animate.",
+        );
+        return start;
+      }
+      mark("animate", "active", `Animating ${jobs.length} picture${jobs.length === 1 ? "" : "s"}…`);
+      let plan = start;
+      let made = 0;
+      let problem = null as string | null;
+      await Promise.all(
+        jobs.map(async (job) => {
+          try {
+            const started = await startClipFn({
+              data: { project_id: projectId, image_path: job.imagePath, prompt: job.prompt },
+            });
+            const until = Date.now() + CLIP_WAIT_MS;
+            while (Date.now() < until) {
+              await sleep(6000);
+              let r;
+              try {
+                r = await checkClipFn({
+                  data: {
+                    project_id: projectId,
+                    request_id: started.request_id,
+                    image_path: job.imagePath,
+                    ticket: started.ticket,
+                  },
+                });
+              } catch (e) {
+                // A dropped connection: check again next time.
+                if (/fetch|network|timed? ?out/i.test(message(e, ""))) continue;
+                throw e;
+              }
+              if (r.state === "running") continue;
+              if (r.state === "failed") throw new Error(r.error);
+              plan = withClip(plan, job.elementId, job.index, job.imagePath, r.path);
+              made++;
+              await saveFn({ data: { project_id: projectId, plan } });
+              return;
+            }
+            throw new Error("The clip took too long, so this picture stays still.");
+          } catch (e) {
+            problem ??= message(e, "Couldn't animate a picture.");
+          }
+        }),
+      );
+      // Saves may have crossed while clips arrived together: this one has them all.
+      if (made) await saveFn({ data: { project_id: projectId, plan } });
+      if (problem) {
+        mark(
+          "animate",
+          made ? "done" : "skipped",
+          made
+            ? `${made} of ${jobs.length} animated. ${problem}`
+            : `${problem} The pictures stay still.`,
+        );
+      } else {
+        mark("animate", "done", `${made} picture${made === 1 ? "" : "s"} brought to life.`);
+      }
+      return plan;
+    },
+    [checkClipFn, projectId, saveFn, startClipFn],
   );
 
   /** Plans the graphics with Claude; null (and a note) when it can't, so the video gets captions only. */
@@ -290,7 +432,7 @@ function MakePage() {
       const job = r.latestJob as { status: string } | null;
       // Already made (or being rendered): just show it.
       if (r.project.status === "ready" || RUNNING_JOB.includes(job?.status ?? "")) {
-        for (const id of ["transcribe", "cut", "plan", "pictures", "music"] as StepId[])
+        for (const id of ["transcribe", "cut", "plan", "pictures", "animate", "music"] as StepId[])
           mark(id, "done");
         setPlanState(await fetchPlan({ data: { project_id: projectId } }));
         await waitForRender();
@@ -358,8 +500,15 @@ function MakePage() {
           );
         }
       })();
-      if (plan) plan = await pictures(plan);
-      else mark("pictures", "skipped", "No graphics to make pictures for.");
+      if (plan) {
+        plan = await pictures(plan);
+        // 4b. The story pictures brought to life (Higgsfield clips), while
+        // the music is still being made.
+        plan = await animate(plan);
+      } else {
+        mark("pictures", "skipped", "No graphics to make pictures for.");
+        mark("animate", "skipped", "No pictures to animate.");
+      }
       await music;
       setPlanState(await fetchPlan({ data: { project_id: projectId } }));
 
@@ -391,6 +540,7 @@ function MakePage() {
     fetchProject,
     musicFn,
     pictures,
+    animate,
     planGraphics,
     projectId,
     render,
@@ -465,7 +615,7 @@ function MakePage() {
     fix(async () => {
       mark("render", "waiting");
       const plan = await planGraphics();
-      if (plan) await pictures(plan);
+      if (plan) await animate(await pictures(plan));
       setPlanState(await fetchPlan({ data: { project_id: projectId } }));
     });
 

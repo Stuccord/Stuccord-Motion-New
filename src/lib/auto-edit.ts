@@ -11,7 +11,12 @@
 // picture counts toward the same cap; one left without a picture shows its
 // glowing words alone.
 
-import { mainSegments, type MotionElement, type MotionPlan, type PlanClip } from "@/lib/motion-plan";
+import {
+  mainSegments,
+  type MotionElement,
+  type MotionPlan,
+  type PlanClip,
+} from "@/lib/motion-plan";
 import type { TranscriptWord } from "@/lib/captions";
 import { OBJECT_PICTURE_LOOKS } from "@/motion/looks";
 
@@ -36,7 +41,8 @@ export type PictureJob = {
 function pictured(plan: MotionPlan): MotionElement[] {
   return plan.elements.filter(
     (e) =>
-      (e.type === "story" || (e.type === "metaphor" && OBJECT_PICTURE_LOOKS.has(plan.look ?? ""))) &&
+      (e.type === "story" ||
+        (e.type === "metaphor" && OBJECT_PICTURE_LOOKS.has(plan.look ?? ""))) &&
       e.scenes?.length,
   );
 }
@@ -91,6 +97,49 @@ export function withPicture(plan: MotionPlan, elementId: string, index: number, 
             ...e,
             scenes: e.scenes.map((sc, i) =>
               i === index ? { ...sc, image: { path, source: "ai" as const } } : sc,
+            ),
+          }
+        : e,
+    ),
+  };
+}
+
+/** A story picture to bring to life (an AI clip made from it). */
+export type ClipJob = { elementId: string; index: number; imagePath: string; prompt: string };
+
+/**
+ * The story pictures still to animate: every story scene with an AI picture
+ * and no clip yet (story scenes only: metaphor objects and screens stay
+ * still). In video order.
+ */
+export function clipJobs(plan: MotionPlan): ClipJob[] {
+  return plan.elements.flatMap((e) =>
+    e.type !== "story"
+      ? []
+      : (e.scenes ?? []).flatMap((sc, index) =>
+          sc.image && sc.image.source === "ai" && !sc.image.clip && sc.prompt.trim().length >= 3
+            ? [{ elementId: e.id, index, imagePath: sc.image.path, prompt: sc.prompt }]
+            : [],
+        ),
+  );
+}
+
+/** Puts a scene's animated clip on its picture (only if the picture is still the same one). */
+export function withClip(
+  plan: MotionPlan,
+  elementId: string,
+  index: number,
+  imagePath: string,
+  clipPath: string,
+): MotionPlan {
+  return {
+    ...plan,
+    elements: plan.elements.map((e) =>
+      e.id === elementId && e.scenes?.[index]?.image?.path === imagePath
+        ? {
+            ...e,
+            scenes: e.scenes.map((sc, i) =>
+              i === index && sc.image ? { ...sc, image: { ...sc.image, clip: clipPath } } : sc,
             ),
           }
         : e,
@@ -259,7 +308,12 @@ export function placeBroll(
     const len = Math.min(want, hi - target);
     if (len >= Math.min(minMs, want)) {
       const startMs = Math.round(target);
-      out.push({ id: c.id, startMs, trimInMs: Math.round(c.trimInMs), trimOutMs: Math.round(c.trimInMs + len) });
+      out.push({
+        id: c.id,
+        startMs,
+        trimInMs: Math.round(c.trimInMs),
+        trimOutMs: Math.round(c.trimInMs + len),
+      });
       cursor = startMs + len;
     }
   });

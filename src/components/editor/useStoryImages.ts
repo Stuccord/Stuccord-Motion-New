@@ -111,7 +111,8 @@ export function useStoryImages(
           [
             ...(motion.plan?.elements ?? [])
               .flatMap((e) => e.scenes ?? [])
-              .map((sc) => sc.image?.path),
+              // The picture, and its animated clip when it has one.
+              .flatMap((sc) => [sc.image?.path, sc.image?.clip]),
             character?.image,
           ].filter((x): x is string => !!x),
         ),

@@ -7,7 +7,8 @@
 // look sets the page around the device (its `background` and `ink`).
 
 import React from "react";
-import { AbsoluteFill, Img } from "remotion";
+import { AbsoluteFill } from "remotion";
+import { SceneImg as Img } from "./scene-media";
 import { ArrowUp, Check, Lock, Sparkles } from "lucide-react";
 import { SANS, type MotionTheme } from "@/motion/theme";
 import { screenBeats } from "@/motion/beats";
