@@ -35,6 +35,8 @@ export type PictureJob = {
   matchIndex: number | null;
   /** A story scene (cinematic) or a metaphor's object (3D Cinematic). */
   style: "cinematic" | "object";
+  /** The speaker is in the picture (their look is added to its prompt). */
+  speaker: boolean;
 };
 
 /** The graphics whose pictures the automatic edit makes: stories, and metaphors in the 3D Cinematic look. */
@@ -79,7 +81,11 @@ export function pictureJobs(plan: MotionPlan, cap = AUTO_PICTURES): PictureJob[]
         elementId: e.id,
         index: i,
         prompt: scenes[i].prompt,
-        matchIndex: i > 0 ? 0 : null,
+        // Matched to the first scene only when it shows the same person
+        // (the speaker in both, or someone else in both).
+        matchIndex:
+          i > 0 && (scenes[0].speaker === true) === (scenes[i].speaker === true) ? 0 : null,
+        speaker: scenes[i].speaker === true,
         style: e.type === "metaphor" ? "object" : "cinematic",
       });
     }

@@ -288,7 +288,7 @@ function MakePage() {
             data: {
               project_id: projectId,
               prompt:
-                job.style === "cinematic"
+                job.style === "cinematic" && job.speaker
                   ? withSpeakerLook(job.prompt, plan.speaker_look)
                   : job.prompt,
               reference_path: reference,
