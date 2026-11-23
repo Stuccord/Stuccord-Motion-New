@@ -3,7 +3,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { createProject, attachClip, getSignedClipUploadUrl } from "@/lib/projects.functions";
+import {
+  createProject,
+  attachClip,
+  deleteProject,
+  getSignedClipUploadUrl,
+} from "@/lib/projects.functions";
 import { probeFileDurationMs } from "@/lib/media-duration";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/app-shell";
@@ -61,6 +66,70 @@ function videoType(file: File): string | null {
   return VIDEO_BY_EXT[ext] ?? null;
 }
 
+/** A readable title from a file name: "my_first-take.mp4" -> "my first take". */
+function titleFromFile(name: string): string {
+  const base = name
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (base || "My video").slice(0, 120);
+}
+
+/**
+ * Uploads to a Supabase signed upload URL with progress, retrying a dropped
+ * connection (slow or shaky networks) up to 3 times.
+ */
+async function uploadWithProgress(
+  bucket: string,
+  path: string,
+  token: string,
+  file: File,
+  contentType: string,
+  onProgress: (pct: number) => void,
+): Promise<void> {
+  const base = (import.meta.env.VITE_SUPABASE_URL as string).replace(/\/$/, "");
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const url = `${base}/storage/v1/object/upload/sign/${bucket}/${encoded}?token=${encodeURIComponent(token)}`;
+  let lastError = "upload failed";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const result = await new Promise<{ ok: boolean; retry: boolean; error?: string }>((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      xhr.setRequestHeader("content-type", contentType);
+      xhr.setRequestHeader("x-upsert", "true");
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) onProgress(Math.min(99, Math.round((ev.loaded / ev.total) * 100)));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve({ ok: true, retry: false });
+        else {
+          let msg = `upload failed (HTTP ${xhr.status})`;
+          try {
+            const body = JSON.parse(xhr.responseText) as { message?: string; error?: string };
+            msg = body.message || body.error || msg;
+          } catch {
+            // not JSON
+          }
+          resolve({ ok: false, retry: xhr.status >= 500 || xhr.status === 408, error: msg });
+        }
+      };
+      xhr.onerror = () =>
+        resolve({ ok: false, retry: true, error: "the connection dropped during the upload" });
+      xhr.ontimeout = () => resolve({ ok: false, retry: true, error: "the upload timed out" });
+      xhr.send(file);
+    });
+    if (result.ok) {
+      onProgress(100);
+      return;
+    }
+    lastError = result.error ?? lastError;
+    if (!result.retry) break;
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 2000 * attempt));
+  }
+  throw new Error(`${lastError}. Check your internet connection and try again.`);
+}
+
 const sameFile = (a: File, b: File) =>
   a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
 
@@ -71,8 +140,9 @@ function NewProject() {
   const createFn = useServerFn(createProject);
   const ws = useWorkspace();
   const attachFn = useServerFn(attachClip);
+  const deleteFn = useServerFn(deleteProject);
   const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
-  
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   const template = useMemo(
@@ -100,7 +170,11 @@ function NewProject() {
       const contentType = videoType(file);
       if (!contentType) wrongType.push(file.name);
       else if (file.size > MAX_UPLOAD_BYTES) tooBig.push(file.name);
-      else if (files.some((f) => sameFile(f.file, file)) || added.some((f) => sameFile(f.file, file))) continue;
+      else if (
+        files.some((f) => sameFile(f.file, file)) ||
+        added.some((f) => sameFile(f.file, file))
+      )
+        continue;
       else
         added.push({
           id: crypto.randomUUID(),
@@ -135,15 +209,15 @@ function NewProject() {
 
   const submit = useMutation({
     mutationFn: async () => {
-      if (!title.trim()) throw new Error("Give your project a title");
-      if (files.length === 0) throw new Error("Upload at least one video clip");
+      if (files.length === 0) throw new Error("Add at least one video clip");
       // Checked before the project is made, so a too-big file doesn't leave an empty project.
       const tooBig = files.find((f) => f.file.size > MAX_UPLOAD_BYTES);
       if (tooBig) throw new Error(`${tooBig.file.name} is over the ${MAX_UPLOAD_MB} MB limit`);
 
       const project = await createFn({
         data: {
-          title: title.trim(),
+          // No title typed: named after the first clip, so the button never refuses.
+          title: title.trim() || titleFromFile(files[0].file.name),
           script: script || null,
           brief: brief || null,
           style_preset: preset,
@@ -152,71 +226,73 @@ function NewProject() {
         },
       });
 
-      // Upload each file to storage via signed upload URL, then attach to project
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        const contentType = f.contentType;
-        const { data: authData } = await supabase.auth.getSession();
-        const headers: Record<string, string> = { "content-type": "application/json" };
-        if (authData?.session?.access_token) {
-          headers["Authorization"] = `Bearer ${authData.session.access_token}`;
-        }
+      try {
+        // Upload each file to storage via signed upload URL, then attach to project
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const contentType = f.contentType;
+          const { data: authData } = await supabase.auth.getSession();
+          const headers: Record<string, string> = { "content-type": "application/json" };
+          if (authData?.session?.access_token) {
+            headers["Authorization"] = `Bearer ${authData.session.access_token}`;
+          }
 
-        const presignRes = await fetch("/api/authenticated/uploads/presign", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            projectId: project.id,
-            filename: f.file.name,
-            contentType,
-            size: f.file.size,
-          }),
-        });
-
-        if (!presignRes.ok) {
-          const errText = await presignRes.text().catch(() => "Upload presign failed");
-          throw new Error(`${f.file.name}: ${errText}`);
-        }
-
-        const { bucket, path, token } = (await presignRes.json()) as {
-          bucket: string;
-          path: string;
-          token: string;
-        };
-
-        const { error: upErr } = await supabase.storage
-          .from(bucket)
-          .uploadToSignedUrl(path, token, f.file, {
-            contentType,
-            upsert: true,
+          const presignRes = await fetch("/api/authenticated/uploads/presign", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              projectId: project.id,
+              filename: f.file.name,
+              contentType,
+              size: f.file.size,
+            }),
           });
 
-        if (upErr) {
+          if (!presignRes.ok) {
+            const errText = await presignRes.text().catch(() => "Upload presign failed");
+            throw new Error(`${f.file.name}: ${errText}`);
+          }
+
+          const { bucket, path, token } = (await presignRes.json()) as {
+            bucket: string;
+            path: string;
+            token: string;
+          };
+
+          try {
+            await uploadWithProgress(bucket, path, token, f.file, contentType, (pct) =>
+              setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, progress: pct } : x))),
+            );
+          } catch (e) {
+            const why = e instanceof Error ? e.message : "upload failed";
+            setFiles((prev) => prev.map((x) => (x.id === f.id ? { ...x, error: why } : x)));
+            throw new Error(`${f.file.name}: ${why}`);
+          }
+
           setFiles((prev) =>
-            prev.map((x) => (x.id === f.id ? { ...x, error: upErr.message } : x)),
+            prev.map((x) =>
+              x.id === f.id ? { ...x, uploaded: true, progress: 100, storagePath: path } : x,
+            ),
           );
-          throw new Error(`${f.file.name}: ${upErr.message}`);
+
+          // Record the clip's real length so the editor timeline draws it correctly.
+          const durationMs = await probeFileDurationMs(f.file);
+          await attachFn({
+            data: {
+              project_id: project.id,
+              storage_path: path,
+              filename: f.file.name,
+              size_bytes: f.file.size,
+              role: f.role,
+              ordinal: i,
+              duration_ms: durationMs ?? undefined,
+            },
+          });
         }
-
-        setFiles((prev) =>
-          prev.map((x) =>
-            x.id === f.id ? { ...x, uploaded: true, progress: 100, storagePath: path } : x,
-          ),
-        );
-
-        // Record the clip's real length so the editor timeline draws it correctly.
-        const durationMs = await probeFileDurationMs(f.file);
-        await attachFn({
-          data: {
-            project_id: project.id,
-            storage_path: path,
-            filename: f.file.name,
-            size_bytes: f.file.size,
-            role: f.role,
-            ordinal: i,
-            duration_ms: durationMs ?? undefined,
-          },
-        });
+      } catch (e) {
+        // A failed upload doesn't leave an empty project behind.
+        await deleteFn({ data: { id: project.id } }).catch(() => {});
+        throw e;
       }
 
       // Clips are attached: the app now makes the video by itself (the make page).
@@ -229,7 +305,8 @@ function NewProject() {
       qc.invalidateQueries({ queryKey: ["all-clips"] });
       navigate({ to: "/projects/$projectId/make", params: { projectId: project.id } });
     },
-    onError: (e: Error) => toast.error(e.message),
+    // Stays up until closed: a slow upload's failure must not vanish unseen.
+    onError: (e: Error) => toast.error(e.message, { duration: Infinity, closeButton: true }),
   });
 
   const look = lookOfPreset(preset);
@@ -264,7 +341,10 @@ function NewProject() {
               <Sparkles className="h-4 w-4 shrink-0 text-primary-glow" />
               <div className="min-w-0 flex-1 text-sm">
                 <span className="font-semibold">{template.title}</span>
-                <span className="text-muted-foreground"> template: shape, look and directions are set. Change anything.</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  template: shape, look and directions are set. Change anything.
+                </span>
               </div>
               <button
                 onClick={() => navigate({ to: "/projects/new", search: {} as never })}
@@ -279,7 +359,9 @@ function NewProject() {
           <div
             className={cn(
               "relative mt-7 cursor-pointer overflow-hidden rounded-3xl border transition-colors",
-              dragOver ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/50",
+              dragOver
+                ? "border-primary bg-primary/10"
+                : "border-border bg-card hover:border-primary/50",
             )}
             onClick={() => inputRef.current?.click()}
             onDragOver={(e) => {
@@ -325,7 +407,10 @@ function NewProject() {
           {files.length > 0 && (
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">
               {files.map((f, i) => (
-                <li key={f.id} className="flex gap-3 rounded-2xl border border-border bg-card p-2.5">
+                <li
+                  key={f.id}
+                  className="flex gap-3 rounded-2xl border border-border bg-card p-2.5"
+                >
                   <video
                     src={f.url}
                     muted
@@ -341,6 +426,20 @@ function NewProject() {
                           Clip {i + 1} · {(f.file.size / 1024 / 1024).toFixed(1)} MB
                           {f.error && <span className="ml-1 text-red-400">· {f.error}</span>}
                         </div>
+                        {submit.isPending && !f.error && (
+                          <div className="mt-1.5" data-upload-progress>
+                            <div className="flex justify-between text-[11px] text-muted-foreground">
+                              <span>{f.uploaded ? "Uploaded" : "Uploading…"}</span>
+                              <span className="tabular-nums">{f.progress}%</span>
+                            </div>
+                            <div className="mt-0.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${Math.max(2, f.progress)}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() => removeFile(f.id)}
@@ -415,7 +514,9 @@ function NewProject() {
                   onClick={() => setPreset(s.id)}
                   className={cn(
                     "overflow-hidden rounded-2xl border text-left transition-colors",
-                    preset === s.id ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary/40",
+                    preset === s.id
+                      ? "border-primary ring-2 ring-primary/40"
+                      : "border-border hover:border-primary/40",
                   )}
                 >
                   <div className="flex h-36 items-center justify-center bg-black/40 p-2">
@@ -434,7 +535,10 @@ function NewProject() {
           </div>
 
           {/* 4. Optional: the script and directions. */}
-          <details className="group mt-10 rounded-2xl border border-border bg-card" open={!!template}>
+          <details
+            className="group mt-10 rounded-2xl border border-border bg-card"
+            open={!!template}
+          >
             <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4">
               <span>
                 <span className="block text-sm font-semibold">Script and directions</span>
@@ -455,7 +559,9 @@ function NewProject() {
                 />
               </label>
               <label className="block">
-                <span className="text-xs font-medium text-muted-foreground">Directions for the edit</span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  Directions for the edit
+                </span>
                 <Textarea
                   className="mt-1.5 min-h-20 text-sm"
                   placeholder="Fast and punchy. Put the hook's key line behind me, every number as a counter, a chapter for each tip."
@@ -484,14 +590,18 @@ function NewProject() {
             <div className="mt-4 text-sm font-semibold">{lookName}</div>
             <div className="text-xs text-muted-foreground">{lookHint}</div>
             <ul className="mt-4 space-y-1.5 text-xs text-muted-foreground">
-              {["Transcribes what you say", "Plans graphics on your words", "Makes story scenes with AI", "Cleans and masters the sound", "Corrects the colour, then renders"].map(
-                (s) => (
-                  <li key={s} className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 text-primary-glow" />
-                    {s}
-                  </li>
-                ),
-              )}
+              {[
+                "Transcribes what you say",
+                "Plans graphics on your words",
+                "Makes story scenes with AI",
+                "Cleans and masters the sound",
+                "Corrects the colour, then renders",
+              ].map((s) => (
+                <li key={s} className="flex items-center gap-2">
+                  <Check className="h-3.5 w-3.5 text-primary-glow" />
+                  {s}
+                </li>
+              ))}
             </ul>
             <Button
               size="lg"
@@ -503,7 +613,9 @@ function NewProject() {
               Make my video
             </Button>
             <div className="mt-2 text-center text-[11px] text-muted-foreground">
-              {files.length ? `${files.length} clip${files.length === 1 ? "" : "s"} ready` : "Add a clip to start"}
+              {files.length
+                ? `${files.length} clip${files.length === 1 ? "" : "s"} ready`
+                : "Add a clip to start"}
             </div>
           </div>
         </aside>

@@ -211,8 +211,13 @@ function MakePage() {
       const jobs = pictureJobs(plan);
       const accent = motionAccent(plan.colour, null).hex;
       let made = 0;
-      let problem: string | null = null;
-      for (const job of jobs) {
+      // (Typed this way so TypeScript doesn't narrow it to null: the waves set it.)
+      let problem = null as string | null;
+      // Made at the same time, in two waves: first every picture that needs no
+      // reference, then a story's later scenes, matched to its first scene's
+      // picture (so the same people and place carry through). Each picture
+      // takes about a minute, so this cuts the wait from minutes to about two.
+      const makeOne = async (job: (typeof jobs)[number]) => {
         const story = plan.elements.find((e) => e.id === job.elementId);
         const reference =
           job.matchIndex !== null ? (story?.scenes?.[job.matchIndex]?.image?.path ?? null) : null;
@@ -231,10 +236,13 @@ function MakePage() {
           plan = withPicture(plan, job.elementId, job.index, r.path);
           made++;
         } catch (e) {
-          problem = message(e, "Couldn't make a picture.");
-          break;
+          problem ??= message(e, "Couldn't make a picture.");
         }
-      }
+      };
+      const first = jobs.filter((j) => j.matchIndex === null);
+      const later = jobs.filter((j) => j.matchIndex !== null);
+      await Promise.all(first.map(makeOne));
+      if (!problem) await Promise.all(later.map(makeOne));
       plan = finishAutoPlan(plan);
       await saveFn({ data: { project_id: projectId, plan } });
       if (problem) {
@@ -282,7 +290,8 @@ function MakePage() {
       const job = r.latestJob as { status: string } | null;
       // Already made (or being rendered): just show it.
       if (r.project.status === "ready" || RUNNING_JOB.includes(job?.status ?? "")) {
-        for (const id of ["transcribe", "cut", "plan", "pictures", "music"] as StepId[]) mark(id, "done");
+        for (const id of ["transcribe", "cut", "plan", "pictures", "music"] as StepId[])
+          mark(id, "done");
         setPlanState(await fetchPlan({ data: { project_id: projectId } }));
         await waitForRender();
         return;
@@ -326,26 +335,33 @@ function MakePage() {
       if (plan) mark("plan", "done", `${plan.elements.length} graphics planned.`);
       else plan = await planGraphics();
 
-      // 4. The pictures (Higgsfield).
+      // 4 and 5 at the same time: the pictures (Higgsfield) and the music
+      // (ElevenLabs, matched to the look and length; the user's own song wins,
+      // and the built-in music plays if it can't be made).
+      const look = plan?.look ?? null;
+      const music = (async () => {
+        mark("music", "active");
+        try {
+          const m = await musicFn({
+            data: { project_id: projectId, look, skip_if_music: true },
+          });
+          mark(
+            "music",
+            m.made ? "done" : "skipped",
+            m.made ? "Made for this video." : "Your own music is used.",
+          );
+        } catch (e) {
+          mark(
+            "music",
+            "skipped",
+            `${message(e, "Couldn't make the music.")} The built-in music plays instead.`,
+          );
+        }
+      })();
       if (plan) plan = await pictures(plan);
       else mark("pictures", "skipped", "No graphics to make pictures for.");
+      await music;
       setPlanState(await fetchPlan({ data: { project_id: projectId } }));
-
-      // 5. The music (ElevenLabs), matched to the look and length; the
-      // user's own song wins, and the built-in music plays if it can't be made.
-      mark("music", "active");
-      try {
-        const m = await musicFn({
-          data: { project_id: projectId, look: plan?.look ?? null, skip_if_music: true },
-        });
-        mark(
-          "music",
-          m.made ? "done" : "skipped",
-          m.made ? "Made for this video." : "Your own music is used.",
-        );
-      } catch (e) {
-        mark("music", "skipped", `${message(e, "Couldn't make the music.")} The built-in music plays instead.`);
-      }
 
       // 6. Place the B-roll (off the full-screen graphics), then render.
       try {
@@ -502,7 +518,9 @@ function MakePage() {
 
               {planState?.plan && (
                 <div className="rounded-xl border border-border bg-card p-4 space-y-2.5">
-                  <div className="caps-label text-[11px] text-muted-foreground">Change the look</div>
+                  <div className="caps-label text-[11px] text-muted-foreground">
+                    Change the look
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {LOOKS.map((l) => (
                       <button
@@ -523,11 +541,12 @@ function MakePage() {
                   <p className="text-[11px] text-muted-foreground">
                     Re-renders the video (uses an export).
                   </p>
-                  {look && METAPHOR_LOOKS.has(look) &&
+                  {look &&
+                    METAPHOR_LOOKS.has(look) &&
                     !planState.plan.elements.some((e) => e.type === "metaphor") && (
                       <p className="text-[11px] text-amber-200/90">
-                        This look's drawn or 3D metaphor scenes are planned with the graphics:
-                        press Redo the graphics below to add them.
+                        This look's drawn or 3D metaphor scenes are planned with the graphics: press
+                        Redo the graphics below to add them.
                       </p>
                     )}
                 </div>

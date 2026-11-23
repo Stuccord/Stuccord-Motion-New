@@ -30,6 +30,8 @@ import fs from "fs";
 import fsp from "fs/promises";
 import os from "os";
 import path from "path";
+import { Readable } from "stream";
+import { pipeline } from "stream/promises";
 import ffmpegPath from "ffmpeg-static";
 import { fileURLToPath } from "url";
 import { registerPublishing } from "./publish.js";
@@ -149,18 +151,29 @@ function validateJobPayload(job) {
 
 const signBody = (body) => crypto.createHmac("sha256", SECRET || "").update(body).digest("hex");
 
+// Progress updates are sent once. The final word (done or failed) is retried
+// a few times: if it's lost, the user's page waits on a render that ended.
 async function callback(url, payload) {
   const body = JSON.stringify(payload);
   const signature = signBody(body);
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-stuccord-signature": signature },
-      body,
-    });
-    if (!res.ok) console.error("[Worker] Callback failed with status", res.status);
-  } catch (e) {
-    console.error("[Worker] Callback network error", e?.message || e);
+  const final = payload?.status === "completed" || payload?.status === "failed";
+  const tries = final ? 4 : 1;
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-stuccord-signature": signature },
+        body,
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (res.ok) return;
+      console.error("[Worker] Callback failed with status", res.status);
+      // A refused request (bad signature, unknown job) won't pass on a retry.
+      if (res.status < 500) return;
+    } catch (e) {
+      console.error("[Worker] Callback network error", e?.message || e);
+    }
+    if (attempt < tries) await new Promise((r) => setTimeout(r, 3000 * attempt));
   }
 }
 
@@ -492,10 +505,34 @@ function run(cmd, args, { onProgress } = {}) {
   });
 }
 
+// Streamed straight to disk (a whole video held in memory can run a small
+// worker out of memory), with one retry on a dropped connection.
 async function download(url, dest) {
-  const r = await fetch(url);
-  if (!r.ok || !r.body) throw new Error(`download failed: ${r.status}`);
-  await fsp.writeFile(dest, Buffer.from(await r.arrayBuffer()));
+  let lastErr;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    // A connection that sends nothing for 60 s is dropped and retried,
+    // instead of hanging the render forever.
+    const ac = new AbortController();
+    let stall = setTimeout(() => ac.abort(new Error("download stalled")), 60_000);
+    try {
+      const r = await fetch(url, { signal: ac.signal });
+      if (!r.ok || !r.body) throw new Error(`download failed: ${r.status}`);
+      const body = Readable.fromWeb(r.body);
+      body.on("data", () => {
+        clearTimeout(stall);
+        stall = setTimeout(() => ac.abort(new Error("download stalled")), 60_000);
+      });
+      await pipeline(body, fs.createWriteStream(dest));
+      return;
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      clearTimeout(stall);
+    }
+    // A missing or expired file won't come back on a retry.
+    if (/download failed: 4\d\d/.test(String(lastErr?.message))) break;
+  }
+  throw lastErr;
 }
 
 function aspectDims(ratio) {
@@ -1094,15 +1131,24 @@ async function runRender(job) {
     }
     const clips = [...mainClips, ...brollClips];
 
+    // Each file once: pieces cut from one take (the automatic pause cut makes
+    // many) share its download. Up to 3 files download at the same time.
     const sources = [];
+    const fileOf = new Map(); // storage path (or URL) -> { dest, url }
     for (let i = 0; i < clips.length; i++) {
-      // Images keep their extension: ffmpeg picks the image reader by it.
-      const ext = isImageClip(clips[i])
-        ? String(clips[i].filename).match(IMAGE_EXT)[0].toLowerCase()
-        : ".mp4";
-      const dest = path.join(workdir, `src_${i}${ext}`);
-      await download(clips[i].download_url, dest);
-      sources.push(dest);
+      const key = clips[i].storage_path || clips[i].download_url;
+      if (!fileOf.has(key)) {
+        // Images keep their extension: ffmpeg picks the image reader by it.
+        const ext = isImageClip(clips[i])
+          ? String(clips[i].filename).match(IMAGE_EXT)[0].toLowerCase()
+          : ".mp4";
+        fileOf.set(key, { dest: path.join(workdir, `src_${fileOf.size}${ext}`), url: clips[i].download_url });
+      }
+      sources.push(fileOf.get(key).dest);
+    }
+    const files = [...fileOf.values()];
+    for (let i = 0; i < files.length; i += 3) {
+      await Promise.all(files.slice(i, i + 3).map((f) => download(f.url, f.dest)));
     }
 
     // 2. AI edit plan (best-effort)
