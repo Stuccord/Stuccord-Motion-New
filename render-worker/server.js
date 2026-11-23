@@ -1776,6 +1776,7 @@ async function runRender(job) {
           // Animated story clips, converted once so drawing them is quick.
           const story = await prepareStoryClips(storyImages(motionJob.images), {
             ffmpegPath, jobId: job.job_id, w, h, workdir, download, run,
+            elements: motionJob.elements,
           });
           try {
           let lastPct = -1;

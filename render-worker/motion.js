@@ -254,18 +254,29 @@ export function storyImages(images) {
 }
 
 /**
- * Animated story clips made ready for drawing. A clip as Higgsfield makes it
- * (1440x2560, 24 fps, long gaps between full frames) is slow to draw: every
- * frame the drawing asks for means decoding from the last full frame, over
- * the network, on one processor. So each clip is downloaded once and
- * converted to the video's size, at the drawing's frame rate, with every
- * frame a full one, into the graphics bundle's public folder, where the
- * drawing reads it locally ("static:" links, see src/motion/scene-media.tsx).
- * A clip that can't be converted keeps its own link (slower, still right).
- * Returns the links to draw with, and a cleanup that removes the copies.
+ * Animated story clips made ready for drawing. Playing a video inside the
+ * graphics drawing is far too slow on a one-processor worker (the first live
+ * test stalled there for over ten minutes, even from a local copy). So each
+ * clip is downloaded once and cut into still frames, one per drawn frame, at
+ * the video's size, into the graphics bundle's public folder; the drawing
+ * shows the frame for the moment, which costs no more than a still picture
+ * ("frames:" links, see src/motion/scene-media.tsx). A clip that can't be
+ * prepared shows its still picture instead. `elements` (the plan) says
+ * which picture each clip was made from. Returns the links to draw with,
+ * and a cleanup that removes the frames.
  */
-export async function prepareStoryClips(images, { ffmpegPath, jobId, w, h, workdir, download, run }) {
+export async function prepareStoryClips(
+  images,
+  { ffmpegPath, jobId, w, h, workdir, download, run, elements = [] },
+) {
   const out = { ...images };
+  // Each clip's picture, for when the clip can't be prepared.
+  const stillOf = new Map();
+  for (const sc of (Array.isArray(elements) ? elements : []).flatMap((e) => e?.scenes ?? [])) {
+    if (typeof sc?.image?.clip === "string" && typeof sc.image.path === "string") {
+      stillOf.set(sc.image.clip, sc.image.path);
+    }
+  }
   const folder = path.join(GRAPHICS_BUNDLE, "public", "clips", String(jobId).replace(/[^\w-]/g, ""));
   const entries = Object.entries(images).filter(([, url]) => {
     try {
@@ -280,18 +291,24 @@ export async function prepareStoryClips(images, { ffmpegPath, jobId, w, h, workd
   for (let i = 0; i < entries.length; i++) {
     const [key, url] = entries[i];
     const src = path.join(workdir, `story_clip_${i}.mp4`);
-    const name = `${i}.mp4`;
+    const dir = path.join(folder, String(i));
     try {
       await download(url, src);
+      await fs.promises.mkdir(dir, { recursive: true });
+      // At most 5 s of frames (the clips are 5 s; the drawing loops them).
       await run(ffmpegPath, [
-        "-y", "-v", "error", "-i", src, "-an",
+        "-y", "-v", "error", "-i", src, "-an", "-t", "5",
         "-vf", `fps=${DRAW_FPS},scale=w=${w}:h=${h}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-g", "1", "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart", path.join(folder, name),
+        "-q:v", "3", path.join(dir, "%04d.jpg"),
       ]);
-      out[key] = `static:clips/${path.basename(folder)}/${name}`;
+      const count = (await fs.promises.readdir(dir)).filter((f) => f.endsWith(".jpg")).length;
+      if (!count) throw new Error("no frames");
+      out[key] = `frames:clips/${path.basename(folder)}/${i}:${count}`;
     } catch (e) {
-      console.warn(`[motion] Couldn't prepare story clip ${i}; drawing it from its link:`, e?.message || e);
+      const still = stillOf.get(key);
+      console.warn(`[motion] Couldn't prepare story clip ${i}; showing its picture:`, e?.message || e);
+      if (still && images[still]) out[key] = images[still];
+      else delete out[key];
     }
   }
   return { images: out, cleanup };
