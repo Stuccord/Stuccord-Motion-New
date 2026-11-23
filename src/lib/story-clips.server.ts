@@ -57,28 +57,40 @@ export async function startClip(
  * Where a clip is: still being made, done (its MP4's bytes), or failed with
  * a message. A network blip while checking counts as still being made.
  */
-export async function checkClip(
-  requestId: string,
-): Promise<
-  { state: "running" } | { state: "done"; video: Uint8Array } | { state: "failed"; error: string }
+export async function checkClip(requestId: string): Promise<
+  | { state: "running" }
+  | { state: "done"; video: Uint8Array }
+  /** `retry`: worth starting the clip again (a failure on the AI service's side). */
+  | { state: "failed"; error: string; retry: boolean }
 > {
   let result;
   try {
     result = await generationStatus(requestId);
   } catch (e) {
     if (e instanceof HiggsfieldError && e.transient) return { state: "running" };
-    if (e instanceof HiggsfieldError) return { state: "failed", error: e.message };
+    if (e instanceof HiggsfieldError) return { state: "failed", error: e.message, retry: false };
     throw e;
   }
   if (result.status === "queued" || result.status === "in_progress") return { state: "running" };
+  if (result.status !== "completed") {
+    // Higgsfield's whole answer, so the server log says why (it isn't shown to the user).
+    console.warn(
+      `[story-clips] clip ${requestId} ended ${result.status}:`,
+      JSON.stringify(result).slice(0, 600),
+    );
+  }
   if (result.status === "nsfw") {
-    return { state: "failed", error: "The AI service turned this scene down for animation." };
+    return {
+      state: "failed",
+      error: "The AI service turned this scene down for animation.",
+      retry: false,
+    };
   }
   if (result.status !== "completed") {
-    return { state: "failed", error: "The AI service couldn't animate this picture." };
+    return { state: "failed", error: "The AI service couldn't animate this picture.", retry: true };
   }
   const url = result.video?.url;
-  if (!url) return { state: "failed", error: "The AI service didn't return a clip." };
+  if (!url) return { state: "failed", error: "The AI service didn't return a clip.", retry: true };
   let file;
   try {
     file = await fetchResult(url);
@@ -91,6 +103,6 @@ export async function checkClip(
   // An MP4 has "ftyp" at byte 4; anything else isn't a clip we can play.
   const head = String.fromCharCode(...file.data.slice(4, 8));
   if (head !== "ftyp")
-    return { state: "failed", error: "The AI service returned a clip we can't use." };
+    return { state: "failed", error: "The AI service returned a clip we can't use.", retry: true };
   return { state: "done", video: file.data };
 }

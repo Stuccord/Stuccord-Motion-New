@@ -132,7 +132,9 @@ export const checkSceneClip = createServerFn({ method: "POST" })
     const { checkClip } = await import("@/lib/story-clips.server");
     const result = await checkClip(data.request_id);
     if (result.state === "running") return { state: "running" as const };
-    if (result.state === "failed") return { state: "failed" as const, error: result.error };
+    if (result.state === "failed") {
+      return { state: "failed" as const, error: result.error, retry: result.retry };
+    }
 
     const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
     // Counted once made (Higgsfield charges for it even if storing fails).

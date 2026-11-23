@@ -329,7 +329,8 @@ function MakePage() {
   /**
    * Brings the story pictures to life: each becomes a 5-second AI clip
    * (Higgsfield), all at the same time, checked every few seconds; saved
-   * on the plan as they arrive. A picture that can't be animated stays a
+   * on the plan as they arrive. A clip the AI service fails on its side is
+   * started once more; a picture that still can't be animated stays a
    * still, and so does every picture once the month's allowance is used.
    */
   const animate = useCallback(
@@ -351,35 +352,45 @@ function MakePage() {
       await Promise.all(
         jobs.map(async (job) => {
           try {
-            const started = await startClipFn({
-              data: { project_id: projectId, image_path: job.imagePath, prompt: job.prompt },
-            });
-            const until = Date.now() + CLIP_WAIT_MS;
-            while (Date.now() < until) {
-              await sleep(6000);
-              let r;
-              try {
-                r = await checkClipFn({
-                  data: {
-                    project_id: projectId,
-                    request_id: started.request_id,
-                    image_path: job.imagePath,
-                    ticket: started.ticket,
-                  },
-                });
-              } catch (e) {
-                // A dropped connection: check again next time.
-                if (/fetch|network|timed? ?out/i.test(message(e, ""))) continue;
-                throw e;
+            for (let attempt = 1; ; attempt++) {
+              const started = await startClipFn({
+                data: { project_id: projectId, image_path: job.imagePath, prompt: job.prompt },
+              });
+              const until = Date.now() + CLIP_WAIT_MS;
+              let retry = false;
+              while (Date.now() < until) {
+                await sleep(6000);
+                let r;
+                try {
+                  r = await checkClipFn({
+                    data: {
+                      project_id: projectId,
+                      request_id: started.request_id,
+                      image_path: job.imagePath,
+                      ticket: started.ticket,
+                    },
+                  });
+                } catch (e) {
+                  // A dropped connection: check again next time.
+                  if (/fetch|network|timed? ?out/i.test(message(e, ""))) continue;
+                  throw e;
+                }
+                if (r.state === "running") continue;
+                if (r.state === "failed") {
+                  if (r.retry && attempt < 2) {
+                    retry = true;
+                    break;
+                  }
+                  throw new Error(attempt > 1 ? `${r.error} It was tried twice.` : r.error);
+                }
+                plan = withClip(plan, job.elementId, job.index, job.imagePath, r.path);
+                made++;
+                await saveFn({ data: { project_id: projectId, plan } });
+                return;
               }
-              if (r.state === "running") continue;
-              if (r.state === "failed") throw new Error(r.error);
-              plan = withClip(plan, job.elementId, job.index, job.imagePath, r.path);
-              made++;
-              await saveFn({ data: { project_id: projectId, plan } });
-              return;
+              if (retry) continue;
+              throw new Error("The clip took too long, so this picture stays still.");
             }
-            throw new Error("The clip took too long, so this picture stays still.");
           } catch (e) {
             problem ??= message(e, "Couldn't animate a picture.");
           }
