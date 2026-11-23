@@ -889,6 +889,8 @@ const AttachClipInput = z.object({
   parent_clip_id: z.string().uuid().optional(),
   /** Where it starts on the timeline (a voiceover starts at the playhead). */
   start_ms: z.number().int().nonnegative().optional(),
+  /** Its framing (e.g. zoomed to fill a tall video); checked and kept in limits. */
+  transform: z.unknown().optional(),
 });
 
 export const attachClip = createServerFn({ method: "POST" })
@@ -912,6 +914,7 @@ export const attachClip = createServerFn({ method: "POST" })
       duration_ms: data.duration_ms ?? null,
       parent_clip_id: data.parent_clip_id ?? null,
       ...(data.start_ms !== undefined ? { start_ms: data.start_ms } : {}),
+      ...(parseTransform(data.transform) ? { transform: parseTransform(data.transform) } : {}),
     };
     const { data: row, error } = await context.supabase
       .from("clips")

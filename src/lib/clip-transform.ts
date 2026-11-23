@@ -78,6 +78,31 @@ export function defaultFit(srcW: number, srcH: number, frameW: number, frameH: n
   return { w: srcW * s, h: srcH * s, cover: false };
 }
 
+/**
+ * The zoom that makes a clip of another shape fill the frame, centred (a
+ * landscape talking-head take in a tall video: the speaker fills the frame
+ * instead of sitting small in a strip over a blurred copy). Null when the
+ * clip already fills it, or its size is unknown. As a saved transform, so
+ * the preview and both exports show it, and the user can still move it.
+ */
+export function fillFrameTransform(
+  srcW: number,
+  srcH: number,
+  frameW: number,
+  frameH: number,
+): ClipTransform | null {
+  const fit = defaultFit(srcW, srcH, frameW, frameH);
+  if (fit.cover) return null;
+  const scale = Math.max(frameW / fit.w, frameH / fit.h);
+  if (!(scale > 1.01)) return null;
+  // A clip taller than the frame (a phone take in a wide video) is cropped
+  // higher than its middle: faces sit in the upper part of a tall shot. The
+  // frame's centre lands at 35% of the clip's height, never past its edges.
+  const bh = fit.h * scale;
+  const y = bh > frameH * 1.01 ? Math.min((0.15 * bh) / frameH, (bh - frameH) / (2 * frameH)) : 0;
+  return cleanTransform({ x: 0, y, scale, rotation: 0 });
+}
+
 /** The clip's box in a frame (px, before rotation): centre, width, height. */
 export function transformedBox(
   srcW: number,

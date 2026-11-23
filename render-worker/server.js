@@ -294,13 +294,22 @@ app.post("/music", async (req, res) => {
     return res.status(400).json({ ok: false, error: `Music length must be ${MUSIC_MIN_MS / 1000}-${MUSIC_MAX_MS / 1000} s` });
   }
   try {
-    const r = await fetch("https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128", {
-      method: "POST",
-      headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
-      body: JSON.stringify({ prompt, music_length_ms: lengthMs, force_instrumental: true }),
-      // A few minutes of music can take a while to compose.
-      signal: AbortSignal.timeout(5 * 60 * 1000),
-    });
+    // ElevenLabs answers 429 ("system_busy", heavy traffic; or too many at
+    // once) at busy times: wait and try again (5 s, 15 s, 30 s) before
+    // giving up, so one busy moment doesn't cost the video its music.
+    let r;
+    for (const waitMs of [0, 5000, 15000, 30000]) {
+      if (waitMs) await new Promise((ok) => setTimeout(ok, waitMs));
+      r = await fetch("https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128", {
+        method: "POST",
+        headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
+        body: JSON.stringify({ prompt, music_length_ms: lengthMs, force_instrumental: true }),
+        // A few minutes of music can take a while to compose.
+        signal: AbortSignal.timeout(5 * 60 * 1000),
+      });
+      if (r.status !== 429) break;
+      console.warn("[Worker] Music: ElevenLabs is busy (429), trying again");
+    }
     if (!r.ok) {
       const detail = await r.text().catch(() => "");
       console.warn(`[Worker] Music failed: ${r.status} ${detail.slice(0, 200)}`);
@@ -637,6 +646,31 @@ function rotateFilter(deg) {
 // fills the frame and the clip sits in its box on top (as in the preview).
 function transformedMainFilter(w, h, src, t, imageLengthS) {
   const { bw, bh, cx, cy } = transformedBox(w, h, src, t);
+  // Zoomed in so the clip covers the whole frame (a landscape take filling a
+  // tall video): crop the part that shows, then scale it to the frame. The
+  // same picture as scaling the whole clip up and placing it, at a fraction
+  // of the work (no 3400-pixel-wide frames), and no blurred copy is needed.
+  const left = bw / 2 - cx;
+  const top = bh / 2 - cy;
+  if (
+    !t.rotation &&
+    imageLengthS == null &&
+    src?.width &&
+    src?.height &&
+    left >= 0 &&
+    top >= 0 &&
+    left + w <= bw + 0.5 &&
+    top + h <= bh + 0.5
+  ) {
+    const sx = src.width / bw;
+    const sy = src.height / bh;
+    const even = (v) => Math.max(2, Math.floor(v / 2) * 2);
+    const cw = Math.min(even(w * sx), even(src.width));
+    const ch = Math.min(even(h * sy), even(src.height));
+    const x = Math.min(Math.max(0, Math.round(left * sx)), src.width - cw);
+    const y = Math.min(Math.max(0, Math.round(top * sy)), src.height - ch);
+    return `fps=30,crop=${cw}:${ch}:${x}:${y},scale=${w}:${h},setsar=1,format=yuv420p`;
+  }
   const blurW = Math.round(w / 20) * 2;
   const blurH = Math.round(h / 20) * 2;
   const fg = boxFillFilter(bw, bh, imageLengthS) + (t.rotation ? `,${rotateFilter(t.rotation)}` : "");

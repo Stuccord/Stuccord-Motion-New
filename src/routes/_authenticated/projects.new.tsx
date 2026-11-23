@@ -9,7 +9,15 @@ import {
   deleteProject,
   getSignedClipUploadUrl,
 } from "@/lib/projects.functions";
-import { probeFileDurationMs } from "@/lib/media-duration";
+import { probeFileDurationMs, probeFileVideoSize } from "@/lib/media-duration";
+import { fillFrameTransform } from "@/lib/clip-transform";
+
+/** The video's frame in pixels for each shape (as the export makes it). */
+const FRAME_SIZE = {
+  "9:16": { w: 1080, h: 1920 },
+  "16:9": { w: 1920, h: 1080 },
+  "1:1": { w: 1080, h: 1080 },
+} as const;
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -277,6 +285,14 @@ function NewProject() {
 
           // Record the clip's real length so the editor timeline draws it correctly.
           const durationMs = await probeFileDurationMs(f.file);
+          // A talking clip of another shape (a landscape take in a tall
+          // video) is zoomed to fill the frame, as an editor would crop it;
+          // B-roll keeps its whole picture over a blurred copy.
+          const size = f.role === "broll" ? null : await probeFileVideoSize(f.file);
+          const frame = FRAME_SIZE[ratio];
+          const transform = size
+            ? fillFrameTransform(size.width, size.height, frame.w, frame.h)
+            : null;
           await attachFn({
             data: {
               project_id: project.id,
@@ -286,6 +302,7 @@ function NewProject() {
               role: f.role,
               ordinal: i,
               duration_ms: durationMs ?? undefined,
+              ...(transform ? { transform } : {}),
             },
           });
         }

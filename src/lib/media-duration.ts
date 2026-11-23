@@ -40,3 +40,36 @@ export async function probeFileDurationMs(file: File) {
     URL.revokeObjectURL(url);
   }
 }
+
+/**
+ * A local video's picture size as it plays (rotation already applied, so a
+ * phone's upright video reads as tall), or null if it can't be read in time.
+ */
+export function probeFileVideoSize(file: File) {
+  return new Promise<{ width: number; height: number } | null>((resolve) => {
+    const url = URL.createObjectURL(file);
+    const el = document.createElement("video");
+    el.preload = "metadata";
+    el.muted = true;
+    let settled = false;
+    const finish = (value: { width: number; height: number } | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      el.removeAttribute("src");
+      el.load();
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), PROBE_TIMEOUT_MS);
+    el.addEventListener("loadedmetadata", () =>
+      finish(
+        el.videoWidth > 0 && el.videoHeight > 0
+          ? { width: el.videoWidth, height: el.videoHeight }
+          : null,
+      ),
+    );
+    el.addEventListener("error", () => finish(null));
+    el.src = url;
+  });
+}

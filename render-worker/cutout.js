@@ -26,6 +26,10 @@ const MASK_SIZE = 256;
 // unblurred room show around the speaker.
 const MASK_LOW = 0.5;
 const MASK_HIGH = 0.8;
+// Least share of the picture the speaker must fill for the cut-out (a close
+// talking head is 20-40%; measured: a landscape take shown small in a tall
+// video was 2.7%, and its cut-out blurred the speaker's hands and face).
+const MIN_PERSON_SHARE = 0.06;
 // How the small mask is fitted to the full-size picture (see behindFilters).
 // radius and blur are shares of the frame's height; eps is the guided
 // filter's smoothing (lower follows the picture's edges more closely, but
@@ -122,6 +126,11 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
   const write = (p, buf) =>
     new Promise((resolve, reject) => p.stdin.write(buf, (e) => (e ? reject(e) : resolve())));
 
+  // How much of the picture the model sees as the speaker, on average: too
+  // little (a small figure far from the camera, or no one) can't be cut out
+  // cleanly, and the blur would land on them. Then no masks are returned and
+  // the graphics go in front instead.
+  let personShare = 0;
   let pending = Buffer.alloc(0);
   for await (const chunk of decoder.stdout) {
     pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
@@ -132,7 +141,12 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
       const tensor = new ort.Tensor("float32", tensorData, [1, MASK_SIZE, MASK_SIZE, 3]);
       const result = await session.run({ [inputName]: tensor });
       const conf = result[outputName].data;
-      for (let i = 0; i < maskBytes.length; i++) maskBytes[i] = maskAlpha(conf[i]);
+      let sure = 0;
+      for (let i = 0; i < maskBytes.length; i++) {
+        maskBytes[i] = maskAlpha(conf[i]);
+        if (conf[i] > MASK_LOW) sure++;
+      }
+      personShare += sure / maskBytes.length;
       if (!encoder) encoder = openEncoder(rangeIndex);
       await write(encoder, maskBytes);
       inRange++;
@@ -156,6 +170,12 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
   );
   await Promise.all(encoded);
   if (code !== 0) throw new Error(`mask decode exited ${code}: ${decodeErr.slice(-300)}`);
+  if (done && personShare / done < MIN_PERSON_SHARE) {
+    console.warn(
+      `[cutout] Speaker too small to cut out (${((100 * personShare) / done).toFixed(1)}% of the picture): graphics go in front`,
+    );
+    return [];
+  }
   // The video may end inside a stretch: keep only the masks that were made.
   return out;
 }
