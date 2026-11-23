@@ -10,6 +10,7 @@
 // placeGraphics and the zoom curve mirror src/motion/timing.ts (the
 // editor's preview), so the export matches what the editor shows.
 
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { behindFilters } from "./cutout.js";
@@ -250,6 +251,50 @@ export function storyImages(images) {
     if (typeof k === "string" && k.length <= 300 && typeof v === "string" && /^https:\/\//.test(v)) out[k] = v;
   }
   return out;
+}
+
+/**
+ * Animated story clips made ready for drawing. A clip as Higgsfield makes it
+ * (1440x2560, 24 fps, long gaps between full frames) is slow to draw: every
+ * frame the drawing asks for means decoding from the last full frame, over
+ * the network, on one processor. So each clip is downloaded once and
+ * converted to the video's size, at the drawing's frame rate, with every
+ * frame a full one, into the graphics bundle's public folder, where the
+ * drawing reads it locally ("static:" links, see src/motion/scene-media.tsx).
+ * A clip that can't be converted keeps its own link (slower, still right).
+ * Returns the links to draw with, and a cleanup that removes the copies.
+ */
+export async function prepareStoryClips(images, { ffmpegPath, jobId, w, h, workdir, download, run }) {
+  const out = { ...images };
+  const folder = path.join(GRAPHICS_BUNDLE, "public", "clips", String(jobId).replace(/[^\w-]/g, ""));
+  const entries = Object.entries(images).filter(([, url]) => {
+    try {
+      return new URL(url).pathname.toLowerCase().endsWith(".mp4");
+    } catch {
+      return false;
+    }
+  });
+  const cleanup = () => fs.promises.rm(folder, { recursive: true, force: true }).catch(() => {});
+  if (!entries.length) return { images: out, cleanup };
+  await fs.promises.mkdir(folder, { recursive: true });
+  for (let i = 0; i < entries.length; i++) {
+    const [key, url] = entries[i];
+    const src = path.join(workdir, `story_clip_${i}.mp4`);
+    const name = `${i}.mp4`;
+    try {
+      await download(url, src);
+      await run(ffmpegPath, [
+        "-y", "-v", "error", "-i", src, "-an",
+        "-vf", `fps=${DRAW_FPS},scale=w=${w}:h=${h}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-g", "1", "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart", path.join(folder, name),
+      ]);
+      out[key] = `static:clips/${path.basename(folder)}/${name}`;
+    } catch (e) {
+      console.warn(`[motion] Couldn't prepare story clip ${i}; drawing it from its link:`, e?.message || e);
+    }
+  }
+  return { images: out, cleanup };
 }
 
 /** Frame stretches with graphics on screen, close ones joined (inclusive start, exclusive end). */
@@ -646,7 +691,7 @@ export async function renderGraphics({
 }) {
   const ranges = graphicRanges(graphics, totalFrames);
   if (!ranges.length) return [];
-  const { renderMedia, selectComposition } = await import("@remotion/renderer");
+  const { renderMedia, selectComposition, makeCancelSignal } = await import("@remotion/renderer");
   const inputProps = {
     graphics,
     theme,
@@ -659,8 +704,16 @@ export async function renderGraphics({
   };
   const composition = await selectComposition({ serveUrl: GRAPHICS_BUNDLE, id: "graphics", inputProps });
   const totalToDraw = ranges.reduce((s, [a, b]) => s + Math.ceil(b / 2) - Math.floor(a / 2), 0);
+  // A drawing that stops moving (a frame that never loads) is cancelled, so
+  // the export still finishes, without graphics and with a note, instead of
+  // hanging: 3 minutes, plus 3 s for every frame to draw (a 1-processor
+  // worker draws about one a second, more with animated story clips).
+  const limitMs = 180_000 + totalToDraw * 3000;
+  const { cancelSignal, cancel } = makeCancelSignal();
+  const timer = setTimeout(cancel, limitMs);
   let drawn = 0;
   const pieces = [];
+  try {
   for (let i = 0; i < ranges.length; i++) {
     // The stretch in drawn (15 fps) frames.
     const a = Math.floor(ranges[i][0] / 2);
@@ -682,10 +735,21 @@ export async function renderGraphics({
       // whole host, so a number from it can be more than Remotion allows.
       concurrency: null,
       logLevel: "warn",
+      cancelSignal,
+      // A story clip's frame may take a while to load on a slow worker.
+      timeoutInMilliseconds: 60_000,
       onProgress: ({ renderedFrames }) => onProgress?.((drawn + renderedFrames) / totalToDraw),
     });
     drawn += b - a;
     pieces.push({ file, startS: a / DRAW_FPS });
+  }
+  } catch (e) {
+    if (/cancel/i.test(String(e?.message))) {
+      throw new Error(`drawing the graphics took longer than ${Math.round(limitMs / 60000)} minutes`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
   return pieces;
 }

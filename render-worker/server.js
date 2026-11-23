@@ -55,6 +55,7 @@ import {
   soundEvents,
   soundGain,
   storyImages,
+  prepareStoryClips,
   zoomFilter,
 } from "./motion.js";
 import { behindRanges, personMasks, personModelReady } from "./cutout.js";
@@ -1772,12 +1773,17 @@ async function runRender(job) {
             job_id: job.job_id, status: "rendering", progress: 80,
             stage_message: "Drawing graphics",
           });
+          // Animated story clips, converted once so drawing them is quick.
+          const story = await prepareStoryClips(storyImages(motionJob.images), {
+            ffmpegPath, jobId: job.job_id, w, h, workdir, download, run,
+          });
+          try {
           let lastPct = -1;
           const draw = (graphics, name, from, share) =>
             renderGraphics({
               graphics,
               theme: motionJob.theme,
-              images: storyImages(motionJob.images),
+              images: story.images,
               // A card stream ends on the brand kit's logo.
               logo: brandKitFromJob(job).logo?.url ?? null,
               look: motionJob.look,
@@ -1821,6 +1827,9 @@ async function runRender(job) {
               editPlan = { ...(editPlan ?? {}), cutout_error: String(e?.message ?? e).slice(0, 300) };
               graphicPieces = [...graphicPieces, ...backPieces];
             }
+          }
+          } finally {
+            await story.cleanup();
           }
         }
         // Captions step aside while a key line or chapter fills their space.
