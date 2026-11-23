@@ -1819,6 +1819,9 @@ async function runRender(job) {
                 zoom,
                 ranges: behindRanges(back),
                 workdir,
+                // The frame's shape, for the mask's squares (cutout.js maskTiles).
+                w,
+                h,
               });
               behind = masks.length ? { pieces: backPieces, masks, w, h } : null;
               if (!behind) graphicPieces = [...graphicPieces, ...backPieces];

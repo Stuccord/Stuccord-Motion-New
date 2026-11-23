@@ -31,12 +31,25 @@ const MASK_HIGH = 0.8;
 // video was 2.7%, and its cut-out blurred the speaker's hands and face).
 const MIN_PERSON_SHARE = 0.06;
 // How the small mask is fitted to the full-size picture (see behindFilters).
-// radius and blur are shares of the frame's height; eps is the guided
-// filter's smoothing (lower follows the picture's edges more closely, but
-// below about 0.02 the fabric's texture punched holes in the edge); lo/hi
-// tighten the refined edge (mask values below lo are room, above hi the
-// speaker); inPx is how far the edge is pulled in, in pixels at 1920.
-export const EDGE = { radius: 0.004, eps: 0.04, lo: 96, hi: 224, inPx: 2, blur: 0.0004 };
+// radius, blur and reach are shares of the frame's height; eps is the guided
+// filter's smoothing (lower follows the picture's edges more closely: 0.02
+// held the ear, neck and hand edges best on a real talking head, and 0.01
+// punched white specks through beard and ear); sub its working scale (2:
+// half size, fine enough for hair); lo/hi tighten the refined edge (mask
+// values below lo are room, above hi the speaker); inPx is how far the edge
+// is pulled in, in pixels at 1920 (one: the edge's room colour is taken out
+// instead, see behindFilters); reach is how far past the speaker the clean
+// room is read from.
+export const EDGE = {
+  radius: 0.004,
+  eps: 0.04,
+  lo: 96,
+  hi: 224,
+  inPx: 1,
+  blur: 0.0004,
+  sub: 2,
+  reach: 0.006,
+};
 
 /** Frame stretches with a behind graphic on screen (touching ones joined). */
 export function behindRanges(graphics) {
@@ -67,11 +80,33 @@ export function maskAlpha(confidence) {
 export const personModelReady = () => fs.existsSync(PERSON_MODEL);
 
 /**
- * Makes the person masks for the stretches: one small grey video per
- * stretch (white: the speaker), from the picture as it will be shown (after
- * the zooms). Returns [{ file, from, to }] in frames.
+ * How the picture is fed to the model, which takes 256x256 squares: the
+ * frame is scaled so its short side is 256 and covered by overlapping
+ * squares along its long side (two for a tall or wide video), so the person
+ * keeps their real shape and every mask pixel is the same small square of
+ * the picture. (Squeezing a 1080x1920 frame into one square made each mask
+ * pixel 4x7.5 px, too coarse for hair and fingers.) The squares' masks are
+ * joined (the most confident wins) into one mask of the frame's shape.
  */
-export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress }) {
+export function maskTiles(w, h) {
+  const portrait = h >= w;
+  const long = Math.max(2, Math.round((MASK_SIZE * Math.max(w, h)) / Math.min(w, h) / 2) * 2);
+  const count = Math.max(1, Math.ceil(long / MASK_SIZE));
+  const offsets = Array.from({ length: count }, (_, i) =>
+    count === 1 ? 0 : Math.round((i * (long - MASK_SIZE)) / (count - 1)),
+  );
+  return portrait
+    ? { mw: MASK_SIZE, mh: long, tiles: offsets.map((y) => ({ x: 0, y })) }
+    : { mw: long, mh: MASK_SIZE, tiles: offsets.map((x) => ({ x, y: 0 })) };
+}
+
+/**
+ * Makes the person masks for the stretches: one small grey video per
+ * stretch (white: the speaker), in the frame's shape (see maskTiles), from
+ * the picture as it will be shown (after the zooms). Returns
+ * [{ file, from, to }] in frames.
+ */
+export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w = 1080, h = 1920 }) {
   if (!ranges.length) return [];
   const ort = await import("onnxruntime-node");
   const session = await ort.InferenceSession.create(PERSON_MODEL, {
@@ -81,9 +116,10 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
   const inputName = session.inputNames[0];
   const outputName = session.outputNames[0];
 
-  // Only the frames in the stretches, at the model's size, as raw RGB.
+  // Only the frames in the stretches, at the mask's size, as raw RGB.
+  const { mw, mh, tiles } = maskTiles(w, h);
   const pick = ranges.map(([a, b]) => `between(n\\,${a}\\,${b - 1})`).join("+");
-  const filters = [zoom, `select=${pick}`, `scale=${MASK_SIZE}:${MASK_SIZE}:flags=area`, "format=rgb24"]
+  const filters = [zoom, `select=${pick}`, `scale=${mw}:${mh}:flags=area`, "format=rgb24"]
     .filter(Boolean)
     .join(",");
   const decoder = spawn(
@@ -94,10 +130,11 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
   let decodeErr = "";
   decoder.stderr.on("data", (d) => (decodeErr += d));
 
-  const frameBytes = MASK_SIZE * MASK_SIZE * 3;
+  const frameBytes = mw * mh * 3;
   const total = ranges.reduce((s, [a, b]) => s + (b - a), 0);
   const tensorData = new Float32Array(MASK_SIZE * MASK_SIZE * 3);
-  const maskBytes = Buffer.alloc(MASK_SIZE * MASK_SIZE);
+  const conf = new Float32Array(mw * mh);
+  const maskBytes = Buffer.alloc(mw * mh);
   const out = [];
   let rangeIndex = 0;
   let inRange = 0;
@@ -111,7 +148,7 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
     encodeErr = "";
     const p = spawn(
       ffmpegPath,
-      limitThreads(["-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", `${MASK_SIZE}x${MASK_SIZE}`,
+      limitThreads(["-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", `${mw}x${mh}`,
         "-r", String(FPS), "-i", "pipe:0", "-c:v", "ffv1", file]),
       { stdio: ["pipe", "ignore", "pipe"] },
     );
@@ -136,11 +173,28 @@ export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, on
     pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
     while (pending.length >= frameBytes && rangeIndex < ranges.length) {
       const frame = pending.subarray(0, frameBytes);
-      for (let i = 0; i < frameBytes; i++) tensorData[i] = frame[i] / 255;
+      conf.fill(0);
+      for (const t of tiles) {
+        // This square of the frame, as the model's input.
+        for (let y = 0; y < MASK_SIZE; y++) {
+          const row = ((t.y + y) * mw + t.x) * 3;
+          tensorData.set(
+            Float32Array.from(frame.subarray(row, row + MASK_SIZE * 3), (v) => v / 255),
+            y * MASK_SIZE * 3,
+          );
+        }
+        const tensor = new ort.Tensor("float32", tensorData, [1, MASK_SIZE, MASK_SIZE, 3]);
+        const result = await session.run({ [inputName]: tensor });
+        const c = result[outputName].data;
+        for (let y = 0; y < MASK_SIZE; y++) {
+          for (let x = 0; x < MASK_SIZE; x++) {
+            const at = (t.y + y) * mw + t.x + x;
+            const v = c[y * MASK_SIZE + x];
+            if (v > conf[at]) conf[at] = v;
+          }
+        }
+      }
       pending = pending.subarray(frameBytes);
-      const tensor = new ort.Tensor("float32", tensorData, [1, MASK_SIZE, MASK_SIZE, 3]);
-      const result = await session.run({ [inputName]: tensor });
-      const conf = result[outputName].data;
       let sure = 0;
       for (let i = 0; i < maskBytes.length; i++) {
         maskBytes[i] = maskAlpha(conf[i]);
@@ -193,66 +247,115 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   if (!n) return { inputs, graph, last: picture };
   const blur = Math.max(0.5, BEHIND_BLUR * h).toFixed(2);
   const k = (1 - BEHIND_DARKEN).toFixed(3);
-  const dark =
-    `gblur=sigma=${blur},` +
-    // Like the preview's CSS brightness(): every colour scaled (video black is 16).
-    `lutyuv=y='(val-16)*${k}+16':u='(val-128)*${k}+128':v='(val-128)*${k}+128'`;
-  const copies = [`[room]`, ...masks.map((_, i) => `[dk${i}]`), ...masks.map((_, i) => `[ps${i}]`)];
+  // A grey (one-plane) picture as RGB with that value in every channel, made
+  // exactly (no range conversion), for the per-pixel maths below.
+  const rgb = (from, to) => {
+    graph.push(`[${from}]split=3[${to}x0][${to}x1][${to}x2]`);
+    graph.push(`[${to}x0][${to}x1][${to}x2]mergeplanes=0x001020:gbrp[${to}]`);
+  };
+  const copies = [`[bbase]`, ...masks.map((_, i) => `[bpc${i}]`)];
   graph.push(`[${picture}]split=${copies.length}${copies.join("")}`);
+  // The extra inputs in the order they're numbered below: the behind
+  // graphics (firstInput + i), then the masks (after them).
+  pieces.forEach((p) => inputs.push("-itsoffset", p.startS.toFixed(4), "-i", p.file));
+  masks.forEach((m) => inputs.push("-i", m.file));
 
-  // The room, darkened and blurred over each stretch, fading in and out.
-  let last = "room";
+  // The speaker's matte for each stretch. The model's mask (see maskTiles)
+  // is softened over three frames, so its edge doesn't flicker, scaled up,
+  // and fitted to the full-size picture with a guided filter, so it snaps
+  // to the real edges (hair against the wall); then tightened and softened
+  // by about a pixel.
+  const radius = Math.min(20, Math.max(2, Math.round(h * edge.radius)));
+  const edgeIn = Math.max(0, Math.round((edge.inPx * h) / 1920));
+  const edgeBlur = Math.max(0.5, h * edge.blur).toFixed(2);
+  const erode = edgeIn ? `${Array(edgeIn).fill("erosion").join(",")},` : "";
+  const tighten = `lut=y='clip((val-${edge.lo})*255/${edge.hi - edge.lo},0,255)'`;
+  // How far past the speaker's edge the room is read from (the clean room):
+  // enough that none of the speaker is in it.
+  const reach = Math.max(1, h * edge.reach).toFixed(2);
   masks.forEach((m, i) => {
+    const input = firstInput + pieces.length + i;
+    graph.push(`[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`);
+    graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=3[pg${i}][pb${i}][pd${i}]`);
+    graph.push(`[pg${i}]format=gray[gd${i}]`);
+    graph.push(
+      `[gd${i}][mu${i}]guided=radius=${radius}:eps=${edge.eps}:mode=fast:sub=${edge.sub}:guidance=on,` +
+        // (median: no lone specks where the fit wavered on texture)
+        `${tighten},median=radius=1,${erode}gblur=sigma=${edgeBlur},split=3[ad${i}][an${i}][am${i}]`,
+    );
+    // Where the room is: everything but the speaker and a margin round them.
+    graph.push(`[ad${i}]gblur=sigma=${reach},lut=y='if(gt(val,4),0,255)'[wr${i}g]`);
+    rgb(`wr${i}g`, `wr${i}`);
+    graph.push(`[wr${i}]split[wa${i}][wb${i}]`);
+    // The clean room (B): the picture blurred over the room only (a blur
+    // weighted by where the room is), so the speaker's own colours never
+    // smear into it: no dark ghost round a moving hand, and the true colour
+    // of the wall right at the speaker's edge.
+    graph.push(`[pb${i}]format=gbrp,split=2[pr${i}][pf${i}]`);
+    graph.push(`[pr${i}][wa${i}]premultiply=inplace=0,gblur=sigma=${blur}[num${i}]`);
+    graph.push(`[wb${i}]gblur=sigma=${blur},split=2[den${i}][dw${i}]`);
+    graph.push(`[num${i}][den${i}]unpremultiply=inplace=0[bn${i}]`);
+    // A pocket of room with little room round it (between hands and a desk,
+    // say) has nothing to read the clean room from: it takes the plain blur.
+    graph.push(`[pf${i}]gblur=sigma=${blur}[bf${i}]`);
+    graph.push(`[dw${i}]lut=c0='min(255,val*16)':c1='min(255,val*16)':c2='min(255,val*16)'[dm${i}]`);
+    graph.push(`[bf${i}][bn${i}][dm${i}]maskedmerge[bc${i}]`);
+    // 1 - matte (how much of what's behind shows through).
+    graph.push(`[an${i}]negate[nag${i}]`);
+    rgb(`nag${i}`, `naF${i}`);
+    // The speaker's edge darkened as much as the room is, in proportion to
+    // how much room is in each edge pixel: an edge pixel is part speaker,
+    // part room (hair strands, a soft edge, or a pixel of wall the matte took
+    // in), and only the room part should take the room's darkening; the
+    // speaker's own pixels (matte full) keep their colour exactly. This is
+    // what removes the ring of the old, brighter room round them. (Taking
+    // the room colour out exactly, (I - (1-a)B)/a, turned edge pixels black
+    // wherever the matte was a little short, so this robust form is used.)
+    graph.push(`[am${i}]split=2[am1${i}][am2${i}]`);
+    graph.push(`[am1${i}]lut=y='255-(255-val)*${BEHIND_DARKEN}'[ef${i}g]`);
+    rgb(`ef${i}g`, `ef${i}`);
+    rgb(`am2${i}`, `ma${i}`);
+    graph.push(`[pd${i}]format=gbrp[pdg${i}]`);
+    graph.push(`[pdg${i}][ef${i}]premultiply=inplace=0[pe${i}]`);
+    graph.push(`[pe${i}][ma${i}]premultiply=inplace=0[fp${i}]`);
+    // The room behind the graphics: the clean room, darkened like the
+    // preview's CSS brightness(), fading in and out.
     const len = (m.to - m.from) / FPS;
     const fade = (behindFade([m.from, m.to]) / FPS).toFixed(4);
     const start = (m.from / FPS).toFixed(4);
     graph.push(
-      `[dk${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,${dark},format=yuva420p,` +
+      `[bc${i}]lutrgb=r='val*${k}':g='val*${k}':b='val*${k}',format=yuva420p,` +
         `fade=t=in:st=0:d=${fade}:alpha=1,fade=t=out:st=${(len - Number(fade)).toFixed(4)}:d=${fade}:alpha=1,` +
         `setpts=PTS+${start}/TB[dko${i}]`,
     );
+  });
+
+  // The room over the whole picture, stretch by stretch.
+  let last = "bbase";
+  masks.forEach((_, i) => {
     graph.push(`[${last}][dko${i}]overlay=0:0:eof_action=pass:format=yuv420[dr${i}]`);
     last = `dr${i}`;
   });
 
   // The behind graphics.
-  pieces.forEach((p, i) => {
-    inputs.push("-itsoffset", p.startS.toFixed(4), "-i", p.file);
+  pieces.forEach((_, i) => {
     // In the video's own format first (see composeArgs in motion.js): faster.
     graph.push(`[${firstInput + i}:v]format=yuva420p[bp${i}]`);
     graph.push(`[${last}][bp${i}]overlay=0:0:eof_action=pass:format=yuv420[bg${i}]`);
     last = `bg${i}`;
   });
 
-  // The speaker on top: the picture through its mask. The model's mask is
-  // 256 px, so at full size its edge is a staircase of 4x7.5 px blocks a
-  // few pixels off the speaker (a blurred version left a ring of the bright
-  // room round them). So the mask is softened over three frames (no
-  // flicker), scaled up, then fitted to the full-size picture with a guided
-  // filter: its edge snaps to the real edges (cap against the wall), the
-  // standard way to refine a coarse matte. Then pulled in a pixel or two and
-  // softened by about one, so no room shows and the edge isn't hard.
-  const radius = Math.min(20, Math.max(2, Math.round(h * edge.radius)));
-  const edgeIn = Math.max(0, Math.round((edge.inPx * h) / 1920));
-  const edgeBlur = Math.max(0.5, h * edge.blur).toFixed(2);
-  const erode = edgeIn ? `${Array(edgeIn).fill("erosion").join(",")},` : "";
-  const tighten = `lut=y='clip((val-${edge.lo})*255/${edge.hi - edge.lo},0,255)'`;
+  // The speaker in front: their decontaminated colour (already multiplied
+  // by the matte) plus whatever is behind them (room and graphics) where
+  // the matte lets it through.
+  const behindCopies = [`[bgm]`, ...masks.map((_, i) => `[gs${i}]`)];
+  graph.push(`[${last}]split=${behindCopies.length}${behindCopies.join("")}`);
+  last = "bgm";
   masks.forEach((m, i) => {
-    const input = firstInput + pieces.length + i;
-    inputs.push("-i", m.file);
     const start = (m.from / FPS).toFixed(4);
-    graph.push(
-      `[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`,
-    );
-    graph.push(
-      `[ps${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split[pt${i}][pg${i}]`,
-    );
-    graph.push(`[pg${i}]format=gray[gd${i}]`);
-    graph.push(
-      `[gd${i}][mu${i}]guided=radius=${radius}:eps=${edge.eps}:mode=fast:sub=4:guidance=on,` +
-        `${tighten},${erode}gblur=sigma=${edgeBlur}[mk${i}]`,
-    );
-    graph.push(`[pt${i}][mk${i}]alphamerge,setpts=PTS+${start}/TB[po${i}]`);
+    graph.push(`[gs${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,format=gbrp[gt${i}]`);
+    graph.push(`[gt${i}][naF${i}]premultiply=inplace=0[gw${i}]`);
+    graph.push(`[fp${i}][gw${i}]blend=all_mode=addition,format=yuv420p,setpts=PTS+${start}/TB[po${i}]`);
     graph.push(`[${last}][po${i}]overlay=0:0:eof_action=pass:format=yuv420[sp${i}]`);
     last = `sp${i}`;
   });
