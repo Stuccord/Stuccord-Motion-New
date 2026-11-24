@@ -25,7 +25,7 @@ import {
   HelpCircle,
   LogOut,
   Plus,
-  MoreHorizontal,
+  PanelLeft,
   ChevronDown,
   CreditCard,
   Gift,
@@ -162,7 +162,7 @@ export function AppShell({
   const SidebarInner = (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
-        <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
+        <Link to="/dashboard" className="flex items-center gap-2 min-w-0 flex-1">
           <img
             src={logoUrl}
             alt=""
@@ -174,6 +174,15 @@ export function AppShell({
             Stuccord <span className="text-primary-glow">Motion</span>
           </span>
         </Link>
+        {/* Phones and tablets: close it with the same icon that opened it. */}
+        <button
+          type="button"
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-surface hover:text-foreground"
+          aria-label="Close menu"
+        >
+          <PanelLeft className="h-5 w-5" />
+        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
@@ -245,7 +254,17 @@ export function AppShell({
         </div>
       </nav>
 
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-3 space-y-1">
+        {/* Phones and tablets have no avatar menu in the top bar: sign out from here. */}
+        {user && (
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="lg:hidden flex h-11 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-[16px] font-medium leading-5 text-destructive hover:bg-surface"
+          >
+            <LogOut className="h-5 w-5" /> Sign out
+          </button>
+        )}
         <button
           onClick={() => (!!user ? navigate({ to: "/settings" }) : navigate({ to: "/auth", search: { next: undefined } }))}
           className="flex w-full items-center gap-2.5 rounded-lg p-2 hover:bg-surface transition-colors text-left"
@@ -292,27 +311,24 @@ export function AppShell({
                 </span>
               </div>
             )}
-            {/* Phones and tablets: the logo here; the pages are in the tab bar below. */}
-            <Link to="/dashboard" className="lg:hidden flex items-center gap-2 shrink-0" aria-label="Stuccord Motion home">
-              <img
-                src={logoUrl}
-                alt=""
-                width={28}
-                height={28}
-                className="h-7 w-7 object-contain rounded-lg bg-white p-px"
-              />
-              <span className="hidden min-[400px]:inline font-display text-[15px] font-bold tracking-tight text-foreground">
-                Stuccord
-              </span>
-            </Link>
+            {/* Phones and tablets: the menu opens from here, top-left (where Higgsfield has it). */}
+            <button
+              type="button"
+              className="lg:hidden relative z-10 -ml-1.5 grid h-9 w-9 place-items-center rounded-lg text-foreground hover:bg-surface"
+              onClick={() => setMobileOpen((v) => !v)}
+              aria-label="Menu"
+              aria-expanded={mobileOpen}
+            >
+              <PanelLeft className="h-5 w-5" />
+            </button>
 
-            <div className="flex md:flex-1 items-center md:max-w-md">
+            <div className="relative z-10 flex md:flex-1 items-center md:max-w-md max-lg:order-2 max-lg:md:flex-none">
               <GlobalSearch />
             </div>
 
-            <div className="flex-1" />
+            <div className="flex-1 max-lg:order-1" />
 
-            <div className="flex items-center gap-2">
+            <div className="relative z-10 flex items-center gap-2 max-lg:order-3">
               <NotificationsBell />
               <Button
                 size="sm"
@@ -324,7 +340,7 @@ export function AppShell({
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-surface cursor-pointer">
+                  <button className="max-lg:hidden flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-surface cursor-pointer">
                     <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">
                       {initials}
                     </div>
@@ -397,8 +413,7 @@ export function AppShell({
           isActive={(to, exact) =>
             exact ? pathname === to : pathname === to || pathname.startsWith(to + "/")
           }
-          moreOpen={mobileOpen}
-          onMore={() => setMobileOpen((v) => !v)}
+          initials={initials}
         />
       )}
     </div>
@@ -407,17 +422,15 @@ export function AppShell({
 
 /**
  * Phones and tablets: the main pages along the bottom, with "Make a video"
- * as the big button in the middle; More opens the full menu (every page,
- * the workspace, the plan).
+ * as the big button in the middle and Profile last (Higgsfield's order of
+ * things; the full menu opens from the top-left).
  */
 function MobileTabBar({
   isActive,
-  moreOpen,
-  onMore,
+  initials,
 }: {
   isActive: (to: string, exact?: boolean) => boolean;
-  moreOpen: boolean;
-  onMore: () => void;
+  initials: string;
 }) {
   const tab = (active: boolean) =>
     cn(
@@ -425,11 +438,21 @@ function MobileTabBar({
       active ? "text-foreground font-semibold" : "text-muted-foreground font-medium hover:text-foreground",
     );
   const icon = (active: boolean) => cn("w-[22px] h-[22px]", active && "text-primary-glow");
-  const items = [
+  const before = [
     { to: "/dashboard", label: "Home", Icon: Home, exact: true },
     { to: "/projects", label: "Projects", Icon: Film },
   ];
   const after = [{ to: "/templates", label: "Templates", Icon: Wand2 }];
+  const profileActive = isActive("/settings");
+  const link = ({ to, label, Icon, exact }: (typeof before)[number] & { exact?: boolean }) => {
+    const active = isActive(to, exact) && !isActive("/projects/new");
+    return (
+      <Link key={to} to={to} className={tab(active)} aria-current={active ? "page" : undefined}>
+        <Icon className={icon(active)} />
+        {label}
+      </Link>
+    );
+  };
   return (
     <nav
       className="lg:hidden fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
@@ -437,15 +460,7 @@ function MobileTabBar({
       data-tab-bar
     >
       <div className="mx-auto flex h-[68px] max-w-lg items-center px-2">
-        {items.map(({ to, label, Icon, exact }) => {
-          const active = !moreOpen && isActive(to, exact) && !isActive("/projects/new");
-          return (
-            <Link key={to} to={to} className={tab(active)} aria-current={active ? "page" : undefined}>
-              <Icon className={icon(active)} />
-              {label}
-            </Link>
-          );
-        })}
+        {before.map(link)}
         <div className="flex flex-1 justify-center">
           <Link
             to="/projects/new"
@@ -455,19 +470,22 @@ function MobileTabBar({
             <Sparkles className="w-6 h-6" />
           </Link>
         </div>
-        {after.map(({ to, label, Icon }) => {
-          const active = !moreOpen && isActive(to);
-          return (
-            <Link key={to} to={to} className={tab(active)} aria-current={active ? "page" : undefined}>
-              <Icon className={icon(active)} />
-              {label}
-            </Link>
-          );
-        })}
-        <button type="button" onClick={onMore} className={tab(moreOpen)} aria-expanded={moreOpen}>
-          <MoreHorizontal className={icon(moreOpen)} />
-          More
-        </button>
+        {after.map(link)}
+        <Link
+          to="/settings"
+          className={tab(profileActive)}
+          aria-current={profileActive ? "page" : undefined}
+        >
+          <span
+            className={cn(
+              "grid h-[22px] w-[22px] place-items-center rounded-full bg-primary text-[9px] font-semibold text-primary-foreground",
+              profileActive && "ring-2 ring-primary-glow ring-offset-1 ring-offset-background",
+            )}
+          >
+            {initials}
+          </span>
+          Profile
+        </Link>
       </div>
     </nav>
   );
