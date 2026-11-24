@@ -35,6 +35,7 @@ import {
   type TranscriptWord,
 } from "@/lib/captions";
 import { CaptionsPanel } from "@/components/editor/CaptionsPanel";
+import { PhoneEditorNotice, usePhoneScreen } from "@/components/editor/phone-editor-notice";
 import { PreviewOverlay } from "@/components/editor/PreviewOverlay";
 import { FinishOverlay } from "@/components/editor/FinishOverlay";
 import { GraphicInspector } from "@/components/editor/GraphicInspector";
@@ -246,7 +247,7 @@ export const Route = createFileRoute("/_authenticated/projects/$projectId")({
       ...(on(s.captions) ? { captions: 1 as const } : {}),
     };
   },
-  component: EditorPage,
+  component: EditorRoute,
   errorComponent: ({ error }) => (
     <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4 text-white">
       <div className="max-w-md text-center">
@@ -304,6 +305,13 @@ function clipSourceMs(c: ClipRow): number | null {
   return c.duration_ms ?? null;
 }
 
+
+/** Phones get a short notice instead of the editor (it needs a bigger screen); tablets and computers the editor. */
+function EditorRoute() {
+  const { projectId } = Route.useParams();
+  const phone = usePhoneScreen();
+  return phone ? <PhoneEditorNotice projectId={projectId} /> : <EditorPage />;
+}
 
 function EditorPage() {
   const { projectId } = Route.useParams();

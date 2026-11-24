@@ -24,9 +24,8 @@ import {
   Settings,
   HelpCircle,
   LogOut,
-  Menu,
-  X,
   Plus,
+  MoreHorizontal,
   ChevronDown,
   CreditCard,
   Gift,
@@ -94,6 +93,8 @@ export function AppShell({
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // New project has its own bottom bar (Cancel / Make my video).
+  const hideTabBar = pathname === "/projects/new";
   const fetchStats = useServerFn(getUsageStats);
   // The allowance of the workspace you're in (a team's is shared by its members).
   const ws = useWorkspace();
@@ -268,13 +269,19 @@ export function AppShell({
       <div className="lg:pl-60">
         <header className="sticky top-0 z-20 border-b border-border bg-background/75 backdrop-blur-xl">
           <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
-            <button
-              className="lg:hidden p-2 -ml-2 rounded-md hover:bg-surface text-foreground"
-              onClick={() => setMobileOpen((v) => !v)}
-              aria-label="Toggle navigation"
-            >
-              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
+            {/* Phones and tablets: the logo here; the pages are in the tab bar below. */}
+            <Link to="/dashboard" className="lg:hidden flex items-center gap-2 shrink-0" aria-label="Stuccord Motion home">
+              <img
+                src={logoUrl}
+                alt=""
+                width={28}
+                height={28}
+                className="h-7 w-7 object-contain rounded-lg bg-white p-px"
+              />
+              <span className="hidden min-[400px]:inline font-display text-[15px] font-bold tracking-tight text-foreground">
+                Stuccord
+              </span>
+            </Link>
 
             <div className="flex md:flex-1 items-center md:max-w-md">
               <GlobalSearch />
@@ -343,8 +350,94 @@ export function AppShell({
           )}
         </header>
 
-        <main className="px-4 sm:px-6 py-6 max-w-[1400px] mx-auto">{children}</main>
+        <main
+          className={cn(
+            "px-4 sm:px-6 py-6 max-w-[1400px] mx-auto",
+            // Room for the tab bar below (and the phone's home bar).
+            !hideTabBar && "pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-6",
+          )}
+        >
+          {children}
+        </main>
       </div>
+
+      {!hideTabBar && (
+        <MobileTabBar
+          isActive={(to, exact) =>
+            exact ? pathname === to : pathname === to || pathname.startsWith(to + "/")
+          }
+          moreOpen={mobileOpen}
+          onMore={() => setMobileOpen((v) => !v)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Phones and tablets: the main pages along the bottom, with "Make a video"
+ * as the big button in the middle; More opens the full menu (every page,
+ * the workspace, the plan).
+ */
+function MobileTabBar({
+  isActive,
+  moreOpen,
+  onMore,
+}: {
+  isActive: (to: string, exact?: boolean) => boolean;
+  moreOpen: boolean;
+  onMore: () => void;
+}) {
+  const tab = (active: boolean) =>
+    cn(
+      "flex flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10.5px] font-medium transition-colors",
+      active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+    );
+  const icon = (active: boolean) => cn("w-5 h-5", active && "text-primary-glow");
+  const items = [
+    { to: "/dashboard", label: "Home", Icon: Home, exact: true },
+    { to: "/projects", label: "Projects", Icon: Film },
+  ];
+  const after = [{ to: "/templates", label: "Templates", Icon: Wand2 }];
+  return (
+    <nav
+      className="lg:hidden fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
+      aria-label="Main"
+      data-tab-bar
+    >
+      <div className="mx-auto flex h-16 max-w-lg items-center px-2">
+        {items.map(({ to, label, Icon, exact }) => {
+          const active = !moreOpen && isActive(to, exact) && !isActive("/projects/new");
+          return (
+            <Link key={to} to={to} className={tab(active)} aria-current={active ? "page" : undefined}>
+              <Icon className={icon(active)} />
+              {label}
+            </Link>
+          );
+        })}
+        <div className="flex flex-1 justify-center">
+          <Link
+            to="/projects/new"
+            aria-label="Make a video"
+            className="flex h-11 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] active:scale-95 transition-transform"
+          >
+            <Sparkles className="w-5 h-5" />
+          </Link>
+        </div>
+        {after.map(({ to, label, Icon }) => {
+          const active = !moreOpen && isActive(to);
+          return (
+            <Link key={to} to={to} className={tab(active)} aria-current={active ? "page" : undefined}>
+              <Icon className={icon(active)} />
+              {label}
+            </Link>
+          );
+        })}
+        <button type="button" onClick={onMore} className={tab(moreOpen)} aria-expanded={moreOpen}>
+          <MoreHorizontal className={icon(moreOpen)} />
+          More
+        </button>
+      </div>
+    </nav>
   );
 }

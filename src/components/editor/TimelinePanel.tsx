@@ -2825,7 +2825,8 @@ export function TimelinePanel({
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0b0b12]">
       {/* Toolbar */}
-      <div className="h-11 px-2 sm:px-3 flex items-center gap-1 border-b border-white/[0.06] shrink-0 bg-[#0a0a12]">
+      {/* On a phone the tools don't all fit: the bar scrolls sideways (no scrollbar). */}
+      <div className="h-11 px-2 sm:px-3 flex items-center gap-1 border-b border-white/[0.06] shrink-0 bg-[#0a0a12] overflow-x-auto md:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden *:shrink-0">
         {/* Left cluster */}
         {readOnly ? (
           <span

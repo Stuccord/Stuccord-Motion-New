@@ -47,6 +47,13 @@ const STATUS_META: Record<string, { label: string; className: string; dot: strin
   failed:     { label: "Failed",    className: "bg-red-500/10 text-red-300 border border-red-500/30",               dot: "bg-red-500" },
 };
 
+/**
+ * Phones: a row that swipes sideways, the next card peeking in (like
+ * Higgsfield's home); from md up, the section's own grid.
+ */
+const SWIPE_ROW =
+  "-mx-4 px-4 sm:-mx-6 sm:px-6 flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-px-4 sm:scroll-px-6 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mx-0 md:px-0 md:pb-0 md:overflow-visible md:grid";
+
 function StatusPill({ status }: { status: string }) {
   const meta = STATUS_META[status] ?? STATUS_META.draft;
   return (
@@ -155,8 +162,8 @@ function Home() {
           </div>
         </section>
 
-        {/* Primary create cards: the real ways in */}
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* Primary create cards: the real ways in (a swipe row on phones) */}
+        <div className={cn(SWIPE_ROW, "md:gap-4 md:grid-cols-3 *:w-[82%] *:shrink-0 *:snap-start md:*:w-auto")}>
           <CreateCard
             title="Make a video"
             desc="Upload a take. Stuccord makes the whole edit: graphics, AI scenes, captions, sound and colour."
@@ -227,12 +234,13 @@ function Home() {
         </div>
 
         {/* Quick tools */}
-        <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid gap-3 md:gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           {/* Tools that aren't built yet say so and do nothing. */}
           {/* Captions, Voiceover, Music & SFX, Auto-cut and Thumbnail open in the latest project (or start one). */}
           {[
             {
               label: "Captions",
+              desc: "Word by word, on your video",
               icon: Captions,
               to: recent[0] ? "/projects/$projectId" : "/projects/new",
               params: recent[0] ? { projectId: recent[0].id } : undefined,
@@ -241,6 +249,7 @@ function Home() {
             },
             {
               label: "Voiceover",
+              desc: "Your mic or an AI voice",
               icon: Mic,
               to: recent[0] ? "/projects/$projectId" : "/projects/new",
               params: recent[0] ? { projectId: recent[0].id } : undefined,
@@ -249,6 +258,7 @@ function Home() {
             },
             {
               label: "Music & SFX",
+              desc: "Under your voice, on the cuts",
               icon: Music2,
               to: recent[0] ? "/projects/$projectId" : "/projects/new",
               params: recent[0] ? { projectId: recent[0].id } : undefined,
@@ -257,6 +267,7 @@ function Home() {
             },
             {
               label: "Auto-cut",
+              desc: "Cut the silences",
               icon: Scissors,
               to: recent[0] ? "/projects/$projectId" : "/projects/new",
               params: recent[0] ? { projectId: recent[0].id } : undefined,
@@ -265,13 +276,14 @@ function Home() {
             },
             {
               label: "Thumbnail",
+              desc: "A cover for your video",
               icon: ImageIcon,
               to: recent[0] ? "/projects/$projectId" : "/projects/new",
               params: recent[0] ? { projectId: recent[0].id } : undefined,
               search: recent[0] ? { thumbnail: 1 as const } : undefined,
               title: recent[0] ? `Opens in “${recent[0].title}”` : "Start a project first",
             },
-            { label: "Templates", icon: MoreHorizontal, to: "/templates" },
+            { label: "Templates", desc: "Every shape and look", icon: MoreHorizontal, to: "/templates" },
           ].map((t) =>
             t.to ? (
               <Link
@@ -280,12 +292,19 @@ function Home() {
                 params={"params" in t ? t.params : undefined}
                 search={"search" in t ? t.search : undefined}
                 title={"title" in t ? t.title : undefined}
-                className="group flex items-center gap-2.5 rounded-xl bg-card border border-border px-3.5 py-3 hover:border-primary/30 hover:shadow-sm transition-all duration-150"
+                className="group flex flex-col items-start gap-3 md:flex-row md:items-center md:gap-2.5 rounded-2xl md:rounded-xl bg-card border border-border p-4 md:px-3.5 md:py-3 hover:border-primary/30 hover:shadow-sm transition-all duration-150"
               >
-                <span className="w-7 h-7 rounded-lg bg-surface grid place-items-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-150">
-                  <t.icon className="w-3.5 h-3.5" />
+                <span className="w-9 h-9 md:w-7 md:h-7 rounded-xl md:rounded-lg bg-surface grid place-items-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-150">
+                  <t.icon className="w-4 h-4 md:w-3.5 md:h-3.5" />
                 </span>
-                <span className="text-[13px] font-medium text-foreground truncate">{t.label}</span>
+                <span className="min-w-0">
+                  <span className="block text-[14px] md:text-[13px] font-semibold md:font-medium text-foreground truncate">
+                    {t.label}
+                  </span>
+                  <span className="block md:hidden mt-0.5 text-[12px] leading-snug text-muted-foreground">
+                    {t.desc}
+                  </span>
+                </span>
               </Link>
             ) : (
               <div
@@ -396,7 +415,7 @@ function Home() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            <div className={cn(SWIPE_ROW, "md:grid-cols-2 lg:grid-cols-4 *:w-[44%] *:shrink-0 *:snap-start md:*:w-auto")}>
               {recent.map((p) => (
                 <Link
                   key={p.id}

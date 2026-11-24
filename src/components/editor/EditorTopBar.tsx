@@ -78,14 +78,14 @@ export function EditorTopBar({
 
   return (
     <TooltipProvider delayDuration={250}>
-      <header className="h-14 border-b border-white/[0.08] bg-[#0E0F17] px-4 flex items-center justify-between gap-3 select-none shrink-0 z-30">
+      <header className="h-14 border-b border-white/[0.08] bg-[#0E0F17] px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-3 select-none shrink-0 z-30">
         {/* Left Section: Back, Title, Save status */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 lg:flex-none">
           <Tooltip>
             <TooltipTrigger asChild>
               <Link
                 to="/dashboard"
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] transition"
+                className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] transition"
                 aria-label="Back to Dashboard"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -94,7 +94,7 @@ export function EditorTopBar({
             <TooltipContent side="bottom">Back to Dashboard</TooltipContent>
           </Tooltip>
 
-          <div className="h-4 w-px bg-white/[0.08]" />
+          <div className="hidden sm:block h-4 w-px bg-white/[0.08]" />
 
           {/* Editable Project Title */}
           <div className="flex items-center gap-2 min-w-0 max-w-[280px] sm:max-w-md">
@@ -145,7 +145,7 @@ export function EditorTopBar({
         {/* Center Section: History & Aspect Ratio */}
         <div className="flex items-center gap-2">
           {/* Undo / Redo */}
-          <div className="hidden md:flex items-center gap-1 bg-white/[0.03] border border-white/[0.06] rounded-lg p-0.5">
+          <div className="hidden lg:flex items-center gap-1 bg-white/[0.03] border border-white/[0.06] rounded-lg p-0.5">
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -184,14 +184,14 @@ export function EditorTopBar({
             onValueChange={(val) => onAspectRatioChange(val as AspectRatio)}
           >
             <SelectTrigger
-              className="h-8 bg-white/[0.04] border-white/[0.08] text-neutral-200 text-xs font-medium px-2.5 min-w-[100px] hover:bg-white/[0.08] transition focus:ring-1 focus:ring-violet-500/50"
+              className="h-8 bg-white/[0.04] border-white/[0.08] text-neutral-200 text-xs font-medium px-2 sm:px-2.5 sm:min-w-[100px] hover:bg-white/[0.08] transition focus:ring-1 focus:ring-violet-500/50"
               aria-label="Select Aspect Ratio"
             >
               <div className="flex items-center gap-1.5">
                 {aspectRatio === "9:16" && <Smartphone className="w-3.5 h-3.5 text-violet-400" />}
                 {aspectRatio === "16:9" && <Monitor className="w-3.5 h-3.5 text-cyan-400" />}
                 {aspectRatio === "1:1" && <Square className="w-3.5 h-3.5 text-pink-400" />}
-                <span>{aspectRatio}</span>
+                <span className="hidden sm:inline">{aspectRatio}</span>
               </div>
             </SelectTrigger>
             <SelectContent className="bg-[#151622] border-white/10 text-neutral-200 text-xs">
@@ -273,8 +273,8 @@ export function EditorTopBar({
                   disabled={clipCount === 0}
                   className="h-9 px-3 text-xs text-neutral-300 hover:text-white hover:bg-white/5 border border-white/10 rounded-lg disabled:opacity-40"
                 >
-                  <ImageIcon className="w-3.5 h-3.5 sm:mr-1.5" />
-                  <span className="hidden sm:inline">Thumbnail</span>
+                  <ImageIcon className="w-3.5 h-3.5 lg:mr-1.5" />
+                  <span className="hidden lg:inline">Thumbnail</span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -292,8 +292,8 @@ export function EditorTopBar({
                     disabled={!canPublish}
                     className="h-9 px-3 text-xs text-neutral-300 hover:text-white hover:bg-white/5 border border-white/10 rounded-lg disabled:opacity-40"
                   >
-                    <Send className="w-3.5 h-3.5 sm:mr-1.5" />
-                    <span className="hidden sm:inline">Publish</span>
+                    <Send className="w-3.5 h-3.5 lg:mr-1.5" />
+                    <span className="hidden lg:inline">Publish</span>
                   </Button>
                 </span>
               </TooltipTrigger>
@@ -309,10 +309,11 @@ export function EditorTopBar({
               <Button
                 onClick={onOpenRender}
                 disabled={isRenderDisabled || clipCount === 0}
-                className="h-9 px-4 bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-500 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-lg shadow-lg shadow-violet-900/30 border border-violet-400/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                className="h-9 px-3 sm:px-4 bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-500 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-lg shadow-lg shadow-violet-900/30 border border-violet-400/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5 mr-1.5 text-violet-200 animate-pulse" />
-                Render Video
+                <Sparkles className="hidden sm:block w-3.5 h-3.5 mr-1.5 text-violet-200 animate-pulse" />
+                <span className="sm:hidden">Render</span>
+                <span className="hidden sm:inline">Render Video</span>
               </Button>
             </TooltipTrigger>
             {clipCount === 0 && (

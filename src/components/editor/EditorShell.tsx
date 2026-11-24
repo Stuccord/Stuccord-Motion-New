@@ -93,8 +93,8 @@ export function EditorShell({
         {/* Left Panel (Media Library) */}
         <div
           className={cn(
-            "w-full sm:w-72 lg:w-80 h-full shrink-0 z-20 transition-all duration-200",
-            mobileTab === "media" ? "flex flex-col" : "hidden md:flex md:flex-col",
+            "w-full lg:w-80 h-full shrink-0 z-20 transition-all duration-200",
+            mobileTab === "media" ? "flex flex-col" : "hidden lg:flex lg:flex-col",
           )}
         >
           {leftPanel}
@@ -104,7 +104,7 @@ export function EditorShell({
         <div
           className={cn(
             "flex-1 flex flex-col min-w-0 h-full relative z-10",
-            mobileTab === "edit" ? "flex" : "hidden md:flex",
+            mobileTab === "edit" ? "flex" : "hidden lg:flex",
           )}
         >
           {centerPanel}
@@ -114,12 +114,12 @@ export function EditorShell({
         {rightPanel && (
           <div
             className={cn(
-              "w-full sm:w-80 lg:w-[17rem] xl:w-80 h-full shrink-0 z-20 border-l border-white/[0.08] bg-[#0D0E16] transition-all duration-200",
-              // Mobile: show in 'ai' tab. Desktop non-XL: controlled by showRightPanel. XL+: always visible.
+              "w-full lg:w-[17rem] xl:w-80 h-full shrink-0 z-20 border-l border-white/[0.08] bg-[#0D0E16] transition-all duration-200",
+              // Below 1024 px (phones, tablets): shown in the AI Studio tab. Desktop below XL: controlled by showRightPanel. XL+: always visible.
               mobileTab === "ai"
                 ? "flex flex-col"
                 : showRightPanel
-                  ? "hidden md:flex md:flex-col xl:flex xl:flex-col"
+                  ? "hidden lg:flex lg:flex-col"
                   : "hidden xl:flex xl:flex-col",
             )}
           >
@@ -127,7 +127,7 @@ export function EditorShell({
           </div>
         )}
 
-        {/* Right Panel Toggle — shown on md/lg only (XL always shows it) */}
+        {/* Right Panel Toggle — shown on lg only (XL always shows it) */}
         {rightPanel && onToggleRightPanel && (
           <button
             type="button"
@@ -135,7 +135,7 @@ export function EditorShell({
             title={showRightPanel ? "Hide panel" : "Show AI / Inspector panel"}
             aria-label={showRightPanel ? "Hide right panel" : "Show right panel"}
             className={cn(
-              "hidden md:flex xl:hidden absolute right-2 bottom-[calc(var(--timeline-h,19rem)+0.5rem)] z-30",
+              "hidden lg:flex xl:hidden absolute right-2 bottom-[calc(var(--timeline-h,19rem)+0.5rem)] z-30",
               "w-7 h-7 rounded-md items-center justify-center",
               "border border-white/[0.08] bg-[#0E0F17] text-neutral-400 hover:text-violet-400 hover:border-violet-500/40 hover:bg-violet-950/30 transition shadow-sm",
               showRightPanel && "text-violet-400 border-violet-500/30 bg-violet-950/20",
@@ -153,7 +153,7 @@ export function EditorShell({
         className={cn(
           "relative shrink-0 border-t border-white/[0.08] bg-[#0B0C13] flex flex-col z-20 min-h-0",
           timelineHeight == null && "max-h-[55vh]",
-          mobileTab === "edit" ? "flex" : "hidden md:flex",
+          mobileTab === "edit" ? "flex" : "hidden lg:flex",
         )}
         style={timelineHeight != null ? { height: timelineHeight } : undefined}
       >
@@ -164,15 +164,15 @@ export function EditorShell({
           title="Drag to resize · double-click to fit the tracks"
           onPointerDown={startTimelineResize}
           onDoubleClick={() => saveTimelineHeight(null)}
-          className="hidden md:block absolute -top-1.5 inset-x-0 h-3 z-30 cursor-row-resize group touch-none"
+          className="hidden lg:block absolute -top-1.5 inset-x-0 h-3 z-30 cursor-row-resize group touch-none"
         >
           <div className="mx-auto mt-[5px] h-[3px] w-12 rounded-full bg-white/10 group-hover:bg-violet-400/70 transition-colors" />
         </div>
         {bottomPanel}
       </div>
 
-      {/* 4. Mobile Bottom Navigation (Visible only on small screens) */}
-      <div className="md:hidden h-12 bg-[#0C0D15] border-t border-white/[0.08] flex items-center justify-around px-2 shrink-0 z-30">
+      {/* 4. Bottom tabs for phones and tablets (below 1024 px: the three columns don't fit) */}
+      <div className="lg:hidden h-12 bg-[#0C0D15] border-t border-white/[0.08] flex items-center justify-around px-2 shrink-0 z-30">
         <button
           type="button"
           onClick={() => onMobileTabChange("media")}

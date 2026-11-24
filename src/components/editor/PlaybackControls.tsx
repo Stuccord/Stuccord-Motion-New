@@ -79,7 +79,7 @@ export function PlaybackControls({
                   type="button"
                   disabled={disabled}
                   onClick={onSkipBack}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  className="w-8 h-8 rounded-lg hidden sm:flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition"
                   aria-label="Skip to beginning (Home)"
                 >
                   <SkipBack className="w-4 h-4" />
@@ -111,7 +111,7 @@ export function PlaybackControls({
                   type="button"
                   disabled={disabled}
                   onClick={onSkipForward}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition"
+                  className="w-8 h-8 rounded-lg hidden sm:flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition"
                   aria-label="Skip to end (End)"
                 >
                   <SkipForward className="w-4 h-4" />
@@ -121,7 +121,7 @@ export function PlaybackControls({
             </Tooltip>
 
             {/* Timecode */}
-            <div className="text-xs font-mono ml-2 tabular-nums">
+            <div className="text-[11px] sm:text-xs font-mono ml-1 sm:ml-2 tabular-nums whitespace-nowrap">
               <span className="text-neutral-100 font-semibold">{formatTimecode(currentTime)}</span>
               <span className="text-neutral-500"> / {duration > 0 ? formatTimecode(duration) : "00:00.0"}</span>
             </div>
@@ -136,7 +136,7 @@ export function PlaybackControls({
           </div>
 
           {/* Seek bar: takes the room between the time and the right buttons. */}
-          <div className="flex-1 min-w-[60px] py-2">
+          <div className="flex-1 min-w-[40px] sm:min-w-[60px] py-2">
             <div
               role="slider"
               aria-label="Seek timeline"

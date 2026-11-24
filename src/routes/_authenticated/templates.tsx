@@ -74,7 +74,7 @@ function TemplatesPage() {
             className="w-full h-10 pl-8 pr-3 text-sm bg-card border border-border rounded-full focus:border-primary/60 focus:outline-none"
           />
         </div>
-        <div className="flex items-center gap-1 bg-card border border-border rounded-full p-1 overflow-x-auto max-w-full">
+        <div className="flex items-center gap-1 bg-card border border-border rounded-full p-1 overflow-x-auto max-w-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TEMPLATE_CATS.map((c) => (
             <button key={c} onClick={() => setCat(c)}
               className={cn(
@@ -85,13 +85,14 @@ function TemplatesPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {/* Two columns even on phones (like Higgsfield's tool cards): smaller previews there. */}
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((t) => (
           <button key={t.id} onClick={() => startFromTemplate(t.id)}
             className="group relative overflow-hidden rounded-2xl border border-border bg-card text-left hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-20px_color-mix(in_oklab,var(--color-primary)_50%,transparent)] transition-all">
-            <div className="relative h-52 overflow-hidden bg-[radial-gradient(ellipse_at_50%_0%,color-mix(in_oklab,var(--color-primary)_22%,transparent),transparent_70%)]">
+            <div className="relative h-40 sm:h-52 overflow-hidden bg-[radial-gradient(ellipse_at_50%_0%,color-mix(in_oklab,var(--color-primary)_22%,transparent),transparent_70%)]">
               {/* What this template makes: its shape, its look, a sample line. */}
-              <div className="absolute inset-0 flex items-center justify-center px-6 pb-3 pt-12 transition-transform duration-300 group-hover:scale-[1.03]">
+              <div className="absolute inset-0 flex items-center justify-center px-3 sm:px-6 pb-3 pt-10 sm:pt-12 transition-transform duration-300 group-hover:scale-[1.03]">
                 <LookPreview
                   look={lookOfPreset(t.preset)}
                   ratio={t.ratio}
@@ -101,29 +102,29 @@ function TemplatesPage() {
                   className={t.ratio === "16:9" ? "max-w-full" : ""}
                 />
               </div>
-              <div className="absolute inset-x-0 top-0 p-3 flex items-start justify-between">
-                <div className="w-8 h-8 rounded-lg bg-white/10 backdrop-blur grid place-items-center">
+              <div className="absolute inset-x-0 top-0 p-2 sm:p-3 flex items-start justify-between">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/10 backdrop-blur grid place-items-center">
                   <t.icon className="w-3.5 h-3.5 text-white" />
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-mono font-medium text-white/90 bg-black/25 backdrop-blur rounded px-1.5 py-0.5">{t.ratio}</span>
                   <span
                     title="Suggested length"
-                    className="text-[10px] font-mono font-medium text-white/90 bg-black/25 backdrop-blur rounded px-1.5 py-0.5"
+                    className="hidden sm:inline text-[10px] font-mono font-medium text-white/90 bg-black/25 backdrop-blur rounded px-1.5 py-0.5"
                   >
                     ~{t.duration}
                   </span>
                 </div>
               </div>
             </div>
-            <div className="p-4 border-t border-border">
+            <div className="p-3 sm:p-4 border-t border-border">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{t.cat}</div>
+                <div className="hidden sm:block text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{t.cat}</div>
                 <div className="text-[10px] font-medium text-primary-glow bg-primary/10 rounded px-1.5 py-0.5">
                   {lookName(t.preset)}
                 </div>
               </div>
-              <div className="caps-label text-[14px] mt-2">{t.title}</div>
+              <div className="caps-label text-[13px] sm:text-[14px] mt-2 leading-tight">{t.title}</div>
               <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.desc}</div>
             </div>
           </button>
