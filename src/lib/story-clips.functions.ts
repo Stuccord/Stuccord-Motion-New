@@ -14,6 +14,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import {
   MAX_SCENE_PROMPT,
   SCENE_BUCKET,
@@ -78,13 +80,19 @@ export const startSceneClip = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { project } = await projectForEdit(context.supabase, data.project_id, context.userId);
+  .handler(({ data, context }) => startClipFor(context.supabase, context.userId, data));
+
+export async function startClipFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string; image_path: string; prompt: string },
+) {
+    const { project } = await projectForEdit(db, data.project_id, userId);
     const folder = sceneImageFolder(project.user_id, project.id);
     if (!inFolder(data.image_path, folder) || data.image_path.endsWith(".mp4")) {
       throw new Error("That picture isn't one of this project's.");
     }
-    const allowance = await clipAllowance(context.userId, project.team_id, project.id);
+    const allowance = await clipAllowance(userId, project.team_id, project.id);
     if (!allowance.ok) {
       throw new Error(
         `You've used all ${SCENE_CLIP_MONTHLY_VIDEOS} videos with animated pictures this month; this one keeps its still pictures.`,
@@ -109,7 +117,7 @@ export const startSceneClip = createServerFn({ method: "POST" })
       ticket: await ticketFor(project.id, requestId, data.image_path),
       started_at: Date.now(),
     };
-  });
+}
 
 /** Checks a started clip: still being made, or stored (its path), or failed (a message). */
 export const checkSceneClip = createServerFn({ method: "POST" })
@@ -124,8 +132,14 @@ export const checkSceneClip = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { project } = await projectForEdit(context.supabase, data.project_id, context.userId);
+  .handler(({ data, context }) => checkClipFor(context.supabase, context.userId, data));
+
+export async function checkClipFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string; request_id: string; image_path: string; ticket: string },
+) {
+    const { project } = await projectForEdit(db, data.project_id, userId);
     if (data.ticket !== (await ticketFor(project.id, data.request_id, data.image_path))) {
       throw new Error("That clip wasn't started for this picture.");
     }
@@ -139,7 +153,7 @@ export const checkSceneClip = createServerFn({ method: "POST" })
     const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
     // Counted once made (Higgsfield charges for it even if storing fails).
     const { error: runErr } = await admin.from("motion_image_runs").insert({
-      user_id: context.userId,
+      user_id: userId,
       team_id: project.team_id,
       project_id: project.id,
       model: SCENE_CLIP_MODEL,
@@ -152,4 +166,4 @@ export const checkSceneClip = createServerFn({ method: "POST" })
       .upload(path, result.video, { contentType: "video/mp4", upsert: false });
     if (upErr) throw new Error(`Couldn't store the clip: ${upErr.message}`);
     return { state: "done" as const, path };
-  });
+}

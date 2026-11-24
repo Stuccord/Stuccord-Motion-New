@@ -133,7 +133,7 @@ type ProjectWords = {
   transcripts: Map<string, TranscriptWord[]>;
 };
 
-async function projectWords(db: Db, project: ProjectRow, userId: string): Promise<ProjectWords> {
+export async function projectWords(db: Db, project: ProjectRow, userId: string): Promise<ProjectWords> {
   const { data: rows, error } = await db
     .from("clips")
     .select(
@@ -237,11 +237,16 @@ export function projectCartoon(project: {
 export const cutPausesForAutoEdit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ProjectInput.parse(d))
-  .handler(async ({ data, context }) => {
-    const db = context.supabase;
-    const { project } = await projectForEdit(db, data.project_id, context.userId);
+  .handler(({ data, context }) => cutPausesFor(context.supabase, context.userId, data));
+
+export async function cutPausesFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string },
+) {
+        const { project } = await projectForEdit(db, data.project_id, userId);
     if (parseMotionPlan(project.motion_plan)) return { cutMs: 0, clips: 0, skipped: "planned" };
-    const { clips, missing, transcripts } = await projectWords(db, project, context.userId);
+    const { clips, missing, transcripts } = await projectWords(db, project, userId);
     if (missing.length) throw new Error("Some clips have no transcript yet.");
     const cuts = pauseCuts(clips, transcripts);
     if (!cuts.length) return { cutMs: 0, clips: 0, skipped: null };
@@ -254,7 +259,7 @@ export const cutPausesForAutoEdit = createServerFn({ method: "POST" })
     }
     await applyClipCuts(db, project.id, cuts);
     return { cutMs, clips: cuts.length, skipped: null };
-  });
+}
 
 /**
  * Places the B-roll for the automatic edit (src/lib/auto-edit.ts
@@ -265,10 +270,15 @@ export const cutPausesForAutoEdit = createServerFn({ method: "POST" })
 export const placeBrollForAutoEdit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ProjectInput.parse(d))
-  .handler(async ({ data, context }) => {
-    const db = context.supabase;
-    const { project } = await projectForEdit(db, data.project_id, context.userId);
-    const { clips, transcripts } = await projectWords(db, project, context.userId);
+  .handler(({ data, context }) => placeBrollFor(context.supabase, context.userId, data));
+
+export async function placeBrollFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string },
+) {
+        const { project } = await projectForEdit(db, data.project_id, userId);
+    const { clips, transcripts } = await projectWords(db, project, userId);
     const main = mainSegments(clips);
     const mainIds = new Set(main.map((m) => m.clipId));
     const broll = clips
@@ -306,17 +316,22 @@ export const placeBrollForAutoEdit = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
     return { placed: places.length, of: broll.length };
-  });
+}
 
 // ---------- planning ----------
 
 export const planMotionGraphics = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ProjectInput.parse(d))
-  .handler(async ({ data, context }) => {
-    const db = context.supabase;
-    const { project } = await projectForEdit(db, data.project_id, context.userId);
-    const { clips, missing, transcripts } = await projectWords(db, project, context.userId);
+  .handler(({ data, context }) => planGraphicsFor(context.supabase, context.userId, data));
+
+export async function planGraphicsFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string },
+) {
+        const { project } = await projectForEdit(db, data.project_id, userId);
+    const { clips, missing, transcripts } = await projectWords(db, project, userId);
 
     if (missing.length) {
       throw new Error(
@@ -334,7 +349,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
       );
     }
 
-    const allowance = await planAllowance(context.userId, project.team_id);
+    const allowance = await planAllowance(userId, project.team_id);
     if (allowance.used >= allowance.cap) {
       throw new Error(
         allowance.team
@@ -362,7 +377,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
     // A plan made counts, whatever's kept of it.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error: runErr } = await supabaseAdmin.from("motion_plan_runs").insert({
-      user_id: context.userId,
+      user_id: userId,
       team_id: project.team_id,
       project_id: project.id,
       model: result.model.slice(0, 64),
@@ -405,7 +420,7 @@ export const planMotionGraphics = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     return { plan, dropped: result.draft.elements.length - elements.length };
-  });
+}
 
 /** Puts back the plan the last "Plan graphics" replaced (and keeps the newer one for Redo). */
 export const undoMotionPlan = createServerFn({ method: "POST" })
@@ -446,12 +461,17 @@ export const saveMotionPlan = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const db = context.supabase;
-    const parsed = MotionPlanSchema.safeParse(data.plan);
+  .handler(({ data, context }) => savePlanFor(context.supabase, context.userId, data));
+
+export async function savePlanFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string; plan?: unknown },
+) {
+        const parsed = MotionPlanSchema.safeParse(data.plan);
     if (!parsed.success) throw new Error("These graphics couldn't be saved (they aren't valid).");
     const plan = parsed.data;
-    const { project } = await projectForEdit(db, data.project_id, context.userId);
+    const { project } = await projectForEdit(db, data.project_id, userId);
 
     const current = parseMotionPlan(project.motion_plan);
     if (current && current.created_at !== plan.created_at) {
@@ -495,7 +515,7 @@ export const saveMotionPlan = createServerFn({ method: "POST" })
       .eq("id", project.id);
     if (error) throw new Error(error.message);
     return { plan };
-  });
+}
 
 // ---------- transcribing ----------
 
@@ -542,10 +562,15 @@ export async function hmacHex(secret: string, body: string): Promise<string> {
 export const transcribeForPlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ProjectInput.parse(d))
-  .handler(async ({ data, context }) => {
-    const db = context.supabase;
-    const { project } = await projectForEdit(db, data.project_id, context.userId);
-    const { missing } = await projectWords(db, project, context.userId);
+  .handler(({ data, context }) => transcribeFor(context.supabase, context.userId, data));
+
+export async function transcribeFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string },
+) {
+        const { project } = await projectForEdit(db, data.project_id, userId);
+    const { missing } = await projectWords(db, project, userId);
     // One request per file, even if it's on the timeline more than once.
     const files = [...new Map(missing.map((c) => [c.storage_path, c])).values()];
     if (files.length === 0) return { queued: 0 };
@@ -571,7 +596,7 @@ export const transcribeForPlan = createServerFn({ method: "POST" })
 
     const body = JSON.stringify({
       project_id: project.id,
-      user_id: context.userId,
+      user_id: userId,
       files: signed,
       callback_url: transcribeCallbackUrl(),
     });
@@ -606,4 +631,4 @@ export const transcribeForPlan = createServerFn({ method: "POST" })
       .eq("id", project.id);
     if (error) throw new Error(error.message);
     return { queued: files.length };
-  });
+}

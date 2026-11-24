@@ -7,6 +7,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { SPEAKER_LOOK_MAX } from "@/lib/motion-plan";
 import { projectForEdit } from "@/lib/projects.functions";
 
@@ -24,8 +26,14 @@ export const describeSpeaker = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    await projectForEdit(context.supabase, data.project_id, context.userId);
+  .handler(({ data, context }) => describeSpeakerFor(context.supabase, context.userId, data));
+
+export async function describeSpeakerFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string; frame: string },
+) {
+    await projectForEdit(db, data.project_id, userId);
     const { plannerClient, PLAN_MODEL } = await import("@/lib/motion-plan.server");
     let text = "";
     try {
@@ -55,4 +63,4 @@ export const describeSpeaker = createServerFn({ method: "POST" })
     }
     const look = text.replace(/^["'\s]+|["'.\s]+$/g, "").slice(0, SPEAKER_LOOK_MAX);
     return { look: !look || /^none$/i.test(look) ? null : look };
-  });
+}

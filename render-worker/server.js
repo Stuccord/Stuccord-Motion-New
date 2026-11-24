@@ -420,6 +420,117 @@ app.post("/capture", async (req, res) => {
   }
 });
 
+// ---------- the automatic edit, driven from here ----------
+//
+// The app's automatic edit runs on the server (src/lib/auto-edit-run.server.ts
+// in the app), so it carries on when the person closes the tab. This drives
+// it: it calls the app's step address (step_url, /api/public/auto-edit-step)
+// again and again for two parts at the same time, the main steps and the
+// music; each answer says how long to wait before the next call, or that
+// the part is over. The app does the work and keeps the progress; this only
+// keeps time, so it doesn't take the export's lock. A call that fails (the
+// app restarting, a dropped connection) is tried again, waiting longer each
+// time; after 20 minutes of failures this part gives up, and the make page
+// starts the run again when it sees it has gone quiet.
+
+const autoEdits = new Map(); // project_id -> run
+const AUTO_STEP_TIMEOUT_MS = 8 * 60 * 1000;
+const AUTO_GIVE_UP_MS = 20 * 60 * 1000;
+
+async function driveAutoEdit(p, lane) {
+  let failingSince = null;
+  let backoff = 5000;
+  for (;;) {
+    // A newer run for this project took over.
+    if (autoEdits.get(p.project_id) !== p.run) return;
+    const body = JSON.stringify({ project_id: p.project_id, run: p.run, lane });
+    let answer = null;
+    try {
+      const r = await fetch(p.step_url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-stuccord-signature": signBody(body) },
+        body,
+        signal: AbortSignal.timeout(AUTO_STEP_TIMEOUT_MS),
+      });
+      if (r.status === 401 || r.status === 400) {
+        console.error(`[Worker] Auto edit ${p.project_id} (${lane}): the app refused (${r.status}); stopping`);
+        return;
+      }
+      if (r.ok) answer = await r.json().catch(() => null);
+      else console.warn(`[Worker] Auto edit ${p.project_id} (${lane}): step answered ${r.status}`);
+    } catch (e) {
+      console.warn(`[Worker] Auto edit ${p.project_id} (${lane}): step call failed:`, e?.message || e);
+    }
+    if (answer?.done) return;
+    if (answer && Number.isFinite(answer.wait_ms)) {
+      failingSince = null;
+      backoff = 5000;
+      const ms = Math.min(Math.max(0, answer.wait_ms), 60_000);
+      if (ms) await new Promise((ok) => setTimeout(ok, ms));
+      continue;
+    }
+    failingSince ??= Date.now();
+    if (Date.now() - failingSince > AUTO_GIVE_UP_MS) {
+      console.error(`[Worker] Auto edit ${p.project_id} (${lane}): giving up after 20 min of failed steps`);
+      return;
+    }
+    await new Promise((ok) => setTimeout(ok, backoff));
+    backoff = Math.min(backoff * 2, 60_000);
+  }
+}
+
+app.post("/auto-edit", (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  if (
+    typeof p.project_id !== "string" || !UUID_REGEX.test(p.project_id) ||
+    typeof p.run !== "string" || !UUID_REGEX.test(p.run) ||
+    !isAbsoluteHttpUrl(p.step_url)
+  ) {
+    return res.status(400).json({ ok: false, error: "Invalid auto edit payload" });
+  }
+  autoEdits.set(p.project_id, p.run);
+  res.status(202).json({ ok: true });
+  console.log(`[Worker] Auto edit ${p.project_id}: run ${p.run} started`);
+  Promise.all([driveAutoEdit(p, "main"), driveAutoEdit(p, "music")]).finally(() => {
+    if (autoEdits.get(p.project_id) === p.run) autoEdits.delete(p.project_id);
+    console.log(`[Worker] Auto edit ${p.project_id}: run ${p.run} over`);
+  });
+});
+
+// One frame of a video (a signed link) as a JPEG, for the automatic edit's
+// speaker look. Alongside anything else; ffmpeg reads only what it needs.
+app.post("/frame", (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  const at = Math.round(Number(p.at_ms));
+  const width = Math.round(Number(p.width));
+  if (!isAbsoluteHttpUrl(p.url) || !Number.isFinite(at) || at < 0 || !(width >= 64 && width <= 1920)) {
+    return res.status(400).json({ ok: false, error: "Invalid frame payload" });
+  }
+  const args = [
+    "-hide_banner", "-loglevel", "error",
+    "-ss", (at / 1000).toFixed(3), "-i", p.url,
+    "-frames:v", "1", "-vf", `scale=${width}:-2`, "-q:v", "3",
+    "-f", "image2", "-c:v", "mjpeg", "pipe:1",
+  ];
+  const ff = spawn(ffmpegPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+  const chunks = [];
+  let err = "";
+  const timer = setTimeout(() => ff.kill("SIGKILL"), 45_000);
+  ff.stdout.on("data", (c) => chunks.push(c));
+  ff.stderr.on("data", (c) => (err += c));
+  ff.on("close", (code) => {
+    clearTimeout(timer);
+    const jpg = Buffer.concat(chunks);
+    if (code !== 0 || jpg.length < 100) {
+      console.warn("[Worker] Frame failed:", err.slice(0, 300));
+      return res.status(422).json({ ok: false, error: "Couldn't read a frame" });
+    }
+    res.type("image/jpeg").send(jpg);
+  });
+});
+
 app.post("/transcribe", async (req, res) => {
   if (!verifySignature(req)) return res.status(401).send("bad signature");
   const p = req.body;

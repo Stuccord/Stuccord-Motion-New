@@ -1,10 +1,9 @@
 // Auto edit (docs/auto-edit-plan.md): right after upload, the app makes the
 // video by itself and shows the result; the editor is there for changes.
-// The steps run here, in order, and each one checks whether it's already
-// done, so coming back carries on where it was: transcribe (worker), plan
-// the graphics (Claude), make the first story pictures (Higgsfield), render
-// (worker). If the graphics can't be planned, the video is still made with
-// captions.
+// The steps run on the server (src/lib/auto-edit-run.server.ts), so closing
+// this page doesn't stop them: this page starts the run, shows its progress
+// (kept on the project), and carries it on if it stopped. Quick fixes that
+// only re-render (change the look, render again) run from here.
 
 import { METAPHOR_LOOKS, OBJECT_PICTURE_LOOKS } from "@/motion/looks";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -33,37 +32,20 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isUnlimited } from "@/lib/plans";
-import {
-  getClipSignedUrl,
-  getProject,
-  getRenderSignedUrl,
-  submitRender,
-} from "@/lib/projects.functions";
-import { checkSceneClip, startSceneClip } from "@/lib/story-clips.functions";
-import { describeSpeaker } from "@/lib/speaker-look.functions";
-import { grabFrames } from "@/lib/speaker-frames";
-import {
-  getMotionPlan,
-  cutPausesForAutoEdit,
-  placeBrollForAutoEdit,
-  planMotionGraphics,
-  saveMotionPlan,
-  transcribeForPlan,
-  type MotionPlanState,
-} from "@/lib/motion-plan.functions";
+import { getProject, getRenderSignedUrl, submitRender } from "@/lib/projects.functions";
+import { getMotionPlan, saveMotionPlan, type MotionPlanState } from "@/lib/motion-plan.functions";
 import { makeSceneImage } from "@/lib/story-images.functions";
-import { makeAiMusic } from "@/lib/music.functions";
-import { withSpeakerLook, type MotionLook, type MotionPlan } from "@/lib/motion-plan";
+import { startAutoEdit } from "@/lib/auto-edit.functions";
+import { type MotionLook, type MotionPlan } from "@/lib/motion-plan";
+import { pictureJobs, withPicture } from "@/lib/auto-edit";
 import {
-  AUTO_PICTURES,
-  clipJobs,
-  withClip,
-  finishAutoPlan,
-  needsAutoPictures,
-  pictureJobs,
-  prepareAutoPlan,
-  withPicture,
-} from "@/lib/auto-edit";
+  AUTO_STEP_IDS,
+  isAutoEditLive,
+  parseAutoEdit,
+  type AutoEdit,
+  type AutoStepId,
+  type AutoStepState,
+} from "@/lib/auto-edit-state";
 import { motionAccent } from "@/motion/theme";
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId_/make")({
@@ -71,8 +53,8 @@ export const Route = createFileRoute("/_authenticated/projects/$projectId_/make"
   component: MakePage,
 });
 
-type StepId = "transcribe" | "cut" | "plan" | "pictures" | "animate" | "music" | "render";
-type StepState = "waiting" | "active" | "done" | "skipped" | "failed";
+type StepId = AutoStepId;
+type StepState = AutoStepState;
 
 const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
   { id: "transcribe", label: "Transcribing what you say", icon: AudioLines },
@@ -103,43 +85,39 @@ const LOOKS: { id: MotionLook; label: string }[] = [
 ];
 
 const RUNNING_JOB = ["queued", "transcribing", "planning", "rendering"];
-/** Longest the page waits for an animated clip before keeping the still picture. */
-const CLIP_WAIT_MS = 12 * 60 * 1000;
+/** How often the page reads the server's progress. */
+const POLL_MS = 3000;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** An error's words, or the fallback when it has none (an empty message must still show). */
 const message = (e: unknown, fallback: string) =>
   (e instanceof Error && e.message.trim()) || fallback;
+
+const allSteps = (state: StepState) =>
+  Object.fromEntries(AUTO_STEP_IDS.map((id) => [id, state])) as Record<StepId, StepState>;
+
+type LatestJob = {
+  status: string;
+  progress?: number | null;
+  stage_message?: string | null;
+  error?: string | null;
+  edit_plan?: { graphics_error?: unknown } | null;
+} | null;
 
 function MakePage() {
   const { projectId } = Route.useParams();
   const qc = useQueryClient();
   const fetchProject = useServerFn(getProject);
   const fetchPlan = useServerFn(getMotionPlan);
-  const transcribeFn = useServerFn(transcribeForPlan);
-  const planFn = useServerFn(planMotionGraphics);
-  const cutFn = useServerFn(cutPausesForAutoEdit);
-  const brollFn = useServerFn(placeBrollForAutoEdit);
   const saveFn = useServerFn(saveMotionPlan);
   const makeFn = useServerFn(makeSceneImage);
-  const musicFn = useServerFn(makeAiMusic);
-  const startClipFn = useServerFn(startSceneClip);
-  const checkClipFn = useServerFn(checkSceneClip);
-  const describeFn = useServerFn(describeSpeaker);
-  const clipUrlFn = useServerFn(getClipSignedUrl);
+  const startFn = useServerFn(startAutoEdit);
   const renderFn = useServerFn(submitRender);
   const signFn = useServerFn(getRenderSignedUrl);
 
   const [title, setTitle] = useState("");
-  const [steps, setSteps] = useState<Record<StepId, StepState>>({
-    transcribe: "waiting",
-    cut: "waiting",
-    plan: "waiting",
-    pictures: "waiting",
-    animate: "waiting",
-    music: "waiting",
-    render: "waiting",
-  });
+  const [steps, setSteps] = useState<Record<StepId, StepState>>(allSteps("waiting"));
   const [notes, setNotes] = useState<Partial<Record<StepId, string>>>({});
+  const [runNotes, setRunNotes] = useState<string[]>([]);
   const [progress, setProgress] = useState<{ pct: number; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -147,37 +125,165 @@ function MakePage() {
   const [graphicsError, setGraphicsError] = useState<string | null>(null);
   const [planState, setPlanState] = useState<MotionPlanState | null>(null);
   const [busy, setBusy] = useState(false);
-  const running = useRef(false);
+  // Bumped to read the progress again after it ended (Try again, Redo).
+  const [watch, setWatch] = useState(0);
+  // A quick fix is rendering from this page: the server's progress isn't read meanwhile.
+  const fixing = useRef(false);
+  // When this page started (or carried on) the run, and the start still on its way, if any:
+  // two reads at once (React runs effects twice in development) share one start.
+  const startedAt = useRef(0);
+  const starting = useRef<Promise<AutoEdit> | null>(null);
 
   const mark = (id: StepId, state: StepState, note?: string) => {
     setSteps((s) => ({ ...s, [id]: state }));
     if (note !== undefined) setNotes((n) => ({ ...n, [id]: note }));
   };
 
-  /** Waits for the render job to finish, then shows the video. */
+  /** Shows the server's progress. */
+  const showRun = (a: AutoEdit) => {
+    setSteps(
+      Object.fromEntries(
+        AUTO_STEP_IDS.map((id) => [id, a.steps[id]?.state ?? "waiting"]),
+      ) as Record<StepId, StepState>,
+    );
+    setNotes(
+      Object.fromEntries(
+        AUTO_STEP_IDS.flatMap((id) => (a.steps[id]?.note ? [[id, a.steps[id]?.note]] : [])),
+      ),
+    );
+    setRunNotes(a.notes ?? []);
+  };
+
+  /** Shows the finished video. */
+  const showVideo = useCallback(
+    async (outputPath: string, job: LatestJob) => {
+      const { url } = await signFn({ data: { path: outputPath } });
+      setProgress(null);
+      const ge = job?.edit_plan?.graphics_error;
+      setGraphicsError(typeof ge === "string" ? ge : null);
+      setVideoUrl(url);
+      setPlanState(await fetchPlan({ data: { project_id: projectId } }));
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+    [fetchPlan, projectId, qc, signFn],
+  );
+
+  /**
+   * Reads the server's progress once and shows it; starts the run when
+   * there's none, or carries it on (once per visit) when it has stopped.
+   * "over" when there's nothing more to watch.
+   */
+  const readOnce = useCallback(async (): Promise<"watching" | "over"> => {
+    const r = await fetchProject({ data: { id: projectId } });
+    setTitle(r.project.title);
+    const job = r.latestJob as LatestJob;
+    const auto = parseAutoEdit(r.project.auto_edit);
+    const ready =
+      r.project.status === "ready" &&
+      !!r.project.output_path &&
+      !RUNNING_JOB.includes(job?.status ?? "");
+
+    if (auto) showRun(auto);
+    if (auto?.steps.render?.state === "active" && job && RUNNING_JOB.includes(job.status)) {
+      setProgress({
+        pct: job.progress ?? 0,
+        text: job.stage_message ?? "Waiting for the renderer…",
+      });
+    }
+
+    // Made already (a video from before the server ran the edit has no run).
+    if ((!auto || auto.status === "done") && ready && r.project.output_path) {
+      if (!auto) setSteps(allSteps("done"));
+      setError(null);
+      await showVideo(r.project.output_path, job);
+      return "over";
+    }
+    if (auto?.status === "failed") {
+      setError(
+        auto.error ||
+          "This step failed and the server gave no reason. Try again, or open the editor.",
+      );
+      return "over";
+    }
+    if (auto && isAutoEditLive(auto)) {
+      setError(null);
+      return "watching";
+    }
+    // Not started yet, or it stopped (the worker or the app restarted). The
+    // page carries it on once; one that stops again after that needs a person.
+    if (startedAt.current && !starting.current) {
+      if (Date.now() - startedAt.current < 60_000) return "watching";
+      setError("Making the video stopped responding. Try again.");
+      return "over";
+    }
+    if (!starting.current) {
+      startedAt.current = Date.now();
+      starting.current = startFn({ data: { project_id: projectId } });
+    }
+    let started: AutoEdit;
+    try {
+      started = await starting.current;
+    } finally {
+      starting.current = null;
+    }
+    showRun(started);
+    if (started.status === "failed") {
+      setError(started.error || "The video couldn't be started.");
+      return "over";
+    }
+    return "watching";
+  }, [fetchProject, projectId, showVideo, startFn]);
+
+  useEffect(() => {
+    let stop = false;
+    void (async () => {
+      for (;;) {
+        if (stop) return;
+        if (!fixing.current) {
+          try {
+            if ((await readOnce()) === "over") return;
+          } catch {
+            // A dropped connection: read it again next time.
+          }
+        }
+        await sleep(POLL_MS);
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [readOnce, watch]);
+
+  /** Starts the run again from where it stopped. */
+  const tryAgain = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const started = await startFn({ data: { project_id: projectId } });
+      showRun(started);
+      if (started.status === "failed") setError(started.error || "The video couldn't be started.");
+      else setWatch((w) => w + 1);
+    } catch (e) {
+      setError(message(e, "Couldn't start it again."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Waits for the render job to finish, then shows the video (quick fixes). */
   const waitForRender = useCallback(async () => {
     mark("render", "active");
     for (;;) {
       const r = await fetchProject({ data: { id: projectId } });
-      const job = r.latestJob as {
-        status: string;
-        progress?: number | null;
-        stage_message?: string | null;
-        error?: string | null;
-        edit_plan?: { graphics_error?: unknown } | null;
-      } | null;
+      const job = r.latestJob as LatestJob;
       if (
         r.project.status === "ready" &&
         r.project.output_path &&
         !RUNNING_JOB.includes(job?.status ?? "")
       ) {
-        const { url } = await signFn({ data: { path: r.project.output_path } });
-        setProgress(null);
-        const ge = job?.edit_plan?.graphics_error;
-        setGraphicsError(typeof ge === "string" ? ge : null);
-        setVideoUrl(url);
+        await showVideo(r.project.output_path, job);
         mark("render", "done");
-        void qc.invalidateQueries({ queryKey: ["projects"] });
         return;
       }
       if (job?.status === "failed") {
@@ -189,11 +295,10 @@ function MakePage() {
       });
       await sleep(4000);
     }
-  }, [fetchProject, projectId, qc, signFn]);
+  }, [fetchProject, projectId, showVideo]);
 
   /** Starts a render with the project's captions and music settings, then waits for it. */
   const render = useCallback(async () => {
-    // Active from the start, so a refused render shows as this step failing.
     mark("render", "active");
     const r = await fetchProject({ data: { id: projectId } });
     const p = r.project as {
@@ -206,7 +311,6 @@ function MakePage() {
       data: {
         project_id: projectId,
         captions: p.captions_enabled ?? true,
-        // A built-in bed even if the graphics couldn't be made (captions only).
         music: { enabled: p.music_enabled ?? true, volume: p.music_volume ?? 60, bed: true },
       },
     });
@@ -214,363 +318,12 @@ function MakePage() {
     await waitForRender();
   }, [fetchProject, projectId, qc, renderFn, waitForRender]);
 
-  /**
-   * What the speaker looks like, read by Claude from one frame of the main
-   * footage (visible appearance only), so story pictures show someone like
-   * them. Null when it can't be read: the pictures then show anyone.
-   */
-  const readSpeakerLook = useCallback(async (): Promise<string | null> => {
-    try {
-      const r = await fetchProject({ data: { id: projectId } });
-      const clips = (r.clips ?? []) as {
-        role: string;
-        storage_path: string;
-        filename: string;
-        trim_in_ms?: number | null;
-        duration_ms?: number | null;
-      }[];
-      const main = clips.find(
-        (c) =>
-          (c.role === "auto" || c.role === "aroll") && !/\.(jpe?g|png|webp|gif)$/i.test(c.filename),
-      );
-      if (!main) return null;
-      const { url } = await clipUrlFn({ data: { path: main.storage_path } });
-      // A moment in, where the speaker is settled and talking.
-      const at = (main.trim_in_ms ?? 0) + Math.min(1500, (main.duration_ms ?? 3000) / 2);
-      const frames = await grabFrames(url, [at], 768);
-      const frame = frames?.[0];
-      if (!frame) return null;
-      const bytes = new Uint8Array(await frame.arrayBuffer());
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 0x8000) {
-        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      }
-      const { look } = await describeFn({ data: { project_id: projectId, frame: btoa(bin) } });
-      return look;
-    } catch {
-      return null;
-    }
-  }, [clipUrlFn, describeFn, fetchProject, projectId]);
-
-  /** Makes the first story pictures and saves the plan as the automatic edit keeps it. */
-  const pictures = useCallback(
-    async (start: MotionPlan) => {
-      if (!needsAutoPictures(start)) {
-        const made = start.elements.some(
-          (e) => (e.type === "story" || e.type === "metaphor") && e.scenes?.some((sc) => sc.image),
-        );
-        if (made) mark("pictures", "done", "Already made.");
-        else mark("pictures", "skipped", "No pictures needed in this video.");
-        return start;
-      }
-      mark("pictures", "active");
-      let plan = prepareAutoPlan(start);
-      const jobs = pictureJobs(plan);
-      const accent = motionAccent(plan.colour, null).hex;
-      // So a person in the story looks like the speaker (once per video).
-      if (jobs.some((j) => j.style === "cinematic") && plan.speaker_look === undefined) {
-        const look = await readSpeakerLook();
-        if (look) plan = { ...plan, speaker_look: look };
-      }
-      let made = 0;
-      // (Typed this way so TypeScript doesn't narrow it to null: the waves set it.)
-      let problem = null as string | null;
-      // Made at the same time, in two waves: first every picture that needs no
-      // reference, then a story's later scenes, matched to its first scene's
-      // picture (so the same people and place carry through). Each picture
-      // takes about a minute, so this cuts the wait from minutes to about two.
-      const makeOne = async (job: (typeof jobs)[number]) => {
-        const story = plan.elements.find((e) => e.id === job.elementId);
-        const reference =
-          job.matchIndex !== null ? (story?.scenes?.[job.matchIndex]?.image?.path ?? null) : null;
-        try {
-          const r = await makeFn({
-            data: {
-              project_id: projectId,
-              prompt:
-                job.style === "cinematic" && job.speaker
-                  ? withSpeakerLook(job.prompt, plan.speaker_look)
-                  : job.prompt,
-              reference_path: reference,
-              accent,
-              style: job.style,
-              with_speaker: false,
-              look: plan.look ?? null,
-            },
-          });
-          plan = withPicture(plan, job.elementId, job.index, r.path);
-          made++;
-        } catch (e) {
-          problem ??= message(e, "Couldn't make a picture.");
-        }
-      };
-      const first = jobs.filter((j) => j.matchIndex === null);
-      const later = jobs.filter((j) => j.matchIndex !== null);
-      await Promise.all(first.map(makeOne));
-      if (!problem) await Promise.all(later.map(makeOne));
-      plan = finishAutoPlan(plan);
-      await saveFn({ data: { project_id: projectId, plan } });
-      if (problem) {
-        mark("pictures", made ? "done" : "skipped", `${problem} The video is made without them.`);
-      } else {
-        mark(
-          "pictures",
-          jobs.length ? "done" : "skipped",
-          jobs.length
-            ? `${made} made (up to ${AUTO_PICTURES} a video).`
-            : "No pictures needed in this video.",
-        );
-      }
-      return plan;
-    },
-    [makeFn, projectId, saveFn, readSpeakerLook],
-  );
-
-  /**
-   * Brings the story pictures to life: each becomes a 5-second AI clip
-   * (Higgsfield), all at the same time, checked every few seconds; saved
-   * on the plan as they arrive. A clip the AI service fails on its side is
-   * started once more; a picture that still can't be animated stays a
-   * still, and so does every picture once the month's allowance is used.
-   */
-  const animate = useCallback(
-    async (start: MotionPlan): Promise<MotionPlan> => {
-      const jobs = clipJobs(start);
-      if (!jobs.length) {
-        const any = start.elements.some((e) => e.scenes?.some((sc) => sc.image?.clip));
-        mark(
-          "animate",
-          any ? "done" : "skipped",
-          any ? "Already done." : "No pictures to animate.",
-        );
-        return start;
-      }
-      mark("animate", "active", `Animating ${jobs.length} picture${jobs.length === 1 ? "" : "s"}…`);
-      let plan = start;
-      let made = 0;
-      let problem = null as string | null;
-      await Promise.all(
-        jobs.map(async (job) => {
-          try {
-            for (let attempt = 1; ; attempt++) {
-              const started = await startClipFn({
-                data: { project_id: projectId, image_path: job.imagePath, prompt: job.prompt },
-              });
-              const until = Date.now() + CLIP_WAIT_MS;
-              let retry = false;
-              while (Date.now() < until) {
-                await sleep(6000);
-                let r;
-                try {
-                  r = await checkClipFn({
-                    data: {
-                      project_id: projectId,
-                      request_id: started.request_id,
-                      image_path: job.imagePath,
-                      ticket: started.ticket,
-                    },
-                  });
-                } catch (e) {
-                  // A dropped connection: check again next time.
-                  if (/fetch|network|timed? ?out/i.test(message(e, ""))) continue;
-                  throw e;
-                }
-                if (r.state === "running") continue;
-                if (r.state === "failed") {
-                  if (r.retry && attempt < 2) {
-                    retry = true;
-                    break;
-                  }
-                  throw new Error(attempt > 1 ? `${r.error} It was tried twice.` : r.error);
-                }
-                plan = withClip(plan, job.elementId, job.index, job.imagePath, r.path);
-                made++;
-                await saveFn({ data: { project_id: projectId, plan } });
-                return;
-              }
-              if (retry) continue;
-              throw new Error("The clip took too long, so this picture stays still.");
-            }
-          } catch (e) {
-            problem ??= message(e, "Couldn't animate a picture.");
-          }
-        }),
-      );
-      // Saves may have crossed while clips arrived together: this one has them all.
-      if (made) await saveFn({ data: { project_id: projectId, plan } });
-      if (problem) {
-        mark(
-          "animate",
-          made ? "done" : "skipped",
-          made
-            ? `${made} of ${jobs.length} animated. ${problem}`
-            : `${problem} The pictures stay still.`,
-        );
-      } else {
-        mark("animate", "done", `${made} picture${made === 1 ? "" : "s"} brought to life.`);
-      }
-      return plan;
-    },
-    [checkClipFn, projectId, saveFn, startClipFn],
-  );
-
-  /** Plans the graphics with Claude; null (and a note) when it can't, so the video gets captions only. */
-  const planGraphics = useCallback(async (): Promise<MotionPlan | null> => {
-    mark("plan", "active");
-    try {
-      const r = await planFn({ data: { project_id: projectId } });
-      const n = r.plan.elements.length;
-      mark("plan", "done", `${n} graphic${n === 1 ? "" : "s"} planned.`);
-      return r.plan;
-    } catch (e) {
-      mark(
-        "plan",
-        "skipped",
-        `${message(e, "Planning failed.")} The video is made with captions only.`,
-      );
-      return null;
-    }
-  }, [planFn, projectId]);
-
-  /** The whole automatic edit, carrying on from wherever it got to. */
-  const run = useCallback(async () => {
-    if (running.current) return;
-    running.current = true;
-    setError(null);
-    try {
-      const r = await fetchProject({ data: { id: projectId } });
-      setTitle(r.project.title);
-      const job = r.latestJob as { status: string } | null;
-      // Already made (or being rendered): just show it.
-      if (r.project.status === "ready" || RUNNING_JOB.includes(job?.status ?? "")) {
-        for (const id of ["transcribe", "cut", "plan", "pictures", "animate", "music"] as StepId[])
-          mark(id, "done");
-        setPlanState(await fetchPlan({ data: { project_id: projectId } }));
-        await waitForRender();
-        return;
-      }
-
-      // 1. Transcribe (the worker), and wait until every clip has words.
-      mark("transcribe", "active");
-      let st = await fetchPlan({ data: { project_id: projectId } });
-      if (st.untranscribed > 0 && st.transcribe.status !== "running") {
-        await transcribeFn({ data: { project_id: projectId } });
-      }
-      while (st.untranscribed > 0) {
-        await sleep(4000);
-        st = await fetchPlan({ data: { project_id: projectId } });
-        if (st.untranscribed > 0 && st.transcribe.status === "failed") {
-          throw new Error(st.transcribe.error || "Transcribing failed.");
-        }
-      }
-      mark("transcribe", "done");
-
-      // 2. Cut the pauses (before planning: the plan is anchored to the cut clips).
-      if (st.plan) mark("cut", "done");
-      else {
-        mark("cut", "active");
-        try {
-          const c = await cutFn({ data: { project_id: projectId } });
-          mark(
-            "cut",
-            c.cutMs > 0 ? "done" : "skipped",
-            c.cutMs > 0
-              ? `${(c.cutMs / 1000).toFixed(1)} s of pauses cut. Change it in the editor (Auto-cut).`
-              : "No long pauses to cut.",
-          );
-        } catch (e) {
-          mark("cut", "skipped", `${message(e, "Couldn't cut the pauses.")} The pauses stay in.`);
-        }
-      }
-
-      // 3. Plan the graphics (Claude), unless there's a plan already.
-      let plan = st.plan;
-      if (plan) mark("plan", "done", `${plan.elements.length} graphics planned.`);
-      else plan = await planGraphics();
-
-      // 4 and 5 at the same time: the pictures (Higgsfield) and the music
-      // (ElevenLabs, matched to the look and length; the user's own song wins,
-      // and the built-in music plays if it can't be made).
-      const look = plan?.look ?? null;
-      const music = (async () => {
-        mark("music", "active");
-        try {
-          const m = await musicFn({
-            data: { project_id: projectId, look, skip_if_music: true },
-          });
-          mark(
-            "music",
-            m.made ? "done" : "skipped",
-            m.made ? "Made for this video." : "Your own music is used.",
-          );
-        } catch (e) {
-          mark(
-            "music",
-            "skipped",
-            `${message(e, "Couldn't make the music.")} The built-in music plays instead.`,
-          );
-        }
-      })();
-      if (plan) {
-        plan = await pictures(plan);
-        // 4b. The story pictures brought to life (Higgsfield clips), while
-        // the music is still being made.
-        plan = await animate(plan);
-      } else {
-        mark("pictures", "skipped", "No graphics to make pictures for.");
-        mark("animate", "skipped", "No pictures to animate.");
-      }
-      await music;
-      setPlanState(await fetchPlan({ data: { project_id: projectId } }));
-
-      // 6. Place the B-roll (off the full-screen graphics), then render.
-      try {
-        const b = await brollFn({ data: { project_id: projectId } });
-        if (b.of > b.placed) {
-          toast.message(`${b.of - b.placed} B-roll clip(s) didn't fit; place them in the editor.`);
-        }
-      } catch (e) {
-        toast.error(`${message(e, "Couldn't place the B-roll.")} It plays from the start.`);
-      }
-      await render();
-    } catch (e) {
-      const text = message(
-        e,
-        "This step failed and the server gave no reason. Try again, or open the editor.",
-      );
-      setError(text);
-      setSteps((s) => {
-        const active = (Object.keys(s) as StepId[]).find((k) => s[k] === "active");
-        return active ? { ...s, [active]: "failed" } : s;
-      });
-    } finally {
-      running.current = false;
-    }
-  }, [
-    fetchPlan,
-    fetchProject,
-    musicFn,
-    pictures,
-    animate,
-    planGraphics,
-    projectId,
-    render,
-    transcribeFn,
-    cutFn,
-    brollFn,
-    waitForRender,
-  ]);
-
-  useEffect(() => {
-    void run();
-  }, [run]);
-
   /** A quick fix: runs `change`, then renders again. */
   const fix = async (change: () => Promise<void>) => {
-    if (busy || running.current) return;
+    if (busy || fixing.current) return;
     setBusy(true);
     setError(null);
-    running.current = true;
+    fixing.current = true;
     try {
       await change();
       await render();
@@ -578,7 +331,7 @@ function MakePage() {
       setError(message(e, "Something went wrong."));
       mark("render", "failed");
     } finally {
-      running.current = false;
+      fixing.current = false;
       setBusy(false);
     }
   };
@@ -622,13 +375,23 @@ function MakePage() {
       setPlanState(await fetchPlan({ data: { project_id: projectId } }));
     });
 
-  const redoGraphics = () =>
-    fix(async () => {
-      mark("render", "waiting");
-      const plan = await planGraphics();
-      if (plan) await animate(await pictures(plan));
-      setPlanState(await fetchPlan({ data: { project_id: projectId } }));
-    });
+  /** Claude plans the graphics again, and the server makes the video again (pictures, clips, render). */
+  const redoGraphics = async () => {
+    if (busy || fixing.current) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const started = await startFn({ data: { project_id: projectId, redo: true } });
+      setVideoUrl(null);
+      showRun(started);
+      if (started.status === "failed") setError(started.error || "The video couldn't be started.");
+      else setWatch((w) => w + 1);
+    } catch (e) {
+      setError(message(e, "Couldn't redo the graphics."));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const done = steps.render === "done" && !!videoUrl;
   const look = planState?.plan?.look ?? null;
@@ -640,7 +403,7 @@ function MakePage() {
       subtitle={
         done
           ? title
-          : "The AI is editing your footage. This takes a few minutes — keep this page open."
+          : "The AI is editing your footage. This takes a few minutes; you can close this page and it carries on."
       }
     >
       <div className="max-w-5xl space-y-6">
@@ -776,11 +539,19 @@ function MakePage() {
           </ul>
         )}
 
+        {runNotes.length > 0 && (
+          <ul className="text-xs text-amber-200/90 space-y-1" data-run-notes>
+            {runNotes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        )}
+
         {error && (
           <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300 space-y-3">
             <div>{error}</div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => void run()} disabled={busy}>
+              <Button size="sm" onClick={() => void tryAgain()} disabled={busy}>
                 <RefreshCw /> Try again
               </Button>
               <Link to="/projects/$projectId" params={{ projectId }}>

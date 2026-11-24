@@ -18,7 +18,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import type { Json } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   MAX_SCENE_PROMPT,
   SCENE_BUCKET,
@@ -92,75 +93,80 @@ async function keepImage(
   return { path, url: signed?.signedUrl ?? null };
 }
 
+/** What one scene picture is made from. */
+const SceneImageSchema = z.object({
+  project_id: z.string().uuid(),
+  prompt: z.string().trim().min(3).max(MAX_SCENE_PROMPT),
+  /** The story's first picture, to match (one of this project's). */
+  reference_path: z.string().max(300).nullable(),
+  /** The video's colour, for the house style's tint. */
+  accent: Hex.nullable(),
+  /** Cinematic for stories, 3D animated for cartoon graphics, a photo-real object for metaphors. */
+  style: z.enum(["cinematic", "cartoon", "object"]).default("cinematic"),
+  /** The speaker is in the picture: send their cartoon along. */
+  with_speaker: z.boolean().default(false),
+  /** The video's look: picks the story pictures' style. */
+  look: z.enum(MOTION_LOOK_IDS).nullable().optional(),
+});
+export type SceneImageInput = z.output<typeof SceneImageSchema>;
+
 /** Makes one scene picture; returns its path and a link to show it. */
 export const makeSceneImage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        project_id: z.string().uuid(),
-        prompt: z.string().trim().min(3).max(MAX_SCENE_PROMPT),
-        /** The story's first picture, to match (one of this project's). */
-        reference_path: z.string().max(300).nullable(),
-        /** The video's colour, for the house style's tint. */
-        accent: Hex.nullable(),
-        /** Cinematic for stories, 3D animated for cartoon graphics, a photo-real object for metaphors. */
-        style: z.enum(["cinematic", "cartoon", "object"]).default("cinematic"),
-        /** The speaker is in the picture: send their cartoon along. */
-        with_speaker: z.boolean().default(false),
-        /** The video's look: picks the story pictures' style. */
-        look: z.enum(MOTION_LOOK_IDS).nullable().optional(),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { project } = await projectForEdit(context.supabase, data.project_id, context.userId);
-    const folder = sceneImageFolder(project.user_id, project.id);
-    if (data.reference_path && !inFolder(data.reference_path, folder)) {
-      throw new Error("That reference picture isn't one of this project's.");
-    }
-    const cartoon = data.with_speaker ? projectCartoon(project) : null;
-    if (data.with_speaker && !cartoon) {
-      throw new Error(
-        "Make the speaker's cartoon first (Cartoon of the speaker, in the Graphics panel).",
-      );
-    }
-    const allowance = await checkAllowance(context.userId, project.team_id);
+  .inputValidator((d: unknown) => SceneImageSchema.parse(d))
+  .handler(({ data, context }) => makeSceneImageFor(context.supabase, context.userId, data));
 
-    const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
-    const reference = data.reference_path ? await downloadImage(admin, data.reference_path) : null;
-    const character = cartoon ? await downloadImage(admin, cartoon.image) : null;
-    if (cartoon && !character) throw new Error("The speaker's cartoon is missing. Make it again.");
-
-    const { generateSceneImage, imageModel, ImageError } =
-      await import("@/lib/story-images.server");
-    let image;
-    try {
-      image = await generateSceneImage({
-        prompt: data.prompt,
-        aspect: project.aspect_ratio,
-        accentHex: data.accent,
-        reference,
-        style: data.style,
-        character,
-        look: data.look ?? null,
-      });
-    } catch (e) {
-      throw new Error(e instanceof ImageError ? e.message : "Couldn't make the picture.");
-    }
-    const kept = await keepImage(
-      admin,
-      {
-        userId: context.userId,
-        teamId: project.team_id,
-        projectId: project.id,
-        model: imageModel(),
-      },
-      folder,
-      image,
+export async function makeSceneImageFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: SceneImageInput,
+) {
+  const { project } = await projectForEdit(db, data.project_id, userId);
+  const folder = sceneImageFolder(project.user_id, project.id);
+  if (data.reference_path && !inFolder(data.reference_path, folder)) {
+    throw new Error("That reference picture isn't one of this project's.");
+  }
+  const cartoon = data.with_speaker ? projectCartoon(project) : null;
+  if (data.with_speaker && !cartoon) {
+    throw new Error(
+      "Make the speaker's cartoon first (Cartoon of the speaker, in the Graphics panel).",
     );
-    return { ...kept, images: { ...allowance, used: allowance.used + 1 } };
-  });
+  }
+  const allowance = await checkAllowance(userId, project.team_id);
+
+  const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+  const reference = data.reference_path ? await downloadImage(admin, data.reference_path) : null;
+  const character = cartoon ? await downloadImage(admin, cartoon.image) : null;
+  if (cartoon && !character) throw new Error("The speaker's cartoon is missing. Make it again.");
+
+  const { generateSceneImage, imageModel, ImageError } = await import("@/lib/story-images.server");
+  let image;
+  try {
+    image = await generateSceneImage({
+      prompt: data.prompt,
+      aspect: project.aspect_ratio,
+      accentHex: data.accent,
+      reference,
+      style: data.style,
+      character,
+      look: data.look ?? null,
+    });
+  } catch (e) {
+    throw new Error(e instanceof ImageError ? e.message : "Couldn't make the picture.");
+  }
+  const kept = await keepImage(
+    admin,
+    {
+      userId: userId,
+      teamId: project.team_id,
+      projectId: project.id,
+      model: imageModel(),
+    },
+    folder,
+    image,
+  );
+  return { ...kept, images: { ...allowance, used: allowance.used + 1 } };
+}
 
 /**
  * Makes the project's cartoon of its speaker from a photo of them (already

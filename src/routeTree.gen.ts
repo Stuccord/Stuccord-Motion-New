@@ -31,6 +31,7 @@ import { Route as ApiPublicTranscribeWebhookRouteImport } from './routes/api/pub
 import { Route as ApiPublicRenderWebhookRouteImport } from './routes/api/public/render-webhook'
 import { Route as ApiPublicPublishingTickRouteImport } from './routes/api/public/publishing-tick'
 import { Route as ApiPublicPublishWebhookRouteImport } from './routes/api/public/publish-webhook'
+import { Route as ApiPublicAutoEditStepRouteImport } from './routes/api/public/auto-edit-step'
 import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams.$teamId'
 import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects.new'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects.$projectId'
@@ -161,6 +162,11 @@ const ApiPublicPublishWebhookRoute = ApiPublicPublishWebhookRouteImport.update({
   path: '/api/public/publish-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAutoEditStepRoute = ApiPublicAutoEditStepRouteImport.update({
+  id: '/api/public/auto-edit-step',
+  path: '/api/public/auto-edit-step',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedTeamsTeamIdRoute =
   AuthenticatedTeamsTeamIdRouteImport.update({
     id: '/teams/$teamId',
@@ -270,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/api/public/auto-edit-step': typeof ApiPublicAutoEditStepRoute
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
@@ -308,6 +315,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/projects/new': typeof AuthenticatedProjectsNewRoute
   '/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/api/public/auto-edit-step': typeof ApiPublicAutoEditStepRoute
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
@@ -348,6 +356,7 @@ export interface FileRoutesById {
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRoute
   '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
   '/_authenticated/teams/$teamId': typeof AuthenticatedTeamsTeamIdRoute
+  '/api/public/auto-edit-step': typeof ApiPublicAutoEditStepRoute
   '/api/public/publish-webhook': typeof ApiPublicPublishWebhookRoute
   '/api/public/publishing-tick': typeof ApiPublicPublishingTickRoute
   '/api/public/render-webhook': typeof ApiPublicRenderWebhookRoute
@@ -388,6 +397,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/new'
     | '/teams/$teamId'
+    | '/api/public/auto-edit-step'
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
@@ -426,6 +436,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/new'
     | '/teams/$teamId'
+    | '/api/public/auto-edit-step'
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
@@ -465,6 +476,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects/$projectId'
     | '/_authenticated/projects/new'
     | '/_authenticated/teams/$teamId'
+    | '/api/public/auto-edit-step'
     | '/api/public/publish-webhook'
     | '/api/public/publishing-tick'
     | '/api/public/render-webhook'
@@ -494,6 +506,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
+  ApiPublicAutoEditStepRoute: typeof ApiPublicAutoEditStepRoute
   ApiPublicPublishWebhookRoute: typeof ApiPublicPublishWebhookRoute
   ApiPublicPublishingTickRoute: typeof ApiPublicPublishingTickRoute
   ApiPublicRenderWebhookRoute: typeof ApiPublicRenderWebhookRoute
@@ -663,6 +676,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPublishWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/auto-edit-step': {
+      id: '/api/public/auto-edit-step'
+      path: '/api/public/auto-edit-step'
+      fullPath: '/api/public/auto-edit-step'
+      preLoaderRoute: typeof ApiPublicAutoEditStepRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/teams/$teamId': {
       id: '/_authenticated/teams/$teamId'
       path: '/teams/$teamId'
@@ -825,6 +845,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
+  ApiPublicAutoEditStepRoute: ApiPublicAutoEditStepRoute,
   ApiPublicPublishWebhookRoute: ApiPublicPublishWebhookRoute,
   ApiPublicPublishingTickRoute: ApiPublicPublishingTickRoute,
   ApiPublicRenderWebhookRoute: ApiPublicRenderWebhookRoute,

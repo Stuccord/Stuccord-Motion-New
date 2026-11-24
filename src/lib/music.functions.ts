@@ -6,9 +6,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 import { AI_MUSIC_MONTHLY_TRACKS, musicLengthMs, musicPrompt } from "@/lib/ai-music";
-import { MOTION_LOOK_IDS } from "@/motion/looks";
+import { MOTION_LOOK_IDS, type MotionLookId } from "@/motion/looks";
 
 function monthStartUtc() {
   const d = new Date();
@@ -99,11 +101,17 @@ export const makeAiMusic = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data, context }) => {
-    const { projectForEdit } = await import("@/lib/projects.functions");
-    const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
+  .handler(({ data, context }) => makeAiMusicFor(context.supabase, context.userId, data));
 
-    const { data: clips, error: cErr } = await context.supabase
+export async function makeAiMusicFor(
+  db: SupabaseClient<Database>,
+  userId: string,
+  data: { project_id: string; look?: MotionLookId | null; note?: string; skip_if_music: boolean },
+) {
+    const { projectForEdit } = await import("@/lib/projects.functions");
+    const { folder } = await projectForEdit(db, data.project_id, userId);
+
+    const { data: clips, error: cErr } = await db
       .from("clips")
       .select("role, duration_ms, trim_in_ms, trim_out_ms")
       .eq("project_id", data.project_id);
@@ -125,11 +133,11 @@ export const makeAiMusic = createServerFn({ method: "POST" })
 
     // The monthly allowance (the app's owner has none).
     const { isAppOwner } = await import("@/lib/owner.server");
-    const owner = isAppOwner(context.userId);
-    const { count, error: uErr } = await context.supabase
+    const owner = isAppOwner(userId);
+    const { count, error: uErr } = await db
       .from("music_usage")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", context.userId)
+      .eq("user_id", userId)
       .gte("created_at", monthStartUtc().toISOString());
     if (uErr) throw new Error(uErr.message);
     if (!owner && (count ?? 0) >= AI_MUSIC_MONTHLY_TRACKS) {
@@ -147,7 +155,7 @@ export const makeAiMusic = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: usage, error: iErr } = await supabaseAdmin
       .from("music_usage")
-      .insert({ user_id: context.userId, project_id: data.project_id, length_ms: lengthMs, prompt })
+      .insert({ user_id: userId, project_id: data.project_id, length_ms: lengthMs, prompt })
       .select("id")
       .single();
     if (iErr) throw new Error(iErr.message);
@@ -160,16 +168,16 @@ export const makeAiMusic = createServerFn({ method: "POST" })
       const audio = await composeOnWorker(prompt, lengthMs);
       const filename = "Music (AI).mp3";
       const path = `${folder}/${data.project_id}/${Date.now()}_music_ai.mp3`;
-      const { error: upErr } = await context.supabase.storage
+      const { error: upErr } = await db.storage
         .from("raw-clips")
         .upload(path, audio, { contentType: "audio/mpeg", upsert: false });
       if (upErr) throw new Error(upErr.message);
       // On the music track from 0:00 (no start: it plays under the whole video).
-      const { data: row, error: aErr } = await context.supabase
+      const { data: row, error: aErr } = await db
         .from("clips")
         .insert({
           project_id: data.project_id,
-          user_id: context.userId,
+          user_id: userId,
           storage_path: path,
           filename,
           size_bytes: audio.byteLength,
@@ -186,4 +194,4 @@ export const makeAiMusic = createServerFn({ method: "POST" })
       await giveBack();
       throw e;
     }
-  });
+}

@@ -113,6 +113,7 @@ export type Database = {
       projects: {
         Row: {
           aspect_ratio: Database["public"]["Enums"]["aspect_ratio"]
+          auto_edit: Json | null
           brief: string | null
           captions_enabled: boolean
           created_at: string
@@ -138,6 +139,7 @@ export type Database = {
         }
         Insert: {
           aspect_ratio?: Database["public"]["Enums"]["aspect_ratio"]
+          auto_edit?: Json | null
           brief?: string | null
           captions_enabled?: boolean
           created_at?: string
@@ -163,6 +165,7 @@ export type Database = {
         }
         Update: {
           aspect_ratio?: Database["public"]["Enums"]["aspect_ratio"]
+          auto_edit?: Json | null
           brief?: string | null
           captions_enabled?: boolean
           created_at?: string
@@ -700,6 +703,10 @@ export type Database = {
       team_role: {
         Args: { team: string }
         Returns: string
+      }
+      auto_edit_patch: {
+        Args: { p_project: string; p_run: string; p_top: Json; p_steps: Json }
+        Returns: boolean
       }
       post_is_in_place: {
         Args: { p_team: string; p_user: string; p_account: string; p_video: string; p_cover: string }
