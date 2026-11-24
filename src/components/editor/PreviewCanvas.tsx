@@ -356,7 +356,7 @@ export function PreviewCanvas({
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
                 viewMode === "timeline"
-                  ? "bg-violet-600 text-white shadow-sm"
+                  ? "bg-violet-600 text-neutral-950 shadow-sm"
                   : "text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed",
               )}
             >
@@ -372,7 +372,7 @@ export function PreviewCanvas({
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
                 viewMode === "clip"
-                  ? "bg-violet-600 text-white shadow-sm"
+                  ? "bg-violet-600 text-neutral-950 shadow-sm"
                   : "text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed",
               )}
             >
@@ -386,7 +386,7 @@ export function PreviewCanvas({
               className={cn(
                 "px-2 py-0.5 rounded text-[11px] font-medium transition",
                 viewMode === "render"
-                  ? "bg-violet-600 text-white shadow-sm"
+                  ? "bg-violet-600 text-neutral-950 shadow-sm"
                   : "text-neutral-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed",
               )}
             >
@@ -573,7 +573,7 @@ export function PreviewCanvas({
                 <button
                   type="button"
                   onClick={() => onAspectRatioChange?.(suggestedRatio!)}
-                  className="shrink-0 rounded bg-violet-600 px-2 py-0.5 font-medium text-white hover:bg-violet-500"
+                  className="shrink-0 rounded bg-violet-600 px-2 py-0.5 font-medium text-neutral-950 hover:bg-violet-500"
                 >
                   Switch to {suggestedRatio}
                 </button>
@@ -601,7 +601,7 @@ export function PreviewCanvas({
                 </p>
                 <div className="w-48 h-1.5 bg-white/[0.08] rounded-full overflow-hidden mt-1">
                   <div
-                    className="h-full bg-gradient-to-r from-violet-600 to-indigo-500 transition-all duration-300"
+                    className="h-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-300"
                     style={{ width: `${Math.max(5, renderProgress)}%` }}
                   />
                 </div>

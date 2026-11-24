@@ -315,7 +315,7 @@ function WordEditor({
           type="button"
           onClick={onSave}
           disabled={saving}
-          className="inline-flex items-center gap-1 h-6 px-2 rounded bg-violet-600 text-[11px] font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+          className="inline-flex items-center gap-1 h-6 px-2 rounded bg-violet-600 text-[11px] font-medium text-neutral-950 hover:bg-violet-500 disabled:opacity-50"
         >
           <Check className="w-3 h-3" /> Save
         </button>

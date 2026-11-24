@@ -328,7 +328,7 @@ export function AutoCutPanel({
 
         <Button
           size="sm"
-          className="w-full bg-violet-600 hover:bg-violet-500 text-white"
+          className="w-full bg-violet-600 hover:bg-violet-500 text-neutral-950"
           disabled={busy || targets.length === 0}
           onClick={() => void find()}
         >

@@ -236,7 +236,7 @@ function StepCard({
             failed
               ? "bg-red-500/70 text-white"
               : active
-                ? "bg-violet-500 text-white"
+                ? "bg-violet-500 text-neutral-950"
                 : done
                   ? "bg-emerald-500/80 text-neutral-950"
                   : "bg-white/5 text-neutral-600",

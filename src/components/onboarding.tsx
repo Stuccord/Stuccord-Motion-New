@@ -131,7 +131,7 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
         {/* Header */}
         <div className="flex items-center justify-between px-5 sm:px-6 py-3 border-b border-border">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 grid place-items-center">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-red-500 grid place-items-center">
               <Sparkles className="w-3.5 h-3.5 text-white" />
             </div>
             <div className="text-[13px] font-semibold tracking-tight">Get started</div>
@@ -150,7 +150,7 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
         {/* Progress */}
         <div className="h-1 bg-surface-2">
           <div
-            className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-500"
+            className="h-full bg-gradient-to-r from-violet-500 to-red-500 transition-all duration-500"
             style={{ width: `${((step + 1) / total) * 100}%` }}
           />
         </div>
@@ -233,7 +233,7 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
 function StepWelcome({ name, onName }: { name: string; onName: (v: string) => void }) {
   return (
     <div>
-      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 grid place-items-center mb-4 shadow-lg shadow-violet-500/30">
+      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-red-500 grid place-items-center mb-4 shadow-lg shadow-violet-500/30">
         <Sparkles className="w-6 h-6 text-white" />
       </div>
       <h2 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -355,7 +355,7 @@ function StepFormat({
                   "rounded-md bg-gradient-to-br grid place-items-center",
                   o.box,
                   active
-                    ? "from-violet-500 to-fuchsia-500"
+                    ? "from-violet-500 to-red-500"
                     : "from-white/10 to-white/5",
                 )}
               >

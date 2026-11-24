@@ -403,7 +403,7 @@ function Overlay({
       return (
         <>
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-          <div className="absolute inset-x-[7%] bottom-[6%] rounded-[0.8em] border border-white/20 bg-white/10 p-[0.6em] shadow-[0_0_30px_-6px_rgba(139,92,246,0.7)] backdrop-blur-md">
+          <div className="absolute inset-x-[7%] bottom-[6%] rounded-[0.8em] border border-white/20 bg-white/10 p-[0.6em] shadow-[0_0_30px_-6px_rgba(255,90,31,0.7)] backdrop-blur-md">
             <div className={cn("font-bold leading-tight text-white", text)}>
               <Words line={line} emphasis={emphasis} accent="font-normal italic text-violet-300" />
             </div>

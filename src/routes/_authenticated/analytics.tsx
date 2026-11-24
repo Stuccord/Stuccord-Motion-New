@@ -167,7 +167,7 @@ function AnalyticsPage() {
           <div className="mt-6 pt-4 border-t border-border">
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Top style</div>
             {topPreset ? (
-              <div className="rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 p-3 text-white">
+              <div className="rounded-lg bg-gradient-to-br from-violet-500 to-red-500 p-3 text-white">
                 <div className="text-[10px] uppercase tracking-wider text-white/70">Preset</div>
                 <div className="text-sm font-semibold mt-0.5">{presetLabel(topPreset.preset)}</div>
                 <div className="text-[11px] text-white/70 mt-1">Used in {topPreset.count} project{topPreset.count === 1 ? "" : "s"}</div>

@@ -532,7 +532,7 @@ function TimelineClipBlock({
       className={cn(
         "rounded-md border bg-gradient-to-br cursor-grab overflow-hidden group select-none transition-shadow",
         gradient,
-        selected && "ring-2 ring-violet-400 shadow-[0_0_20px_-4px_rgba(139,92,246,0.5)]",
+        selected && "ring-2 ring-violet-400 shadow-[0_0_20px_-4px_rgba(255,90,31,0.5)]",
         // The dragged clip sits where it will land.
         dragOffset &&
           "z-30 ring-2 ring-white/80 cursor-grabbing shadow-[0_8px_24px_rgba(0,0,0,0.5)] pointer-events-none",
@@ -2288,8 +2288,8 @@ function TimelineTracks({
           )}
           style={{ left: `calc(var(--tl-gutter, 120px) + ${playheadPx}px)` }}
         >
-          <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rotate-45 bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.7)]" />
-          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-violet-400/90 shadow-[0_0_6px_rgba(139,92,246,0.55)]" />
+          <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rotate-45 bg-violet-500 shadow-[0_0_8px_rgba(255,90,31,0.7)]" />
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-violet-400/90 shadow-[0_0_6px_rgba(255,90,31,0.55)]" />
         </div>
 
         <style>{`

@@ -708,7 +708,7 @@ export function ThumbnailMaker({
 
               <div className="space-y-2 pt-3 border-t border-white/5">
                 <Button
-                  className="w-full bg-violet-600 hover:bg-violet-500 text-white"
+                  className="w-full bg-violet-600 hover:bg-violet-500 text-neutral-950"
                   disabled={!canSave || busy !== null}
                   onClick={() => void makeCover()}
                 >

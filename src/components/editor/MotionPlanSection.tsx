@@ -271,7 +271,7 @@ export function MotionPlanSection({
             <button
               onClick={() => (current ? setConfirmReplace(true) : plan.mutate())}
               disabled={busy || outOfPlans}
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] font-semibold bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] font-semibold bg-violet-600 text-neutral-950 hover:bg-violet-500 disabled:opacity-50"
             >
               {plan.isPending ? (
                 <Loader2 className="w-3 h-3 animate-spin" />

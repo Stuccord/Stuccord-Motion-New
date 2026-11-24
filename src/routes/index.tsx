@@ -122,7 +122,7 @@ function LogoMark({ className = "h-10 w-10" }: { className?: string }) {
       alt="Stuccord Motion logo"
       width={80}
       height={80}
-      className={`${className} object-contain rounded-xl bg-white p-0.5 shadow-[0_6px_20px_-6px_rgba(124,58,237,0.6)]`}
+      className={`${className} object-contain rounded-xl bg-white p-0.5 shadow-[0_6px_20px_-6px_rgba(255,90,31,0.6)]`}
     />
   );
 }
@@ -582,7 +582,7 @@ function Features() {
               Punch-ins on the words that matter, eased back out.
             </h3>
             <div className="mt-5 relative aspect-video overflow-hidden rounded-md border border-hairline bg-black">
-              <div className="absolute inset-0 bg-[radial-gradient(300px_200px_at_50%_40%,rgba(124,58,237,0.4),transparent_60%),linear-gradient(180deg,#0a0a0a,#1a1a20)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(300px_200px_at_50%_40%,rgba(255,90,31,0.4),transparent_60%),linear-gradient(180deg,#0a0a0a,#1a1a20)]" />
               <div className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20" />
               <div className="absolute inset-6 rounded border border-primary/70">
                 <div className="absolute -left-1 -top-1 h-2 w-2 border-l-2 border-t-2 border-primary" />
@@ -1119,7 +1119,7 @@ function Compare() {
 
             {/* Handle */}
             <div
-              className="absolute inset-y-0 w-px bg-primary shadow-[0_0_16px_2px_rgba(124,58,237,0.6)]"
+              className="absolute inset-y-0 w-px bg-primary shadow-[0_0_16px_2px_rgba(255,90,31,0.6)]"
               style={{ left: `${pos}%` }}
             >
               <div className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-background text-foreground shadow-lg">
@@ -1394,7 +1394,7 @@ function CTA() {
             className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full opacity-40 blur-3xl"
             style={{
               background:
-                "radial-gradient(circle, rgba(124,58,237,0.6), transparent 60%)",
+                "radial-gradient(circle, rgba(255,90,31,0.6), transparent 60%)",
             }}
           />
           <div className="relative grid gap-10 md:grid-cols-[1.4fr_1fr] md:items-end">

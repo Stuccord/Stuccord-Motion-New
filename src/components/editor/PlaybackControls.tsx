@@ -152,7 +152,7 @@ export function PlaybackControls({
             >
               {/* Filled track with violet gradient */}
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-600 to-indigo-500 shadow-[0_0_8px_rgba(124,58,237,0.5)]"
+                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-600 to-violet-400 shadow-[0_0_8px_rgba(255,90,31,0.5)]"
                 style={{ width: `${playheadPct}%` }}
               />
               {/* Scrubber thumb */}

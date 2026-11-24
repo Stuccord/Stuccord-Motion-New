@@ -87,15 +87,31 @@
   --color-surface-2: var(--surface-2);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
+
+  /* Signal orange brand: the app's many violet-* classes are pointed at an
+     orange scale built round #FF5A1F (500), so one change recolours them all.
+     (The video looks don't use these classes; their colours are their own.) */
+  --color-violet-50: #fff3ed;
+  --color-violet-100: #ffe3d4;
+  --color-violet-200: #ffc4a8;
+  --color-violet-300: #ff9f75;
+  --color-violet-400: #ff7a45;
+  --color-violet-500: #ff5a1f;
+  --color-violet-600: #f04a0e;
+  --color-violet-700: #c7380a;
+  --color-violet-800: #9e2e10;
+  --color-violet-900: #7f2911;
+  --color-violet-950: #451106;
 }
 
 /* ── Design tokens — "Studio Dark" ──
-   Near-black media canvas, neutral grey panels, one electric-violet accent
-   kept for primary actions, progress and the active nav item. */
+   Near-black media canvas, neutral grey panels, one loud signal-orange
+   accent (dark text on it) kept for primary actions, progress and the
+   active nav item. */
 :root {
   --radius: 0.75rem;   /* 12px */
 
-  --background: oklch(0.155 0.004 275);       /* #0B0C0F canvas */
+  --background: oklch(0.145 0.004 270);       /* #0E0F11 canvas */
   --surface:    oklch(0.195 0.005 275);       /* raised panel */
   --surface-2:  oklch(0.235 0.006 275);       /* hover / elevated */
   --foreground: oklch(0.975 0.002 275);       /* near-white text */
@@ -107,17 +123,17 @@
   --popover:             oklch(0.205 0.006 275);
   --popover-foreground:  var(--foreground);
 
-  /* Electric violet accent */
-  --primary:             oklch(0.6 0.235 290);
-  --primary-foreground:  oklch(0.99 0 0);
-  --primary-glow:        oklch(0.78 0.15 290);
+  /* Signal orange accent (#FF5A1F), near-black text on it */
+  --primary:             oklch(0.68 0.21 38);
+  --primary-foreground:  oklch(0.16 0.01 40);
+  --primary-glow:        oklch(0.75 0.16 40);
 
   --secondary:           oklch(0.235 0.006 275);
   --secondary-foreground: var(--foreground);
   --muted:               oklch(0.225 0.006 275);
   --muted-foreground:    oklch(0.69 0.008 275);
-  --accent:              oklch(0.27 0.07 290);
-  --accent-foreground:   oklch(0.86 0.1 290);
+  --accent:              oklch(0.27 0.07 40);
+  --accent-foreground:   oklch(0.86 0.1 45);
 
   --destructive:            oklch(0.63 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
@@ -125,7 +141,7 @@
   --hairline: oklch(1 0 0 / 0.07);
   --border:   oklch(1 0 0 / 0.09);
   --input:    oklch(1 0 0 / 0.12);
-  --ring:     oklch(0.6 0.235 290 / 0.55);
+  --ring:     oklch(0.68 0.21 38 / 0.55);
 }
 
 .dark { color-scheme: dark; }
