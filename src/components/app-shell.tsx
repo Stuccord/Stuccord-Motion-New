@@ -49,9 +49,9 @@ type NavItem = {
 };
 
 const workspaceNav: NavItem[] = [
-  { to: "/dashboard", label: "Home", icon: Home, exact: true },
-  { to: "/projects", label: "Projects", icon: Film },
-  { to: "/templates", label: "Templates", icon: Wand2, badge: "New" },
+  { to: "/dashboard", label: "Explore", icon: Home, exact: true },
+  { to: "/projects", label: "Library", icon: Film },
+  { to: "/templates", label: "Presets", icon: Wand2, badge: "New" },
   { to: "/assets", label: "Assets", icon: FolderOpen },
   { to: "/publishing", label: "Publishing", icon: Send },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
@@ -204,7 +204,7 @@ export function AppShell({
           to="/projects/new"
           className="lg:hidden flex h-11 items-center gap-2.5 rounded-[10px] border border-primary/30 bg-primary/15 px-2.5 text-[16px] font-semibold leading-5 text-primary-glow"
         >
-          <Plus className="w-5 h-5" /> Make a video
+          <Plus className="w-5 h-5" /> Create
         </Link>
         </div>
         <div>
@@ -361,7 +361,7 @@ export function AppShell({
                 onClick={() => navigate({ to: "/projects/new" })}
                 className="hidden sm:inline-flex"
               >
-                <Plus className="w-4 h-4" /> New project
+                <Plus className="w-4 h-4" /> Create
               </Button>
 
               <DropdownMenu>
@@ -446,7 +446,7 @@ export function AppShell({
 }
 
 /**
- * Phones and tablets: the main pages along the bottom, with "Make a video"
+ * Phones and tablets: the main pages along the bottom (Higgsfield's words), with "Create"
  * as the big button in the middle and Assets last (Higgsfield's My Assets);
  * the full menu opens from the top-left, with your account at its bottom.
  */
@@ -462,11 +462,11 @@ function MobileTabBar({
     );
   const icon = (active: boolean) => cn("w-[22px] h-[22px]", active && "text-primary-glow");
   const before = [
-    { to: "/dashboard", label: "Home", Icon: Home, exact: true },
-    { to: "/projects", label: "Projects", Icon: Film },
+    { to: "/dashboard", label: "Explore", Icon: Home, exact: true },
+    { to: "/projects", label: "Library", Icon: Film },
   ];
   const after = [
-    { to: "/templates", label: "Templates", Icon: Wand2 },
+    { to: "/templates", label: "Presets", Icon: Wand2 },
     { to: "/assets", label: "Assets", Icon: FolderOpen },
   ];
   const link = ({ to, label, Icon, exact }: (typeof before)[number] & { exact?: boolean }) => {
@@ -489,7 +489,7 @@ function MobileTabBar({
         <div className="flex flex-1 justify-center">
           <Link
             to="/projects/new"
-            aria-label="Make a video"
+            aria-label="Create"
             className="flex h-[46px] w-[76px] items-center justify-center rounded-[14px] bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] active:scale-95 transition-transform"
           >
             <Sparkles className="w-6 h-6" />

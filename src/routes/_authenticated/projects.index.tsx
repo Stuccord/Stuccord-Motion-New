@@ -44,7 +44,7 @@ import { cn } from "@/lib/utils";
 import { presetLabel } from "@/lib/presets";
 
 export const Route = createFileRoute("/_authenticated/projects/")({
-  head: () => ({ meta: [{ title: "Projects — Stuccord Motion" }] }),
+  head: () => ({ meta: [{ title: "Library — Stuccord Motion" }] }),
   component: ProjectsPage,
 });
 
@@ -247,9 +247,9 @@ function ProjectsPage() {
 
   return (
     <AppShell
-      title="Projects"
+      title="Library"
       subtitle={ws.team ? `${ws.team.name}'s projects: everyone in the team can open them.` : "Every short you've briefed, rendered, or shipped."}
-      actions={<Button onClick={() => navigate({ to: "/projects/new" })} disabled={!ws.canEdit}><Plus className="w-4 h-4" /> New project</Button>}
+      actions={<Button onClick={() => navigate({ to: "/projects/new" })} disabled={!ws.canEdit}><Plus className="w-4 h-4" /> Create</Button>}
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex flex-wrap items-center gap-1 bg-card border border-border rounded-lg p-1">
@@ -300,7 +300,7 @@ function ProjectsPage() {
           <div className="text-sm font-medium">No projects yet.</div>
           <div className="text-xs text-muted-foreground mt-1">Start your first short — usually done in under 5 minutes.</div>
           <Button className="mt-5" onClick={() => navigate({ to: "/projects/new" })}>
-            <Plus className="w-4 h-4" /> New project
+            <Plus className="w-4 h-4" /> Create
           </Button>
         </div>
       ) : filtered.length === 0 ? (

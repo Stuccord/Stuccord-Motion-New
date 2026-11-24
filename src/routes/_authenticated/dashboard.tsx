@@ -37,7 +37,7 @@ import btsStudio from "@/assets/bts-studio.jpg";
 import { LookPreview } from "@/components/look-preview";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Home — Stuccord Motion" }] }),
+  head: () => ({ meta: [{ title: "Explore — Stuccord Motion" }] }),
   component: Home,
 });
 
@@ -125,7 +125,7 @@ function Home() {
   );
 
   return (
-    <AppShell barTitle="Home">
+    <AppShell barTitle="Explore">
       <div className="max-w-6xl mx-auto space-y-10">
 
         {/* Hero: the one thing the app does — raw footage in, finished edit out */}
@@ -168,9 +168,9 @@ function Home() {
             arrangement: 56 px circles, 12 px labels); the big cards from md up. */}
         <nav className="md:hidden grid grid-cols-4 gap-1" aria-label="Shortcuts" data-shortcuts>
           {[
-            { label: "Make a video", Icon: Plus, to: "/projects/new" as const, accent: true },
-            { label: "Templates", Icon: Wand2, to: "/templates" as const },
-            { label: "My projects", Icon: FolderOpen, to: "/projects" as const },
+            { label: "Create video", Icon: Plus, to: "/projects/new" as const, accent: true },
+            { label: "Presets", Icon: Wand2, to: "/templates" as const },
+            { label: "My library", Icon: FolderOpen, to: "/projects" as const },
             { label: "Brand kit", Icon: Palette, to: "/settings" as const, search: { tab: "brand" } },
           ].map(({ label, Icon, to, accent, search }) => (
             <Link
@@ -225,7 +225,7 @@ function Home() {
             }
           />
           <CreateCard
-            title="Start from a template"
+            title="Start from a preset"
             desc="Hooks, talking heads, product demos, podcasts and more, each with its own shape and look."
             onClick={() => navigate({ to: "/templates" })}
             visual={
@@ -315,7 +315,7 @@ function Home() {
               search: recent[0] ? { thumbnail: 1 as const } : undefined,
               title: recent[0] ? `Opens in “${recent[0].title}”` : "Start a project first",
             },
-            { label: "Templates", desc: "Every shape and look", icon: MoreHorizontal, to: "/templates" },
+            { label: "Presets", desc: "Every shape and look", icon: MoreHorizontal, to: "/templates" },
           ].map((t) =>
             t.to ? (
               <Link
@@ -447,7 +447,7 @@ function Home() {
                   <Plus className="w-4 h-4" /> Start your first project
                 </Button>
                 <Button variant="outline" onClick={() => navigate({ to: "/templates" })}>
-                  <Wand2 className="w-4 h-4" /> Browse templates
+                  <Wand2 className="w-4 h-4" /> Browse presets
                 </Button>
               </div>
             </div>

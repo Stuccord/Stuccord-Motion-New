@@ -42,7 +42,7 @@ const lookName = (id: string) =>
   NEW_PROJECT_STYLES.find((s) => s.id === id)?.label.split(" — ")[0] ?? id;
 
 export const Route = createFileRoute("/_authenticated/templates")({
-  head: () => ({ meta: [{ title: "Templates — Stuccord Motion" }] }),
+  head: () => ({ meta: [{ title: "Presets — Stuccord Motion" }] }),
   component: TemplatesPage,
 });
 
@@ -61,8 +61,8 @@ function TemplatesPage() {
 
   return (
     <AppShell
-      title="Templates"
-      subtitle="Pick the kind of video you’re making. Each template sets the shape, the look and what the AI focuses on, then makes the whole edit for you."
+      title="Presets"
+      subtitle="Pick the kind of video you’re making. Each preset sets the shape, the look and what the AI focuses on, then makes the whole edit for you."
       actions={<Button onClick={() => navigate({ to: "/projects/new" })}>Start from blank</Button>}
     >
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
@@ -70,7 +70,7 @@ function TemplatesPage() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
           <input
             value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search templates…"
+            placeholder="Search presets…"
             className="w-full h-10 pl-8 pr-3 text-sm bg-card border border-border rounded-full focus:border-primary/60 focus:outline-none"
           />
         </div>
