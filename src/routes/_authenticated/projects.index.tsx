@@ -319,7 +319,7 @@ function ProjectsPage() {
               <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
               <div className="mt-3 flex items-start justify-between gap-2 px-0.5">
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium text-sm truncate">{p.title}</div>
+                  <div className="font-display text-[16px] leading-6 font-bold tracking-[-0.04em] lg:font-sans lg:text-sm lg:leading-normal lg:font-medium lg:tracking-normal truncate">{p.title}</div>
                   <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
                     <Clock className="w-3 h-3" />
                     {formatDistanceToNow(new Date(p.created_at), { addSuffix: true })}

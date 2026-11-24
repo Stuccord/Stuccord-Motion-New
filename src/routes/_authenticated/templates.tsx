@@ -124,8 +124,8 @@ function TemplatesPage() {
                   {lookName(t.preset)}
                 </div>
               </div>
-              <div className="caps-label text-[13px] sm:text-[14px] mt-2 leading-tight">{t.title}</div>
-              <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.desc}</div>
+              <div className="font-display font-bold text-[16px] leading-6 tracking-[-0.04em] lg:caps-label lg:text-[14px] lg:leading-tight mt-1 lg:mt-2">{t.title}</div>
+              <div className="text-[12px] leading-[18px] lg:text-xs lg:leading-normal text-muted-foreground mt-1 line-clamp-2">{t.desc}</div>
             </div>
           </button>
         ))}

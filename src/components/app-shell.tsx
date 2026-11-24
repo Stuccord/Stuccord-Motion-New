@@ -67,8 +67,11 @@ export function AppShell({
   subtitle,
   actions,
   eyebrow,
+  barTitle,
 }: {
   children: ReactNode;
+  /** The page's name in the top bar on phones and tablets, when it has no title (Home). */
+  barTitle?: string;
   title?: string;
   subtitle?: string;
   actions?: ReactNode;
@@ -134,13 +137,15 @@ export function AppShell({
       <Link
         to={item.to}
         className={cn(
-          "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150",
+          // Phones and tablets (the More menu): Higgsfield's rows, 44 px, 20 px
+          // icons, 16 px labels. Computers: the compact sidebar.
+          "group relative flex items-center gap-2.5 rounded-[10px] lg:rounded-lg h-11 lg:h-auto px-2.5 lg:py-2 text-[16px] leading-5 lg:text-[13px] lg:leading-normal font-medium transition-all duration-150",
           active
             ? "bg-white/[0.07] text-foreground font-semibold before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-primary"
             : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
         )}
       >
-        <Icon className={cn("w-4 h-4 shrink-0 transition-colors", active ? "text-primary-glow" : "text-muted-foreground group-hover:text-foreground")} />
+        <Icon className={cn("w-5 h-5 lg:w-4 lg:h-4 shrink-0 transition-colors", active ? "text-primary-glow" : "text-muted-foreground group-hover:text-foreground")} />
         <span className="truncate">{item.label}</span>
         {item.badge && (
           <span className={cn(
@@ -172,6 +177,13 @@ export function AppShell({
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        {/* The More menu's first row, like Higgsfield's "Create". */}
+        <Link
+          to="/projects/new"
+          className="lg:hidden flex h-11 items-center gap-2.5 rounded-[10px] border border-primary/30 bg-primary/15 px-2.5 text-[16px] font-semibold leading-5 text-primary-glow"
+        >
+          <Plus className="w-5 h-5" /> Make a video
+        </Link>
         <div>
           <div className="px-2 pb-2 font-display text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">
             Workspace
@@ -260,7 +272,7 @@ export function AppShell({
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 bg-[oklch(0.135_0.004_275)] border-r border-border shadow-2xl">
+          <aside className="absolute inset-y-0 left-0 w-[327px] max-w-[87vw] bg-[oklch(0.135_0.004_275)] border-r border-border shadow-2xl">
             {SidebarInner}
           </aside>
         </div>
@@ -268,7 +280,18 @@ export function AppShell({
 
       <div className="lg:pl-60">
         <header className="sticky top-0 z-20 border-b border-border bg-background/75 backdrop-blur-xl">
-          <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
+          <div className="relative flex h-14 items-center gap-3 px-4 sm:px-6">
+            {/* Phones and tablets: the page's name in the middle of the bar (Higgsfield's way). */}
+            {(title ?? barTitle) && (
+              <div
+                className="lg:hidden pointer-events-none absolute inset-x-0 top-0 flex h-14 items-center justify-center"
+                aria-hidden
+              >
+                <span className="max-w-[48%] truncate text-[16px] font-medium leading-5 text-foreground">
+                  {title ?? barTitle}
+                </span>
+              </div>
+            )}
             {/* Phones and tablets: the logo here; the pages are in the tab bar below. */}
             <Link to="/dashboard" className="lg:hidden flex items-center gap-2 shrink-0" aria-label="Stuccord Motion home">
               <img
@@ -332,17 +355,25 @@ export function AppShell({
             </div>
           </div>
 
-          {(title || actions || eyebrow) && (
-            <div className="px-4 sm:px-6 pb-5 pt-1 flex items-end justify-between gap-4 flex-wrap">
+          {(title || subtitle || actions || eyebrow) && (
+            <div
+              className={cn(
+                "px-4 sm:px-6 pb-4 lg:pb-5 pt-1 flex items-end justify-between gap-4 flex-wrap",
+                // Below lg the name is in the bar: nothing left to show here without these.
+                !subtitle && !actions && !eyebrow && "max-lg:hidden",
+              )}
+            >
               <div className="min-w-0">
                 {eyebrow && <div className="mb-1.5">{eyebrow}</div>}
                 {title && (
-                  <h1 className="font-display text-[26px] sm:text-[32px] leading-[1.1] font-bold tracking-[-0.03em] text-foreground text-balance break-words">
+                  <h1 className="max-lg:sr-only font-display text-[32px] leading-[1.1] font-bold tracking-[-0.03em] text-foreground text-balance break-words">
                     {title}
                   </h1>
                 )}
                 {subtitle && (
-                  <p className="text-[13px] text-muted-foreground mt-1.5 max-w-2xl">{subtitle}</p>
+                  <p className="text-[14px] leading-5 lg:text-[13px] lg:leading-normal text-muted-foreground lg:mt-1.5 max-w-2xl">
+                    {subtitle}
+                  </p>
                 )}
               </div>
               {actions && <div className="flex items-center gap-2">{actions}</div>}
@@ -390,10 +421,10 @@ function MobileTabBar({
 }) {
   const tab = (active: boolean) =>
     cn(
-      "flex flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[10.5px] font-medium transition-colors",
-      active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+      "flex flex-1 flex-col items-center justify-center gap-1 py-1.5 text-[12px] leading-4 transition-colors",
+      active ? "text-foreground font-semibold" : "text-muted-foreground font-medium hover:text-foreground",
     );
-  const icon = (active: boolean) => cn("w-5 h-5", active && "text-primary-glow");
+  const icon = (active: boolean) => cn("w-[22px] h-[22px]", active && "text-primary-glow");
   const items = [
     { to: "/dashboard", label: "Home", Icon: Home, exact: true },
     { to: "/projects", label: "Projects", Icon: Film },
@@ -405,7 +436,7 @@ function MobileTabBar({
       aria-label="Main"
       data-tab-bar
     >
-      <div className="mx-auto flex h-16 max-w-lg items-center px-2">
+      <div className="mx-auto flex h-[68px] max-w-lg items-center px-2">
         {items.map(({ to, label, Icon, exact }) => {
           const active = !moreOpen && isActive(to, exact) && !isActive("/projects/new");
           return (
@@ -419,9 +450,9 @@ function MobileTabBar({
           <Link
             to="/projects/new"
             aria-label="Make a video"
-            className="flex h-11 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] active:scale-95 transition-transform"
+            className="flex h-[46px] w-[76px] items-center justify-center rounded-[14px] bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] active:scale-95 transition-transform"
           >
-            <Sparkles className="w-5 h-5" />
+            <Sparkles className="w-6 h-6" />
           </Link>
         </div>
         {after.map(({ to, label, Icon }) => {

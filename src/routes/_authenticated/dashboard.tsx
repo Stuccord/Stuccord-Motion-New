@@ -25,6 +25,8 @@ import {
   Scissors,
   Image as ImageIcon,
   MoreHorizontal,
+  FolderOpen,
+  Palette,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -123,7 +125,7 @@ function Home() {
   );
 
   return (
-    <AppShell>
+    <AppShell barTitle="Home">
       <div className="max-w-6xl mx-auto space-y-10">
 
         {/* Hero: the one thing the app does — raw footage in, finished edit out */}
@@ -162,8 +164,38 @@ function Home() {
           </div>
         </section>
 
-        {/* Primary create cards: the real ways in (a swipe row on phones) */}
-        <div className={cn(SWIPE_ROW, "md:gap-4 md:grid-cols-3 *:w-[82%] *:shrink-0 *:snap-start md:*:w-auto")}>
+        {/* Phones: the ways in as a row of round shortcuts (Higgsfield's home
+            arrangement: 56 px circles, 12 px labels); the big cards from md up. */}
+        <nav className="md:hidden grid grid-cols-4 gap-1" aria-label="Shortcuts" data-shortcuts>
+          {[
+            { label: "Make a video", Icon: Plus, to: "/projects/new" as const, accent: true },
+            { label: "Templates", Icon: Wand2, to: "/templates" as const },
+            { label: "My projects", Icon: FolderOpen, to: "/projects" as const },
+            { label: "Brand kit", Icon: Palette, to: "/settings" as const, search: { tab: "brand" } },
+          ].map(({ label, Icon, to, accent, search }) => (
+            <Link
+              key={label}
+              to={to}
+              search={search as never}
+              className="flex flex-col items-center gap-2.5 py-1 text-center active:scale-95 transition-transform"
+            >
+              <span
+                className={cn(
+                  "grid h-14 w-14 place-items-center rounded-full border",
+                  accent
+                    ? "border-primary/40 bg-primary/20 text-primary-glow"
+                    : "border-white/10 bg-white/10 text-foreground",
+                )}
+              >
+                <Icon className="h-6 w-6" />
+              </span>
+              <span className="text-[12px] font-semibold leading-4 text-foreground/80">{label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        {/* Primary create cards: the real ways in (md up) */}
+        <div className="hidden md:grid gap-4 md:grid-cols-3">
           <CreateCard
             title="Make a video"
             desc="Upload a take. Stuccord makes the whole edit: graphics, AI scenes, captions, sound and colour."
@@ -298,10 +330,10 @@ function Home() {
                   <t.icon className="w-4 h-4 md:w-3.5 md:h-3.5" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[14px] md:text-[13px] font-semibold md:font-medium text-foreground truncate">
+                  <span className="block font-display text-[16px] leading-6 font-bold tracking-[-0.04em] md:font-sans md:text-[13px] md:leading-normal md:font-medium md:tracking-normal text-foreground truncate">
                     {t.label}
                   </span>
-                  <span className="block md:hidden mt-0.5 text-[12px] leading-snug text-muted-foreground">
+                  <span className="block md:hidden text-[12px] leading-[18px] text-muted-foreground">
                     {t.desc}
                   </span>
                 </span>
@@ -378,15 +410,20 @@ function Home() {
         {/* Recent projects */}
         <section>
           <div className="flex items-end justify-between mb-4">
-            <div>
-              <h2 className="caps-label text-[15px] text-foreground">Recent projects</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Pick up where you left off.</p>
+            {/* Phones and tablets: Higgsfield's section header (a coloured line, a 20 px title, View all). */}
+            <div className="flex flex-col-reverse lg:flex-col">
+              <h2 className="font-sans text-[20px] leading-6 font-semibold tracking-[-0.02em] lg:caps-label lg:text-[15px] lg:leading-normal text-foreground">
+                Recent projects
+              </h2>
+              <p className="text-[14px] leading-5 text-primary-glow lg:text-xs lg:leading-normal lg:text-muted-foreground lg:mt-0.5">
+                Pick up where you left off
+              </p>
             </div>
             <Link
               to="/projects"
-              className="text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+              className="text-[14px] leading-4 lg:text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
             >
-              View all <ArrowUpRight className="w-3 h-3" />
+              View all <ArrowUpRight className="w-3.5 h-3.5 lg:w-3 lg:h-3" />
             </Link>
           </div>
 
@@ -427,7 +464,9 @@ function Home() {
                     <CardContent className="p-0">
                       <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
                       <div className="mt-3">
-                        <div className="text-sm font-medium truncate text-foreground">{p.title}</div>
+                        <div className="font-display text-[16px] leading-6 font-bold tracking-[-0.04em] lg:font-sans lg:text-sm lg:leading-normal lg:font-medium lg:tracking-normal truncate text-foreground">
+                          {p.title}
+                        </div>
                         <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
                           <Clock className="w-3 h-3" />
                           {formatDistanceToNow(new Date(p.created_at), { addSuffix: true })}
