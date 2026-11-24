@@ -8,7 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { formatDistanceToNow } from "date-fns";
-import { Bell, CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { listNotifications } from "@/lib/projects.functions";
@@ -49,8 +49,13 @@ export function NotificationsBell() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Service alerts (the app's owner only) always show.
   const shown = items.filter((n) =>
-    n.kind === "export_done" ? prefs.exportDone : prefs.exportFailed,
+    n.kind === "service_alert"
+      ? true
+      : n.kind === "export_done"
+        ? prefs.exportDone
+        : prefs.exportFailed,
   );
   const unread = shown.filter((n) => Date.parse(n.at) > seenAt).length;
 
@@ -159,6 +164,7 @@ export function NotificationsBell() {
             {shown.map((n) => {
               const isNew = Date.parse(n.at) > seenAt;
               const done = n.kind === "export_done";
+              const alert = n.kind === "service_alert";
               return (
                 <li key={n.id}>
                   <button
@@ -168,21 +174,33 @@ export function NotificationsBell() {
                     )}
                     onClick={() => {
                       setOpen(false);
-                      navigate({ to: "/projects/$projectId", params: { projectId: n.project_id } });
+                      if (n.project_id) {
+                        navigate({
+                          to: "/projects/$projectId",
+                          params: { projectId: n.project_id },
+                        });
+                      }
                     }}
                   >
-                    {done ? (
+                    {alert ? (
+                      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                    ) : done ? (
                       <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" />
                     ) : (
                       <XCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-600" />
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13px] text-foreground">
-                        {done ? "Export ready" : "Export failed"}:{" "}
+                        {alert ? "Needs you" : done ? "Export ready" : "Export failed"}:{" "}
                         <span className="font-medium">{n.project_title}</span>
                       </span>
                       {!done && n.error && (
-                        <span className="block text-[11px] text-muted-foreground truncate">
+                        <span
+                          className={cn(
+                            "block text-[11px] text-muted-foreground",
+                            alert ? "whitespace-normal" : "truncate",
+                          )}
+                        >
                           {n.error}
                         </span>
                       )}

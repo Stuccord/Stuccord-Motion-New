@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { friendlyText } from "@/lib/service-problems";
 import { createHmac, timingSafeEqual } from "crypto";
 import { saveIncomingTranscripts } from "@/lib/transcripts.server";
 
@@ -58,7 +59,12 @@ export const Route = createFileRoute("/api/public/render-webhook")({
           status: payload.status,
           ...(typeof payload.progress === "number" ? { progress: payload.progress } : {}),
           ...(payload.stage_message !== undefined ? { stage_message: payload.stage_message } : {}),
-          ...(payload.error !== undefined ? { error: payload.error } : {}),
+          ...(payload.error !== undefined
+            ? {
+                error:
+                  typeof payload.error === "string" ? friendlyText(payload.error) : payload.error,
+              }
+            : {}),
           ...(payload.edit_plan !== undefined ? { edit_plan: payload.edit_plan as never } : {}),
           ...(payload.output_path ? { output_path: payload.output_path } : {}),
         };
@@ -89,7 +95,10 @@ export const Route = createFileRoute("/api/public/render-webhook")({
           | { status: "processing" }
           | null = null;
         if (payload.status === "completed") {
-          projectPatch = { status: "ready", ...(payload.output_path ? { output_path: payload.output_path } : {}) };
+          projectPatch = {
+            status: "ready",
+            ...(payload.output_path ? { output_path: payload.output_path } : {}),
+          };
         } else if (payload.status === "failed") {
           projectPatch = { status: "failed" };
         } else if (["transcribing", "planning", "rendering"].includes(payload.status)) {

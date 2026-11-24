@@ -52,6 +52,7 @@ import { makeAiMusicFor } from "@/lib/music.functions";
 import { describeSpeakerFor } from "@/lib/speaker-look.functions";
 import { startCloudRender } from "@/lib/projects.functions";
 import { workerSecret } from "@/lib/worker-secret";
+import { friendlyText } from "@/lib/service-problems";
 import { motionAccent } from "@/motion/theme";
 
 type Db = SupabaseClient<Database>;
@@ -71,8 +72,9 @@ const MAIN_TYPES = new Set(["auto", "aroll"]);
 
 const DONE: TickResult = { done: true };
 const next = (ms = 0): TickResult => ({ wait_ms: ms });
+/** An error's words for the customer (a friendly line for problems on the app's side), or the fallback. */
 const message = (e: unknown, fallback: string) =>
-  (e instanceof Error && e.message.trim()) || fallback;
+  friendlyText((e instanceof Error && e.message.trim()) || fallback);
 const settled = (s: AutoStep | undefined) => s?.state === "done" || s?.state === "skipped";
 
 async function admin(): Promise<Db> {
@@ -722,7 +724,7 @@ export async function startAutoEditRun(
 
   // The worker drives it from here.
   const failStart = async (why: string) => {
-    state = { ...state, status: "failed", error: why };
+    state = { ...state, status: "failed", error: friendlyText(why) };
     await db
       .from("projects")
       .update({ auto_edit: state as unknown as Json })

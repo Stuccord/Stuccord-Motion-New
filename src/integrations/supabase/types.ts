@@ -459,6 +459,36 @@ export type Database = {
           },
         ]
       }
+      service_alerts: {
+        Row: {
+          count: number
+          first_at: string
+          id: string
+          last_at: string
+          message: string
+          problem: string
+          service: string
+        }
+        Insert: {
+          count?: number
+          first_at?: string
+          id?: string
+          last_at?: string
+          message: string
+          problem: string
+          service: string
+        }
+        Update: {
+          count?: number
+          first_at?: string
+          id?: string
+          last_at?: string
+          message?: string
+          problem?: string
+          service?: string
+        }
+        Relationships: []
+      }
       teams: {
         Row: {
           created_at: string
@@ -703,6 +733,10 @@ export type Database = {
       team_role: {
         Args: { team: string }
         Returns: string
+      }
+      report_service_alert: {
+        Args: { p_service: string; p_problem: string; p_message: string }
+        Returns: undefined
       }
       auto_edit_patch: {
         Args: { p_project: string; p_run: string; p_top: Json; p_steps: Json }

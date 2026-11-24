@@ -307,7 +307,9 @@ export const listProjects = createServerFn({ method: "GET" })
     // is empty), shown as its saved thumbnail.
     const { data: clipRows, error: cErr } = await context.supabase
       .from("clips")
-      .select("id, project_id, role, ordinal, storage_path, filename, trim_in_ms, trim_out_ms, duration_ms")
+      .select(
+        "id, project_id, role, ordinal, storage_path, filename, trim_in_ms, trim_out_ms, duration_ms",
+      )
       .in(
         "project_id",
         projects.map((p) => p.id),
@@ -371,7 +373,11 @@ export const getUsageStats = createServerFn({ method: "GET" })
     const team = input.workspace === PERSONAL ? null : input.workspace;
     const now = new Date();
     const start30 = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000);
-    const start30Iso = new Date(start30.getFullYear(), start30.getMonth(), start30.getDate()).toISOString();
+    const start30Iso = new Date(
+      start30.getFullYear(),
+      start30.getMonth(),
+      start30.getDate(),
+    ).toISOString();
 
     let pq = context.supabase
       .from("projects")
@@ -406,7 +412,8 @@ export const getUsageStats = createServerFn({ method: "GET" })
 
     // Format mix from projects
     const ratioCounts: Record<string, number> = { "9:16": 0, "16:9": 0, "1:1": 0 };
-    for (const p of projectsList) ratioCounts[p.aspect_ratio] = (ratioCounts[p.aspect_ratio] ?? 0) + 1;
+    for (const p of projectsList)
+      ratioCounts[p.aspect_ratio] = (ratioCounts[p.aspect_ratio] ?? 0) + 1;
     const totalRatio = Object.values(ratioCounts).reduce((a, b) => a + b, 0);
     const formatMix = (["9:16", "16:9", "1:1"] as const).map((r) => ({
       ratio: r,
@@ -416,7 +423,8 @@ export const getUsageStats = createServerFn({ method: "GET" })
 
     // Preset mix
     const presetCounts: Record<string, number> = {};
-    for (const p of projectsList) presetCounts[p.style_preset] = (presetCounts[p.style_preset] ?? 0) + 1;
+    for (const p of projectsList)
+      presetCounts[p.style_preset] = (presetCounts[p.style_preset] ?? 0) + 1;
     const topPreset = Object.entries(presetCounts).sort((a, b) => b[1] - a[1])[0] ?? null;
 
     // Minutes rendered (sum duration_seconds of ready projects, fallback 30s each)
@@ -447,7 +455,9 @@ export const listAllClips = createServerFn({ method: "GET" })
     const team = input.workspace === PERSONAL ? null : input.workspace;
     let q = context.supabase
       .from("clips")
-      .select("id, filename, size_bytes, role, created_at, storage_path, project_id, trim_in_ms, trim_out_ms, duration_ms, projects!inner(title, aspect_ratio, team_id, user_id)")
+      .select(
+        "id, filename, size_bytes, role, created_at, storage_path, project_id, trim_in_ms, trim_out_ms, duration_ms, projects!inner(title, aspect_ratio, team_id, user_id)",
+      )
       .order("created_at", { ascending: false })
       .limit(200);
     q = team
@@ -493,14 +503,36 @@ export const listNotifications = createServerFn({ method: "GET" })
       .order("updated_at", { ascending: false })
       .limit(30);
     if (error) throw new Error(error.message);
-    return (data ?? []).map((j) => ({
+    const exports = (data ?? []).map((j) => ({
       id: j.id,
       kind: j.status === "completed" ? ("export_done" as const) : ("export_failed" as const),
-      project_id: j.project_id,
+      project_id: j.project_id as string | null,
       project_title: (j.projects as unknown as { title: string } | null)?.title ?? "Untitled",
       error: j.error,
       at: j.updated_at,
     }));
+    // The app's owner also sees problems on the app's side (an AI service out
+    // of credit, a key, the worker out of date) from the last week, with the
+    // real reason: customers were shown a friendly line (service-problems.ts).
+    const { isAppOwner } = await import("@/lib/owner.server");
+    if (!isAppOwner(context.userId)) return exports;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: alerts, error: aErr } = await supabaseAdmin
+      .from("service_alerts")
+      .select("id, service, message, count, last_at")
+      .gte("last_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order("last_at", { ascending: false })
+      .limit(10);
+    if (aErr) console.warn("[notifications] Couldn't read service alerts:", aErr.message);
+    const owner = (alerts ?? []).map((a) => ({
+      id: `alert:${a.id}`,
+      kind: "service_alert" as const,
+      project_id: null,
+      project_title: a.service,
+      error: a.count > 1 ? `${a.message} (${a.count} times)` : a.message,
+      at: a.last_at,
+    }));
+    return [...owner, ...exports].sort((x, y) => Date.parse(y.at) - Date.parse(x.at));
   });
 
 /** A cover file made by the Thumbnail maker (anything else in thumbnail_url is ignored). */
@@ -522,7 +554,10 @@ export const setProjectCover = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
     const prefix = `${folder}/thumbs/cover-${data.project_id}-`;
-    if (data.path !== null && (!inFolder(data.path, folder) || !data.path.startsWith(prefix) || !data.path.endsWith(".jpg"))) {
+    if (
+      data.path !== null &&
+      (!inFolder(data.path, folder) || !data.path.startsWith(prefix) || !data.path.endsWith(".jpg"))
+    ) {
       throw new Error("Covers are saved in the project's folder");
     }
     const { data: before, error: rErr } = await context.supabase
@@ -582,21 +617,24 @@ export const getProject = createServerFn({ method: "POST" })
       context.userId,
     );
     let team: { id: string; name: string; role: TeamRole } | null = null;
-    const [{ data: project, error: pErr }, { data: clips, error: cErr }, { data: jobs, error: jErr }] =
-      await Promise.all([
-        context.supabase.from("projects").select("*").eq("id", data.id).maybeSingle(),
-        context.supabase
-          .from("clips")
-          .select("*")
-          .eq("project_id", data.id)
-          .order("ordinal", { ascending: true }),
-        context.supabase
-          .from("render_jobs")
-          .select("*")
-          .eq("project_id", data.id)
-          .order("created_at", { ascending: false })
-          .limit(1),
-      ]);
+    const [
+      { data: project, error: pErr },
+      { data: clips, error: cErr },
+      { data: jobs, error: jErr },
+    ] = await Promise.all([
+      context.supabase.from("projects").select("*").eq("id", data.id).maybeSingle(),
+      context.supabase
+        .from("clips")
+        .select("*")
+        .eq("project_id", data.id)
+        .order("ordinal", { ascending: true }),
+      context.supabase
+        .from("render_jobs")
+        .select("*")
+        .eq("project_id", data.id)
+        .order("created_at", { ascending: false })
+        .limit(1),
+    ]);
     if (pErr) throw new Error(pErr.message);
     if (cErr) throw new Error(cErr.message);
     if (jErr) throw new Error(jErr.message);
@@ -622,7 +660,19 @@ export const getProject = createServerFn({ method: "POST" })
 
 /** Every file directly in a storage folder (paths with the folder). */
 async function listFolder(
-  db: { storage: { from: (b: string) => { list: (p: string, o: { limit: number; offset: number }) => Promise<{ data: { name: string; id: string | null }[] | null; error: { message: string } | null }> } } },
+  db: {
+    storage: {
+      from: (b: string) => {
+        list: (
+          p: string,
+          o: { limit: number; offset: number },
+        ) => Promise<{
+          data: { name: string; id: string | null }[] | null;
+          error: { message: string } | null;
+        }>;
+      };
+    };
+  },
   bucket: string,
   folder: string,
 ): Promise<string[]> {
@@ -651,7 +701,9 @@ export const deleteProject = createServerFn({ method: "POST" })
       context.userId,
     );
     if (!canDelete) {
-      throw new Error("Only the team's owner and admins, or whoever made it, can delete this project");
+      throw new Error(
+        "Only the team's owner and admins, or whoever made it, can delete this project",
+      );
     }
     // Its clips' thumbnail pictures go with it.
     const { data: projectClips } = await context.supabase
@@ -659,10 +711,12 @@ export const deleteProject = createServerFn({ method: "POST" })
       .select("id, storage_path")
       .eq("project_id", data.id);
     const thumbs = [
-      ...((await thumbnailPaths(
-        context.supabase,
-        (projectClips ?? []).map((c) => c.id),
-      )) ?? new Map<string, string>()).values(),
+      ...(
+        (await thumbnailPaths(
+          context.supabase,
+          (projectClips ?? []).map((c) => c.id),
+        )) ?? new Map<string, string>()
+      ).values(),
     ].map((thumbnail_path) => ({ thumbnail_path }));
     const { data: projectRow } = await context.supabase
       .from("projects")
@@ -704,13 +758,21 @@ export const deleteProject = createServerFn({ method: "POST" })
       const used = new Set((stillUsed ?? []).map((c) => c.storage_path));
       const unused = media.filter((m) => !used.has(m));
       for (let i = 0; i < unused.length; i += 500) {
-        const { error: mErr } = await admin.storage.from("raw-clips").remove(unused.slice(i, i + 500));
+        const { error: mErr } = await admin.storage
+          .from("raw-clips")
+          .remove(unused.slice(i, i + 500));
         if (mErr) console.error("[deleteProject] Failed to delete files:", mErr.message);
       }
     }
-    const pictures = await listFolder(admin, SCENE_BUCKET, sceneImageFolder(owned.user_id, owned.id));
+    const pictures = await listFolder(
+      admin,
+      SCENE_BUCKET,
+      sceneImageFolder(owned.user_id, owned.id),
+    );
     for (let i = 0; i < pictures.length; i += 500) {
-      const { error: iErr } = await admin.storage.from(SCENE_BUCKET).remove(pictures.slice(i, i + 500));
+      const { error: iErr } = await admin.storage
+        .from(SCENE_BUCKET)
+        .remove(pictures.slice(i, i + 500));
       if (iErr) console.error("[deleteProject] Failed to delete pictures:", iErr.message);
     }
     return { ok: true };
@@ -795,15 +857,22 @@ export const moveProject = createServerFn({ method: "POST" })
     if (imgFrom !== imgTo) {
       for (const path of await listFolder(db, SCENE_BUCKET, imgFrom)) files.set(path, SCENE_BUCKET);
     }
-    const repoint = <T,>(value: T): T =>
+    const repoint = <T>(value: T): T =>
       value == null || imgFrom === imgTo
         ? value
         : (JSON.parse(JSON.stringify(value).split(`"${imgFrom}`).join(`"${imgTo}`)) as T);
 
-    const done: { bucket: "raw-clips" | "renders" | typeof SCENE_BUCKET; from: string; to: string }[] = [];
+    const done: {
+      bucket: "raw-clips" | "renders" | typeof SCENE_BUCKET;
+      from: string;
+      to: string;
+    }[] = [];
     const undo = async () => {
       for (const m of done.reverse()) {
-        await db.storage.from(m.bucket).move(m.to, m.from).catch(() => undefined);
+        await db.storage
+          .from(m.bucket)
+          .move(m.to, m.from)
+          .catch(() => undefined);
       }
     };
     for (const [path, bucket] of files) {
@@ -926,7 +995,6 @@ export const attachClip = createServerFn({ method: "POST" })
     return row;
   });
 
-
 export const removeClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
@@ -994,7 +1062,7 @@ export const updateClipOrder = createServerFn({ method: "POST" })
             // Where it starts on the timeline; null follows the clip before it.
             // Left out: unchanged.
             start_ms: z.number().int().nonnegative().nullable().optional(),
-          })
+          }),
         ),
       })
       .parse(d),
@@ -1288,7 +1356,14 @@ export const restoreClipLayout = createServerFn({ method: "POST" })
     const rows = data.clips.flatMap((c) => {
       const row = byId.get(c.id);
       return row && !remove.includes(c.id)
-        ? [{ ...row, ordinal: c.ordinal, trim_in_ms: c.trim_in_ms ?? 0, trim_out_ms: c.trim_out_ms }]
+        ? [
+            {
+              ...row,
+              ordinal: c.ordinal,
+              trim_in_ms: c.trim_in_ms ?? 0,
+              trim_out_ms: c.trim_out_ms,
+            },
+          ]
         : [];
     });
     if (rows.length > 0) {
@@ -1317,7 +1392,6 @@ export const duplicateClip = createServerFn({ method: "POST" })
     await markProjectEdited(context.supabase, src.project_id);
     return copy;
   });
-
 
 export const updateProjectSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1450,11 +1524,13 @@ export const getClipSignedUrl = createServerFn({ method: "POST" })
 export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      project_id: z.string().uuid(),
-      filename: z.string().min(1),
-      ordinal: z.number().int().nonnegative().default(0),
-    }).parse(d),
+    z
+      .object({
+        project_id: z.string().uuid(),
+        filename: z.string().min(1),
+        ordinal: z.number().int().nonnegative().default(0),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
@@ -1556,7 +1632,10 @@ export type ExportAllowance = {
  * Failed exports don't count. Counted with the admin client so exports of
  * projects that have since moved or gone still count.
  */
-export async function exportAllowance(userId: string, teamId: string | null): Promise<ExportAllowance> {
+export async function exportAllowance(
+  userId: string,
+  teamId: string | null,
+): Promise<ExportAllowance> {
   const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
   let q = admin
     .from("render_jobs")
@@ -2060,7 +2139,11 @@ export const finishBrowserRender = createServerFn({ method: "POST" })
       }
 
       const filename = rawPath.slice(expectedPrefix.length);
-      if (!/^[a-zA-Z0-9_.-]+$/.test(filename) || filename.includes("/") || filename.includes("\\")) {
+      if (
+        !/^[a-zA-Z0-9_.-]+$/.test(filename) ||
+        filename.includes("/") ||
+        filename.includes("\\")
+      ) {
         throw new Error("Invalid output path filename");
       }
 
@@ -2173,4 +2256,3 @@ export const finishBrowserRender = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
-

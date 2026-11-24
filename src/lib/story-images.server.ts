@@ -9,6 +9,7 @@
 // of them, with consent) is sent along for scenes with the speaker in them,
 // and cartoon graphics are drawn in its 3D animated look.
 
+import { classifyProblem, reportProblem } from "@/lib/service-problems";
 import {
   HiggsfieldError,
   fetchResult,
@@ -44,7 +45,14 @@ export function imageModel(): string {
 }
 
 /** A problem the user can act on; its message is shown as is. */
-export class ImageError extends Error {}
+export class ImageError extends Error {
+  /**
+   * The picture service couldn't make it for reasons of its own (out of
+   * credit, a key, down, or it failed on its side), not because of the
+   * description: worth trying the other service.
+   */
+  serviceSide = false;
+}
 
 /**
  * Cinematic (stories), 3D animated (cartoon graphics), or a photo-real object
@@ -165,20 +173,20 @@ export function houseStyle(
     ...(own
       ? own.lines
       : style === "object"
-      ? [
-          "Photo-real 3D render of the object, like a premium product shot: one hero object, centred, with clear space around it.",
-          "Near-black background, dramatic low-key studio light, a strong red rim light on one side, soft warm highlights, shallow depth of field, macro lens, rich materials and reflections.",
-          "No people, no hands.",
-        ]
-      : style === "cartoon"
-      ? [
-          "Still from a modern 3D animated feature film: expressive characters, soft rounded shapes, rich materials.",
-          "Cinematic lighting with a moody, low-key background and a soft rim light on the character.",
-        ]
-      : [
-          "Cinematic film still, 35mm photograph, shallow depth of field.",
-          "Moody, low-key lighting with deep shadows and soft highlights, subtle film grain, realistic.",
-        ]),
+        ? [
+            "Photo-real 3D render of the object, like a premium product shot: one hero object, centred, with clear space around it.",
+            "Near-black background, dramatic low-key studio light, a strong red rim light on one side, soft warm highlights, shallow depth of field, macro lens, rich materials and reflections.",
+            "No people, no hands.",
+          ]
+        : style === "cartoon"
+          ? [
+              "Still from a modern 3D animated feature film: expressive characters, soft rounded shapes, rich materials.",
+              "Cinematic lighting with a moody, low-key background and a soft rim light on the character.",
+            ]
+          : [
+              "Cinematic film still, 35mm photograph, shallow depth of field.",
+              "Moody, low-key lighting with deep shadows and soft highlights, subtle film grain, realistic.",
+            ]),
     accentHex && tint ? `A gentle colour cast toward ${accentHex} in the light and shadows.` : "",
     "No text, letters, numbers, captions, logos or watermarks anywhere in the picture.",
   ]
@@ -307,8 +315,43 @@ async function higgsfieldImage(
       throw new ImageError("The image service returned a picture we can't use. Try again.");
     return { data: file.data, mimeType };
   } catch (e) {
-    if (e instanceof HiggsfieldError) throw new ImageError(e.message);
+    if (e instanceof HiggsfieldError) {
+      const err = new ImageError(e.message);
+      // Not a description it turned down or couldn't use.
+      err.serviceSide = !/turned this description down|couldn't use this request/.test(e.message);
+      throw err;
+    }
     throw e;
+  }
+}
+
+/**
+ * Makes a picture on Higgsfield; when Higgsfield can't for reasons of its
+ * own (out of credit, a key, down), on Gemini instead, if the server has a
+ * Gemini key. The owner is told about Higgsfield's problem either way.
+ */
+async function withGeminiFallback(
+  higgsfield: () => Promise<ImageBytes>,
+  gemini: () => Promise<ImageBytes>,
+): Promise<ImageBytes> {
+  try {
+    return await higgsfield();
+  } catch (e) {
+    if (!(e instanceof ImageError) || !e.serviceSide || !process.env.GEMINI_API_KEY?.trim())
+      throw e;
+    const problem = classifyProblem(e.message);
+    if (problem) reportProblem(problem, e.message);
+    console.warn("[story-images] Higgsfield couldn't make the picture, trying Gemini:", e.message);
+    try {
+      return await gemini();
+    } catch (g) {
+      const why = g instanceof Error ? g.message : String(g);
+      console.warn("[story-images] Gemini couldn't either:", why);
+      const gp = classifyProblem(why);
+      if (gp) reportProblem(gp, why);
+      // Higgsfield's reason is the one that matters (Gemini is the stand-in).
+      throw e;
+    }
   }
 }
 
@@ -364,7 +407,10 @@ export function generateSceneImage(
   fetchFn: typeof fetch = fetch,
 ): Promise<ImageBytes> {
   if (imageProvider() === "higgsfield") {
-    return higgsfieldImage(scenePromptText(req), req.aspect, sceneAttachments(req), fetchFn);
+    return withGeminiFallback(
+      () => higgsfieldImage(scenePromptText(req), req.aspect, sceneAttachments(req), fetchFn),
+      () => requestImage(imageRequestBody(req), fetchFn),
+    );
   }
   return requestImage(imageRequestBody(req), fetchFn);
 }
@@ -375,7 +421,10 @@ export function generateSpeakerCartoon(
   fetchFn: typeof fetch = fetch,
 ): Promise<ImageBytes> {
   if (imageProvider() === "higgsfield") {
-    return higgsfieldImage(CARTOON_PROMPT, "1:1", [photo], fetchFn);
+    return withGeminiFallback(
+      () => higgsfieldImage(CARTOON_PROMPT, "1:1", [photo], fetchFn),
+      () => requestImage(cartoonRequestBody(photo), fetchFn),
+    );
   }
   return requestImage(cartoonRequestBody(photo), fetchFn);
 }

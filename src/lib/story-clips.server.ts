@@ -14,6 +14,7 @@ import {
   uploadToHiggsfield,
 } from "@/lib/higgsfield.server";
 import { SCENE_CLIP_MODEL } from "@/lib/motion-plan";
+import { friendlyText } from "@/lib/service-problems";
 
 /** A problem the user can act on; its message is shown as is. */
 export class ClipError extends Error {}
@@ -70,7 +71,9 @@ export async function checkClip(requestId: string): Promise<
     result = await generationStatus(requestId);
   } catch (e) {
     if (e instanceof HiggsfieldError && e.transient) return { state: "running" };
-    if (e instanceof HiggsfieldError) return { state: "failed", error: e.message, retry: false };
+    if (e instanceof HiggsfieldError) {
+      return { state: "failed", error: friendlyText(e.message), retry: false };
+    }
     throw e;
   }
   if (result.status === "queued" || result.status === "in_progress") return { state: "running" };
@@ -82,7 +85,7 @@ export async function checkClip(requestId: string): Promise<
     );
   }
   if (result.status !== "completed" && isOutOfCredit(result)) {
-    return { state: "failed", error: OUT_OF_CREDIT, retry: false };
+    return { state: "failed", error: friendlyText(OUT_OF_CREDIT), retry: false };
   }
   if (result.status === "nsfw") {
     return {

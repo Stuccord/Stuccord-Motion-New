@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { friendlyText } from "@/lib/service-problems";
 import { createHmac, timingSafeEqual } from "crypto";
 import { saveIncomingTranscripts } from "@/lib/transcripts.server";
 
@@ -61,7 +62,7 @@ export const Route = createFileRoute("/api/public/transcribe-webhook")({
         const error =
           payload.status === "failed"
             ? typeof payload.error === "string" && payload.error.trim()
-              ? payload.error.slice(0, 500)
+              ? friendlyText(payload.error.slice(0, 500))
               : "Transcribing failed."
             : null;
         const { error: pErr } = await supabaseAdmin

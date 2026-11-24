@@ -2,6 +2,18 @@ import { createStart, createMiddleware } from "@tanstack/react-start";
 
 import { renderErrorPage } from "./lib/error-page";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
+import { friendlyError } from "@/lib/service-problems";
+
+// Problems on the app's side (an AI service out of credit, a key, a setting)
+// reach customers as a friendly line; the owner gets an alert with the real
+// reason (src/lib/service-problems.ts).
+const friendlyErrors = createMiddleware({ type: "function" }).server(async ({ next }) => {
+  try {
+    return await next();
+  } catch (e) {
+    throw friendlyError(e);
+  }
+});
 
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
@@ -19,6 +31,6 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
 });
 
 export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth],
+  functionMiddleware: [attachSupabaseAuth, friendlyErrors],
   requestMiddleware: [errorMiddleware],
 }));
