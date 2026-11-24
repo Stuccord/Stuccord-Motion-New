@@ -129,11 +129,11 @@ function Home() {
       <div className="max-w-6xl mx-auto space-y-10">
 
         {/* Hero: the one thing the app does — raw footage in, finished edit out */}
-        <section className="relative overflow-hidden rounded-3xl border border-primary/25 bg-[radial-gradient(ellipse_80%_120%_at_0%_0%,color-mix(in_oklab,var(--color-primary)_28%,transparent),transparent_60%),linear-gradient(180deg,var(--color-card),var(--color-background))] p-6 sm:p-10">
+        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-[radial-gradient(ellipse_80%_120%_at_0%_0%,rgba(255,255,255,0.05),transparent_60%),linear-gradient(180deg,var(--color-card),var(--color-background))] p-6 sm:p-10">
           <div className="pointer-events-none absolute inset-0 bg-grid opacity-40 [mask-image:radial-gradient(ellipse_at_top_left,black,transparent_70%)]" />
           <div className="relative grid gap-6 md:grid-cols-[1.2fr_1fr] md:items-center">
             <div>
-              <div className="caps-label text-[11px] text-primary-glow">Motion Explainer · auto-edit</div>
+              <div className="caps-label text-[11px] text-foreground/70">Motion Explainer · auto-edit</div>
               <h1 className="mt-3 text-[30px] sm:text-[40px] leading-[1.02] font-bold tracking-[-0.03em] text-foreground">
                 What would you like to create?
               </h1>
@@ -143,9 +143,9 @@ function Home() {
               </p>
               <Link
                 to="/projects"
-                className="group mt-5 inline-flex items-center gap-2 rounded-full bg-white/[0.06] border border-border pl-1 pr-3 py-1 text-[12px] font-medium text-foreground hover:border-primary/40 transition-all"
+                className="group mt-5 inline-flex items-center gap-2 rounded-full bg-white/[0.06] border border-border pl-1 pr-3 py-1 text-[12px] font-medium text-foreground hover:border-white/10 transition-all"
               >
-                <span className="rounded-full bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5">New</span>
+                <span className="rounded-full bg-white/10 text-foreground text-[10px] font-semibold px-2 py-0.5">New</span>
                 Studio sound and colour on every export
                 <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
               </Link>
@@ -155,7 +155,7 @@ function Home() {
               onClick={() => navigate({ to: "/projects/new" })}
               className="group flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-white/15 bg-black/30 px-6 py-8 sm:py-10 text-center transition-all hover:border-primary/70 hover:bg-primary/[0.06] cursor-pointer"
             >
-              <span className="grid place-items-center w-12 h-12 rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_30px_-8px_color-mix(in_oklab,var(--color-primary)_80%,transparent)] group-hover:scale-105 transition-transform">
+              <span className="grid place-items-center w-12 h-12 rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_30px_-8px_rgba(255,255,255,0.05)] group-hover:scale-105 transition-transform">
                 <Plus className="w-6 h-6" />
               </span>
               <span className="text-base font-semibold text-foreground">Make a video</span>
@@ -183,7 +183,7 @@ function Home() {
                 className={cn(
                   "grid h-14 w-14 place-items-center rounded-full border",
                   accent
-                    ? "border-primary/40 bg-primary/20 text-primary-glow"
+                    ? "border-white/10 bg-white/[0.06] text-foreground/70"
                     : "border-white/10 bg-white/10 text-foreground",
                 )}
               >
@@ -201,7 +201,7 @@ function Home() {
             desc="Upload a take. Stuccord makes the whole edit: graphics, AI scenes, captions, sound and colour."
             onClick={() => navigate({ to: "/projects/new" })}
             visual={
-              <div className="relative h-full w-full bg-[radial-gradient(ellipse_at_30%_0%,color-mix(in_oklab,var(--color-primary)_28%,transparent),transparent_70%)] p-4">
+              <div className="relative h-full w-full bg-[radial-gradient(ellipse_at_30%_0%,rgba(255,255,255,0.05),transparent_70%)] p-4">
                 <div className="absolute left-4 top-4 right-[42%] space-y-1.5 rounded-xl border border-white/10 bg-black/40 p-2.5 backdrop-blur">
                   {["Transcribed", "Graphics planned", "Story scenes made", "Sound mastered", "Rendered"].map((s) => (
                     <div key={s} className="flex items-center gap-1.5 text-[10px] text-foreground/90">
@@ -229,7 +229,7 @@ function Home() {
             desc="Hooks, talking heads, product demos, podcasts and more, each with its own shape and look."
             onClick={() => navigate({ to: "/templates" })}
             visual={
-              <div className="relative flex h-full w-full items-center justify-center gap-2.5 bg-[radial-gradient(ellipse_at_50%_100%,color-mix(in_oklab,var(--color-primary)_18%,transparent),transparent_70%)] px-3 py-4">
+              <div className="relative flex h-full w-full items-center justify-center gap-2.5 bg-[radial-gradient(ellipse_at_50%_100%,rgba(255,255,255,0.05),transparent_70%)] px-3 py-4">
                 <div className="h-[118px] -rotate-6">
                   <LookPreview look="film" ratio="9:16" image={btsStudio} line="That night" />
                 </div>
@@ -324,7 +324,7 @@ function Home() {
                 params={"params" in t ? t.params : undefined}
                 search={"search" in t ? t.search : undefined}
                 title={"title" in t ? t.title : undefined}
-                className="group flex flex-col items-start gap-3 md:flex-row md:items-center md:gap-2.5 rounded-2xl md:rounded-xl bg-card border border-border p-4 md:px-3.5 md:py-3 hover:border-primary/30 hover:shadow-sm transition-all duration-150"
+                className="group flex flex-col items-start gap-3 md:flex-row md:items-center md:gap-2.5 rounded-2xl md:rounded-xl bg-card border border-border p-4 md:px-3.5 md:py-3 hover:border-white/10 hover:shadow-sm transition-all duration-150"
               >
                 <span className="w-9 h-9 md:w-7 md:h-7 rounded-xl md:rounded-lg bg-surface grid place-items-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-150">
                   <t.icon className="w-4 h-4 md:w-3.5 md:h-3.5" />
@@ -386,8 +386,8 @@ function Home() {
                 ))}
               </div>
             </div>
-            <div className="relative bg-primary/10 border-t md:border-t-0 md:border-l border-border text-foreground p-6 md:p-8 flex flex-col justify-between overflow-hidden">
-              <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-primary/20 blur-3xl pointer-events-none" />
+            <div className="relative bg-white/[0.03] border-t md:border-t-0 md:border-l border-border text-foreground p-6 md:p-8 flex flex-col justify-between overflow-hidden">
+              <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-white/5 blur-3xl pointer-events-none" />
               <div className="relative">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground mb-2">Coming next</div>
                 <ul className="space-y-1 text-[12.5px] text-foreground/80">
@@ -415,7 +415,7 @@ function Home() {
               <h2 className="font-sans text-[20px] leading-6 font-semibold tracking-[-0.02em] lg:caps-label lg:text-[15px] lg:leading-normal text-foreground">
                 Recent projects
               </h2>
-              <p className="text-[14px] leading-5 text-primary-glow lg:text-xs lg:leading-normal lg:text-muted-foreground lg:mt-0.5">
+              <p className="text-[14px] leading-5 text-foreground/70 lg:text-xs lg:leading-normal lg:text-muted-foreground lg:mt-0.5">
                 Pick up where you left off
               </p>
             </div>
@@ -460,7 +460,7 @@ function Home() {
                   params={{ projectId: p.id }}
                   className="group block"
                 >
-                  <Card className="p-2.5 hover:border-primary/40 hover:bg-surface transition-all duration-150 cursor-pointer">
+                  <Card className="p-2.5 hover:border-white/10 hover:bg-surface transition-all duration-150 cursor-pointer">
                     <CardContent className="p-0">
                       <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
                       <div className="mt-3">
@@ -525,7 +525,7 @@ function CreateCard({
         "group relative overflow-hidden transition-all duration-150",
         soon
           ? "cursor-default opacity-75"
-          : "cursor-pointer hover:border-primary/40 hover:-translate-y-0.5",
+          : "cursor-pointer hover:border-white/10 hover:-translate-y-0.5",
       )}
     >
       <div className="h-[172px] overflow-hidden border-b border-border">{visual}</div>

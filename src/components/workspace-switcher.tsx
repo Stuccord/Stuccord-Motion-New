@@ -22,7 +22,7 @@ function Badge({ name, personal }: { name: string; personal?: boolean }) {
     <span
       className={cn(
         "w-6 h-6 rounded-md grid place-items-center text-[11px] font-semibold shrink-0",
-        personal ? "bg-surface-2 text-muted-foreground" : "bg-primary/15 text-primary",
+        personal ? "bg-surface-2 text-muted-foreground" : "bg-white/[0.06] text-primary",
       )}
     >
       {personal ? <User className="w-3.5 h-3.5" /> : name.slice(0, 1).toUpperCase()}

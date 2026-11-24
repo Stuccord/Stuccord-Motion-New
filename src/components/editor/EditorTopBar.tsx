@@ -309,7 +309,7 @@ export function EditorTopBar({
               <Button
                 onClick={onOpenRender}
                 disabled={isRenderDisabled || clipCount === 0}
-                className="h-9 px-3 sm:px-4 bg-gradient-to-r from-violet-600 via-violet-500 to-red-500 hover:from-violet-500 hover:to-red-400 text-neutral-950 font-semibold text-xs rounded-lg shadow-lg shadow-violet-900/30 border border-violet-400/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                className="h-9 px-3 sm:px-4 bg-violet-600 hover:bg-violet-500 text-neutral-950 font-semibold text-xs rounded-lg shadow-lg shadow-violet-900/30 border border-violet-400/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
                 <Sparkles className="hidden sm:block w-3.5 h-3.5 mr-1.5 text-violet-200 animate-pulse" />
                 <span className="sm:hidden">Render</span>

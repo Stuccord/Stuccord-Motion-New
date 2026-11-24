@@ -602,7 +602,7 @@ function StepRow({
         className={cn(
           "w-5 h-5 shrink-0 mt-0.5",
           state === "done" && "text-emerald-400",
-          state === "active" && "text-primary-glow animate-spin",
+          state === "active" && "text-foreground/70 animate-spin",
           state === "failed" && "text-red-400",
           (state === "skipped" || state === "waiting") && "text-muted-foreground/40",
         )}

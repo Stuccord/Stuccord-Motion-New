@@ -37,7 +37,7 @@ export function PageLoading() {
           aria-hidden
           className="absolute inset-0 rounded-3xl"
           style={{
-            background: "radial-gradient(circle, rgba(255,90,31,0.9) 0%, rgba(255,90,31,0) 70%)",
+            background: "radial-gradient(circle, rgba(255,255,255,0.25) 0%, rgba(255,90,31,0) 70%)",
             filter: "blur(14px)",
             animation: "stuccord-glow 1.8s ease-in-out infinite",
           }}
@@ -47,7 +47,7 @@ export function PageLoading() {
           alt=""
           width={64}
           height={64}
-          className="relative h-16 w-16 rounded-2xl bg-white object-contain p-1 shadow-[0_8px_30px_-6px_rgba(255,90,31,0.7)]"
+          className="relative h-16 w-16 rounded-2xl bg-white object-contain p-1 shadow-[0_8px_30px_-6px_rgba(255,255,255,0.25)]"
           style={{ animation: "stuccord-breathe 1.8s ease-in-out infinite" }}
         />
       </div>

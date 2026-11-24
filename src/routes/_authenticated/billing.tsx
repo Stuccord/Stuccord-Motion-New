@@ -66,7 +66,7 @@ function BillingPage() {
 
   return (
     <AppShell title="Billing" subtitle="Your plan and how much of it you've used this month.">
-      <Card className="bg-[radial-gradient(ellipse_70%_120%_at_100%_0%,color-mix(in_oklab,var(--color-primary)_35%,transparent),transparent_60%),linear-gradient(180deg,var(--color-card),var(--color-background))] text-white p-6 sm:p-8 mb-6 relative overflow-hidden border border-primary/30">
+      <Card className="bg-[radial-gradient(ellipse_70%_120%_at_100%_0%,rgba(255,255,255,0.05),transparent_60%),linear-gradient(180deg,var(--color-card),var(--color-background))] text-white p-6 sm:p-8 mb-6 relative overflow-hidden border border-white/10">
         <div className="absolute inset-0 bg-grid opacity-30 [mask-image:radial-gradient(ellipse_at_top_right,black,transparent_70%)] pointer-events-none" />
         <div className="relative">
           <Badge
@@ -164,7 +164,7 @@ function BillingPage() {
 
         <Card className="p-6">
           <div className="flex items-center gap-2 caps-label text-sm">
-            <Clock className="w-4 h-4 text-primary-glow" /> Paid plans
+            <Clock className="w-4 h-4 text-foreground/70" /> Paid plans
           </div>
           <p className="mt-3 text-[13px] text-muted-foreground leading-relaxed">
             Paid plans aren&apos;t available yet, so there&apos;s nothing to pay and no card needed.

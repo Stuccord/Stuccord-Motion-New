@@ -45,7 +45,7 @@ export function PhoneEditorNotice({ projectId }: { projectId: string }) {
     <AppShell title={title}>
       <div className="mx-auto max-w-md space-y-4" data-phone-editor-notice>
         <div className="rounded-3xl border border-border bg-card p-6 text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/15 text-primary-glow">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white/[0.06] text-foreground/70">
             <Laptop className="h-7 w-7" />
           </div>
           <h2 className="mt-4 font-display text-xl font-bold tracking-tight">

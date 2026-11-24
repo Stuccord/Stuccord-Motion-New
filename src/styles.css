@@ -60,7 +60,7 @@
   --shadow-frame: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 32px -12px rgb(0 0 0 / 0.7);
   --shadow-lift:  0 1px 0 0 rgb(255 255 255 / 0.05) inset, 0 8px 24px -8px rgb(0 0 0 / 0.6);
   --shadow-card:  0 1px 0 0 rgb(255 255 255 / 0.03) inset;
-  --shadow-glow:  0 0 40px -10px color-mix(in oklab, var(--primary) 40%, transparent);
+  --shadow-glow:  0 0 0 0 transparent; /* no coloured glows: the accent stays on buttons */
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -88,20 +88,23 @@
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
 
-  /* Signal orange brand: the app's many violet-* classes are pointed at an
-     orange scale built round #FF5A1F (500), so one change recolours them all.
-     (The video looks don't use these classes; their colours are their own.) */
-  --color-violet-50: #fff3ed;
-  --color-violet-100: #ffe3d4;
-  --color-violet-200: #ffc4a8;
-  --color-violet-300: #ff9f75;
-  --color-violet-400: #ff7a45;
+  /* Signal orange, used sparingly: the app's violet-* classes are pointed
+     here. Light shades (50-400: labels, icons, soft tints) and dark ones
+     (800-950: card washes) are neutral greys, so the screen stays
+     black/grey/white; only the middle (500-700: main buttons, active
+     outlines, progress) is the orange (#FF5A1F). The video looks don't use
+     these classes; their colours are their own. */
+  --color-violet-50: #fafafa;
+  --color-violet-100: #f4f4f5;
+  --color-violet-200: #e4e4e7;
+  --color-violet-300: #d4d4d8;
+  --color-violet-400: #a1a1aa;
   --color-violet-500: #ff5a1f;
   --color-violet-600: #f04a0e;
   --color-violet-700: #c7380a;
-  --color-violet-800: #9e2e10;
-  --color-violet-900: #7f2911;
-  --color-violet-950: #451106;
+  --color-violet-800: #27272a;
+  --color-violet-900: #1c1c1f;
+  --color-violet-950: #141416;
 }
 
 /* ── Design tokens — "Studio Dark" ──
@@ -132,8 +135,8 @@
   --secondary-foreground: var(--foreground);
   --muted:               oklch(0.225 0.006 275);
   --muted-foreground:    oklch(0.69 0.008 275);
-  --accent:              oklch(0.27 0.07 40);
-  --accent-foreground:   oklch(0.86 0.1 45);
+  --accent:              oklch(0.24 0.004 270);
+  --accent-foreground:   var(--foreground);
 
   --destructive:            oklch(0.63 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);

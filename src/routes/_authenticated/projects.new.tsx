@@ -334,7 +334,7 @@ function NewProject() {
     <AppShell>
       <div className="mx-auto grid max-w-6xl gap-8 pb-28 lg:grid-cols-[minmax(0,1fr)_340px] lg:pb-10">
         <div className="min-w-0">
-          <div className="caps-label text-[11px] text-primary-glow">New video</div>
+          <div className="caps-label text-[11px] text-foreground/70">New video</div>
           <input
             aria-label="Project title"
             className="mt-2 w-full bg-transparent font-display text-3xl font-bold tracking-tight text-foreground placeholder:text-muted-foreground/50 focus:outline-none sm:text-4xl"
@@ -354,8 +354,8 @@ function NewProject() {
           )}
 
           {template && (
-            <div className="mt-5 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3">
-              <Sparkles className="h-4 w-4 shrink-0 text-primary-glow" />
+            <div className="mt-5 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3">
+              <Sparkles className="h-4 w-4 shrink-0 text-foreground/70" />
               <div className="min-w-0 flex-1 text-sm">
                 <span className="font-semibold">{template.title}</span>
                 <span className="text-muted-foreground">
@@ -377,8 +377,8 @@ function NewProject() {
             className={cn(
               "relative mt-7 cursor-pointer overflow-hidden rounded-3xl border transition-colors",
               dragOver
-                ? "border-primary bg-primary/10"
-                : "border-border bg-card hover:border-primary/50",
+                ? "border-primary bg-white/[0.06]"
+                : "border-border bg-card hover:border-white/10",
             )}
             onClick={() => inputRef.current?.click()}
             onDragOver={(e) => {
@@ -392,9 +392,9 @@ function NewProject() {
               addFiles(e.dataTransfer.files);
             }}
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,color-mix(in_oklab,var(--color-primary)_20%,transparent),transparent_65%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,rgba(255,255,255,0.05),transparent_65%)]" />
             <div className="relative flex flex-col items-center px-6 py-12 text-center sm:py-16">
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_12px_40px_-10px_color-mix(in_oklab,var(--color-primary)_80%,transparent)]">
+              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_12px_40px_-10px_rgba(255,255,255,0.05)]">
                 <UploadCloud className="h-6 w-6" />
               </span>
               <p className="mt-5 font-display text-xl font-bold tracking-tight">
@@ -499,8 +499,8 @@ function NewProject() {
                 className={cn(
                   "flex flex-col items-center gap-3 rounded-2xl border p-4 transition-colors",
                   ratio === s.id
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:border-primary/40",
+                    ? "border-primary bg-white/[0.06]"
+                    : "border-border bg-card hover:border-white/10",
                 )}
               >
                 <span className="flex h-14 items-center">
@@ -533,7 +533,7 @@ function NewProject() {
                     "overflow-hidden rounded-2xl border text-left transition-colors",
                     preset === s.id
                       ? "border-primary ring-2 ring-primary/40"
-                      : "border-border hover:border-primary/40",
+                      : "border-border hover:border-white/10",
                   )}
                 >
                   <div className="flex h-36 items-center justify-center bg-black/40 p-2">
@@ -615,7 +615,7 @@ function NewProject() {
                 "Corrects the colour, then renders",
               ].map((s) => (
                 <li key={s} className="flex items-center gap-2">
-                  <Check className="h-3.5 w-3.5 text-primary-glow" />
+                  <Check className="h-3.5 w-3.5 text-foreground/70" />
                   {s}
                 </li>
               ))}

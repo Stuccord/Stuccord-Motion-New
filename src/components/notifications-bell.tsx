@@ -170,7 +170,7 @@ export function NotificationsBell() {
                   <button
                     className={cn(
                       "w-full text-left flex gap-2.5 px-3 py-2.5 hover:bg-surface transition-colors",
-                      isNew && "bg-primary/5",
+                      isNew && "bg-white/[0.06]",
                     )}
                     onClick={() => {
                       setOpen(false);

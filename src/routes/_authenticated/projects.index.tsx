@@ -314,7 +314,7 @@ function ProjectsPage() {
       ) : view === "grid" ? (
         <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((p) => (
-            <div key={p.id} className="group relative bg-card border border-border rounded-2xl p-2.5 sm:p-3 hover:border-primary/40 hover:bg-surface transition-all">
+            <div key={p.id} className="group relative bg-card border border-border rounded-2xl p-2.5 sm:p-3 hover:border-white/10 hover:bg-surface transition-all">
               <Link to="/projects/$projectId" params={{ projectId: p.id }} className="absolute inset-0 rounded-2xl" aria-label={p.title} />
               <ProjectThumb ratio={p.aspect_ratio} title={p.title} src={p.thumbnail_signed_url} />
               <div className="mt-3 flex items-start justify-between gap-2 px-0.5">

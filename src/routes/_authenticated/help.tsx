@@ -234,7 +234,7 @@ function HelpPage() {
 
   return (
     <AppShell title="Help & docs" subtitle="How everything works, and how to reach us.">
-      <div className="relative rounded-3xl bg-gradient-to-br from-violet-600 via-violet-700 to-red-700 text-white p-6 sm:p-8 md:p-12 overflow-hidden mb-8">
+      <div className="relative rounded-3xl bg-gradient-to-br from-violet-600 via-violet-700 to-violet-700 text-white p-6 sm:p-8 md:p-12 overflow-hidden mb-8">
         <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/10 blur-3xl" />
         <div className="relative max-w-2xl mx-auto text-center">
           <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">How can we help?</h2>

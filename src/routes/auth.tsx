@@ -262,7 +262,7 @@ function AuthPage() {
             {emailConfirmationSent ? (
               /* Email confirmation notice */
               <div className="space-y-5 text-center">
-                <div className="w-12 h-12 rounded-full bg-primary/15 text-primary grid place-items-center mx-auto">
+                <div className="w-12 h-12 rounded-full bg-white/[0.06] text-primary grid place-items-center mx-auto">
                   <MailCheck className="w-6 h-6" />
                 </div>
                 <div>
@@ -561,7 +561,7 @@ function AuthPage() {
           className="absolute inset-0 h-full w-full object-cover opacity-55"
         />
         <div className="absolute inset-0 bg-gradient-to-br from-black/90 via-black/60 to-primary/50" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,color-mix(in_oklab,var(--color-primary)_30%,transparent),transparent_55%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.05),transparent_55%)]" />
 
         <div className="relative h-full flex flex-col justify-between p-12 text-white">
           <div className="text-white/60 text-xs font-medium">Stuccord Motion</div>

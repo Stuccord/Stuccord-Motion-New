@@ -74,7 +74,7 @@ function Nav() {
           <span className="text-[16px] font-semibold tracking-tight text-foreground">
             Stuccord
           </span>
-          <span className="rounded-full border border-primary/25 bg-gradient-to-r from-primary/15 to-primary/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-primary">
+          <span className="rounded-full border border-white/10 bg-gradient-to-r from-primary/15 to-primary/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-primary">
             Motion
           </span>
         </a>
@@ -122,7 +122,7 @@ function LogoMark({ className = "h-10 w-10" }: { className?: string }) {
       alt="Stuccord Motion logo"
       width={80}
       height={80}
-      className={`${className} object-contain rounded-xl bg-white p-0.5 shadow-[0_6px_20px_-6px_rgba(255,90,31,0.6)]`}
+      className={`${className} object-contain rounded-xl bg-white p-0.5 shadow-[0_6px_20px_-6px_rgba(255,255,255,0.25)]`}
     />
   );
 }
@@ -134,7 +134,7 @@ function Hero() {
   return (
     <section id="top" className="relative overflow-hidden border-b border-hairline">
       <div className="pointer-events-none absolute inset-0 bg-aurora opacity-60" />
-      <div className="pointer-events-none absolute left-1/2 top-1/3 h-[560px] w-[900px] -translate-x-1/2 rounded-full bg-primary/20 blur-[140px]" />
+      <div className="pointer-events-none absolute left-1/2 top-1/3 h-[560px] w-[900px] -translate-x-1/2 rounded-full bg-white/[0.06] blur-[140px]" />
       <HeroCurve />
 
       {/* One heading for readers and search; the split one below is its picture. */}
@@ -144,13 +144,13 @@ function Hero() {
         <div className="flex justify-center lg:justify-start">
           <a
             href="#workflow"
-            className="group inline-flex items-center gap-2 rounded-full border border-primary/25 bg-surface/70 px-1 py-1 pr-3 text-xs text-foreground/80 backdrop-blur-md transition-colors hover:bg-surface"
+            className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-surface/70 px-1 py-1 pr-3 text-xs text-foreground/80 backdrop-blur-md transition-colors hover:bg-surface"
           >
-            <span className="rounded-full bg-gradient-to-r from-primary to-primary-glow px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-primary-foreground">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-primary-foreground">
               New
             </span>
             <span className="text-foreground">The edit now makes itself</span>
-            <ArrowUpRight className="h-3 w-3 text-primary-glow transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            <ArrowUpRight className="h-3 w-3 text-foreground/70 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
           </a>
         </div>
 
@@ -173,23 +173,23 @@ function Hero() {
             <div className="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center lg:justify-end">
               <a
                 href="/auth"
-                className="group inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-primary-glow px-7 py-3.5 text-[15px] font-semibold text-primary-foreground shadow-[0_10px_40px_-10px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] transition-all hover:-translate-y-px"
+                className="group inline-flex items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 text-[15px] font-semibold text-primary-foreground shadow-[0_10px_40px_-10px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] transition-all hover:-translate-y-px"
               >
                 <Sparkles className="h-4 w-4" />
                 Make my first video, free
               </a>
               <a
                 href="#compare"
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-hairline bg-surface/60 px-6 py-3.5 text-[15px] font-medium text-foreground backdrop-blur-md transition-colors hover:border-primary/40 hover:bg-surface"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-hairline bg-surface/60 px-6 py-3.5 text-[15px] font-medium text-foreground backdrop-blur-md transition-colors hover:border-white/10 hover:bg-surface"
               >
-                <Play className="h-3.5 w-3.5 text-primary-glow" fill="currentColor" />
+                <Play className="h-3.5 w-3.5 text-foreground/70" fill="currentColor" />
                 Before and after
               </a>
             </div>
             <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[13px] text-muted-foreground lg:justify-end">
               {["No card", "No watermark", "Your footage never trains AI"].map((t) => (
                 <li key={t} className="flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5 text-primary-glow" />
+                  <Check className="h-3.5 w-3.5 text-foreground/70" />
                   {t}
                 </li>
               ))}
@@ -201,13 +201,13 @@ function Hero() {
             <PhoneEditor />
             <FloatCard className="-left-40 top-[58%] hidden xl:block">
               <div className="flex items-center gap-2.5">
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/20 text-primary-glow">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-white/[0.06] text-foreground/70">
                   <Captions className="h-3.5 w-3.5" />
                 </span>
                 <div>
                   <div className="text-[10px] text-muted-foreground">Captions · word by word</div>
                   <div className="text-[12px] font-medium text-foreground">
-                    You&rsquo;ve been there <span className="text-primary-glow">before</span>
+                    You&rsquo;ve been there <span className="text-foreground/70">before</span>
                   </div>
                 </div>
               </div>
@@ -215,7 +215,7 @@ function Hero() {
             <FloatCard className="-right-48 top-[12%] hidden xl:block">
               <div className="mb-2 flex items-center justify-between text-[10px] text-muted-foreground">
                 <span>AI story scenes</span>
-                <Wand2 className="h-3 w-3 text-primary-glow" />
+                <Wand2 className="h-3 w-3 text-foreground/70" />
               </div>
               <div className="flex gap-1.5">
                 {[editingDesk, btsStudio].map((src) => (
@@ -291,7 +291,7 @@ const HERO_WORDS =
 /** A word with an editor's selection box round it: handles at the corners. */
 function SelectedWord({ children }: { children: React.ReactNode }) {
   return (
-    <span className="relative mt-2 inline-block rounded-sm border-2 border-primary-glow/80 bg-primary/15 px-3 pb-1 pt-2 text-gradient-violet">
+    <span className="relative mt-2 inline-block rounded-sm border-2 border-primary-glow/80 bg-white/[0.06] px-3 pb-1 pt-2 text-gradient-violet">
       {children}
       {["-left-1.5 -top-1.5", "-right-1.5 -top-1.5", "-bottom-1.5 -left-1.5", "-bottom-1.5 -right-1.5"].map(
         (pos) => (
@@ -485,7 +485,7 @@ function MakingProgress() {
         <span className="font-semibold text-foreground">
           {done ? "Your video is ready" : "Making your video"}
         </span>
-        <span className="text-primary-glow">
+        <span className="text-foreground/70">
           {Math.min(100, Math.round((step / AUTO_STEPS.length) * 100))}%
         </span>
       </div>
@@ -494,7 +494,7 @@ function MakingProgress() {
       </div>
       <div className="mt-2 h-1 overflow-hidden rounded-full bg-hairline">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-700"
+          className="h-full rounded-full bg-primary transition-all duration-700"
           style={{ width: `${Math.min(100, (step / AUTO_STEPS.length) * 100)}%` }}
         />
       </div>
@@ -582,7 +582,7 @@ function Features() {
               Punch-ins on the words that matter, eased back out.
             </h3>
             <div className="mt-5 relative aspect-video overflow-hidden rounded-md border border-hairline bg-black">
-              <div className="absolute inset-0 bg-[radial-gradient(300px_200px_at_50%_40%,rgba(255,90,31,0.4),transparent_60%),linear-gradient(180deg,#0a0a0a,#1a1a20)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(300px_200px_at_50%_40%,rgba(255,255,255,0.08),transparent_60%),linear-gradient(180deg,#0a0a0a,#1a1a20)]" />
               <div className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20" />
               <div className="absolute inset-6 rounded border border-primary/70">
                 <div className="absolute -left-1 -top-1 h-2 w-2 border-l-2 border-t-2 border-primary" />
@@ -679,7 +679,7 @@ function Features() {
                   />
                 );
               })}
-              <span className="pointer-events-none absolute left-[25%] right-[25%] top-0 h-full rounded-sm border border-dashed border-primary/50" />
+              <span className="pointer-events-none absolute left-[25%] right-[25%] top-0 h-full rounded-sm border border-dashed border-white/10" />
               <span className="absolute left-1/2 top-1 -translate-x-1/2 rounded-sm bg-primary px-1 font-mono text-[8px] uppercase tracking-widest text-primary-foreground">
                 VO
               </span>
@@ -699,12 +699,12 @@ function Features() {
             <div className="mt-5 rounded border border-hairline bg-surface px-3 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
               <span className="text-foreground">// beat 03</span>
               <br />
-              <span className="rounded bg-primary/12 px-1 text-primary">
+              <span className="rounded bg-white/[0.06] px-1 text-primary">
                 [ZOOM]
               </span>{" "}
               &ldquo;your own content&rdquo;
               <br />
-              <span className="rounded bg-primary/12 px-1 text-primary">
+              <span className="rounded bg-white/[0.06] px-1 text-primary">
                 [KEY LINE]
               </span>{" "}
               &ldquo;editing your own content&rdquo;
@@ -914,15 +914,15 @@ function Workflow() {
             <div className="p-4">
               <div className="font-mono text-sm leading-relaxed text-foreground">
                 Most people{" "}
-                <span className="rounded bg-primary/12 px-1.5 py-0.5 text-primary">
+                <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-primary">
                   quit right before it works
                 </span>
                 . I went from zero to{" "}
-                <span className="rounded bg-primary/12 px-1.5 py-0.5 text-primary">
+                <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-primary">
                   10,000 subscribers
                 </span>{" "}
                 in a year with{" "}
-                <span className="rounded bg-primary/12 px-1.5 py-0.5 text-primary">
+                <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-primary">
                   three simple steps
                 </span>
                 : show up, build, launch.
@@ -1001,7 +1001,7 @@ function StudioSound() {
           <ul className="mt-8 space-y-5">
             {SOUND_POINTS.map((p) => (
               <li key={p.title} className="flex gap-3">
-                <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary-glow">
+                <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/[0.06] text-foreground/70">
                   <Check className="h-3.5 w-3.5" />
                 </span>
                 <div>
@@ -1014,7 +1014,7 @@ function StudioSound() {
         </div>
         <div className="rounded-2xl border border-hairline bg-surface p-5 shadow-2xl">
           {[
-            { name: "Voice", hint: "cleaned · levelled", scale: 1, tone: "from-primary to-primary-glow" },
+            { name: "Voice", hint: "cleaned · levelled", scale: 1, tone: "bg-primary" },
             { name: "Music", hint: "under the voice · ducks", scale: 0.35, tone: "from-primary/40 to-primary/20" },
             { name: "Sound effects", hint: "on the graphics", scale: 0.5, tone: "from-primary-glow/70 to-primary/30" },
           ].map((t) => (
@@ -1119,7 +1119,7 @@ function Compare() {
 
             {/* Handle */}
             <div
-              className="absolute inset-y-0 w-px bg-primary shadow-[0_0_16px_2px_rgba(255,90,31,0.6)]"
+              className="absolute inset-y-0 w-px bg-primary shadow-[0_0_16px_2px_rgba(255,255,255,0.25)]"
               style={{ left: `${pos}%` }}
             >
               <div className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-background text-foreground shadow-lg">
@@ -1155,7 +1155,7 @@ function Compare() {
                 key={tag}
                 className="flex items-start gap-2.5 rounded-lg border border-hairline bg-background p-3"
               >
-                <span className="mt-0.5 rounded-sm bg-primary/12 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-primary">
+                <span className="mt-0.5 rounded-sm bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-primary">
                   {tag}
                 </span>
                 <span className="text-[13px] text-foreground">{v}</span>
@@ -1214,7 +1214,7 @@ function Pricing() {
               className={
                 "relative flex flex-col rounded-xl border p-7 " +
                 (p.featured
-                  ? "border-primary/60 bg-gradient-to-b from-primary/25 via-card to-card text-foreground shadow-[0_30px_80px_-30px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
+                  ? "border-white/10 bg-gradient-to-b from-primary/25 via-card to-card text-foreground shadow-[0_30px_80px_-30px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
                   : "border-hairline bg-card")
               }
             >
@@ -1381,7 +1381,7 @@ function CTA() {
   return (
     <section id="cta" className="border-b border-hairline">
       <div className="mx-auto max-w-7xl px-5 py-16 md:py-24">
-        <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-[linear-gradient(135deg,oklch(0.32_0.14_290),oklch(0.17_0.03_280)_70%)] p-10 text-white md:p-16">
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(135deg,oklch(0.32_0.14_290),oklch(0.17_0.03_280)_70%)] p-10 text-white md:p-16">
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.06]"
             style={{
@@ -1394,7 +1394,7 @@ function CTA() {
             className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full opacity-40 blur-3xl"
             style={{
               background:
-                "radial-gradient(circle, rgba(255,90,31,0.6), transparent 60%)",
+                "radial-gradient(circle, rgba(255,255,255,0.25), transparent 60%)",
             }}
           />
           <div className="relative grid gap-10 md:grid-cols-[1.4fr_1fr] md:items-end">

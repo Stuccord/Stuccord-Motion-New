@@ -152,7 +152,7 @@ export function AppShell({
         {item.badge && (
           <span className={cn(
             "ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded-full uppercase tracking-wider",
-            active ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary-glow",
+            active ? "bg-primary text-primary-foreground" : "bg-white/10 text-foreground/80",
           )}>
             {item.badge}
           </span>
@@ -173,7 +173,7 @@ export function AppShell({
             className="h-7 w-7 shrink-0 object-contain rounded-lg bg-white p-px"
           />
           <span className="font-display text-[15px] font-bold tracking-tight truncate text-foreground">
-            Stuccord <span className="text-primary-glow">Motion</span>
+            Stuccord <span className="text-foreground/60">Motion</span>
           </span>
         </Link>
         {/* Phones and tablets: close it with the same icon that opened it. */}
@@ -202,7 +202,7 @@ export function AppShell({
         </button>
         <Link
           to="/projects/new"
-          className="lg:hidden flex h-11 items-center gap-2.5 rounded-[10px] border border-primary/30 bg-primary/15 px-2.5 text-[16px] font-semibold leading-5 text-primary-glow"
+          className="lg:hidden flex h-11 items-center gap-2.5 rounded-[10px] border border-white/10 bg-white/[0.06] px-2.5 text-[16px] font-semibold leading-5 text-foreground"
         >
           <Plus className="w-5 h-5" /> Create
         </Link>
@@ -232,9 +232,9 @@ export function AppShell({
           </ul>
         </div>
 
-        <div className="mx-1 relative overflow-hidden rounded-xl border border-primary/25 bg-gradient-to-b from-primary/15 to-transparent p-3.5">
+        <div className="mx-1 relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
           <div className="relative">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-glow">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/70">
               <Gift className="w-3 h-3" /> {usage?.allowance.plan ?? "Free"} plan
             </div>
             <div className="mt-2 text-xs text-foreground leading-relaxed">
@@ -284,7 +284,7 @@ export function AppShell({
           onClick={() => (!!user ? navigate({ to: "/settings" }) : navigate({ to: "/auth", search: { next: undefined } }))}
           className="flex w-full items-center gap-2.5 rounded-lg p-2 hover:bg-surface transition-colors text-left"
         >
-          <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center shrink-0 shadow-sm">
+          <div className="w-8 h-8 rounded-full bg-white/10 text-foreground text-[11px] font-semibold grid place-items-center shrink-0 shadow-sm">
             {initials}
           </div>
           <div className="min-w-0 flex-1">
@@ -350,7 +350,7 @@ export function AppShell({
               {usage && !isUnlimited(cap) && (
                 <Link
                   to="/billing"
-                  className="lg:hidden inline-flex h-7 items-center gap-1.5 rounded-full bg-gradient-to-br from-primary to-primary-glow px-3 text-[12px] font-medium leading-4 text-primary-foreground shadow-[0_6px_18px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)]"
+                  className="lg:hidden inline-flex h-7 items-center gap-1.5 rounded-full bg-primary px-3 text-[12px] font-medium leading-4 text-primary-foreground shadow-[0_6px_18px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)]"
                   data-upgrade-pill
                 >
                   <Gem className="h-3.5 w-3.5" /> Upgrade
@@ -367,7 +367,7 @@ export function AppShell({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="max-lg:hidden flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-surface cursor-pointer">
-                    <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">
+                    <div className="w-7 h-7 rounded-full bg-white/10 text-foreground text-[11px] font-semibold grid place-items-center">
                       {initials}
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground hidden sm:block" />
@@ -490,7 +490,7 @@ function MobileTabBar({
           <Link
             to="/projects/new"
             aria-label="Create"
-            className="flex h-[46px] w-[76px] items-center justify-center rounded-[14px] bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] active:scale-95 transition-transform"
+            className="flex h-[46px] w-[76px] items-center justify-center rounded-[14px] bg-primary text-primary-foreground shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)] active:scale-95 transition-transform"
           >
             <Sparkles className="w-6 h-6" />
           </Link>

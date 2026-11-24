@@ -107,7 +107,7 @@ export function GlobalSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="hidden md:flex relative w-full max-w-md h-9 items-center pl-8 pr-16 text-[13px] text-muted-foreground bg-surface border border-border rounded-lg hover:border-primary/40 transition-colors text-left"
+        className="hidden md:flex relative w-full max-w-md h-9 items-center pl-8 pr-16 text-[13px] text-muted-foreground bg-surface border border-border rounded-lg hover:border-white/10 transition-colors text-left"
         aria-label="Search projects, files, templates and pages"
       >
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4" />

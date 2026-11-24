@@ -71,7 +71,7 @@ function TemplatesPage() {
           <input
             value={q} onChange={(e) => setQ(e.target.value)}
             placeholder="Search presets…"
-            className="w-full h-10 pl-8 pr-3 text-sm bg-card border border-border rounded-full focus:border-primary/60 focus:outline-none"
+            className="w-full h-10 pl-8 pr-3 text-sm bg-card border border-border rounded-full focus:border-white/10 focus:outline-none"
           />
         </div>
         <div className="flex items-center gap-1 bg-card border border-border rounded-full p-1 overflow-x-auto max-w-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -89,8 +89,8 @@ function TemplatesPage() {
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((t) => (
           <button key={t.id} onClick={() => startFromTemplate(t.id)}
-            className="group relative overflow-hidden rounded-2xl border border-border bg-card text-left hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-20px_color-mix(in_oklab,var(--color-primary)_50%,transparent)] transition-all">
-            <div className="relative h-40 sm:h-52 overflow-hidden bg-[radial-gradient(ellipse_at_50%_0%,color-mix(in_oklab,var(--color-primary)_22%,transparent),transparent_70%)]">
+            className="group relative overflow-hidden rounded-2xl border border-border bg-card text-left hover:border-white/10 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_-20px_rgba(255,255,255,0.05)] transition-all">
+            <div className="relative h-40 sm:h-52 overflow-hidden bg-[radial-gradient(ellipse_at_50%_0%,rgba(255,255,255,0.05),transparent_70%)]">
               {/* What this template makes: its shape, its look, a sample line. */}
               <div className="absolute inset-0 flex items-center justify-center px-3 sm:px-6 pb-3 pt-10 sm:pt-12 transition-transform duration-300 group-hover:scale-[1.03]">
                 <LookPreview
@@ -120,7 +120,7 @@ function TemplatesPage() {
             <div className="p-3 sm:p-4 border-t border-border">
               <div className="flex items-center justify-between gap-2">
                 <div className="hidden sm:block text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{t.cat}</div>
-                <div className="text-[10px] font-medium text-primary-glow bg-primary/10 rounded px-1.5 py-0.5">
+                <div className="text-[10px] font-medium text-foreground/70 bg-white/[0.06] rounded px-1.5 py-0.5">
                   {lookName(t.preset)}
                 </div>
               </div>
