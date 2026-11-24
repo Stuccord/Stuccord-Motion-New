@@ -254,7 +254,18 @@ export function AppShell({
         </div>
       </nav>
 
-      <div className="border-t border-border p-3">
+      {/* Your account: here at the bottom of the menu (where Higgsfield keeps it on
+          phones; computers also have it at the top-right). */}
+      <div className="border-t border-border p-3 space-y-1">
+        {user && (
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="lg:hidden flex h-11 w-full items-center gap-2.5 rounded-[10px] px-2.5 text-[16px] font-medium leading-5 text-destructive hover:bg-surface"
+          >
+            <LogOut className="h-5 w-5" /> Sign out
+          </button>
+        )}
         <button
           onClick={() => (!!user ? navigate({ to: "/settings" }) : navigate({ to: "/auth", search: { next: undefined } }))}
           className="flex w-full items-center gap-2.5 rounded-lg p-2 hover:bg-surface transition-colors text-left"
@@ -330,7 +341,7 @@ export function AppShell({
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 p-1 lg:pr-2 rounded-full hover:bg-surface cursor-pointer">
+                  <button className="max-lg:hidden flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-surface cursor-pointer">
                     <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">
                       {initials}
                     </div>
@@ -412,7 +423,7 @@ export function AppShell({
 /**
  * Phones and tablets: the main pages along the bottom, with "Make a video"
  * as the big button in the middle and Assets last (Higgsfield's My Assets);
- * the full menu opens from the top-left, your profile from the top-right.
+ * the full menu opens from the top-left, with your account at its bottom.
  */
 function MobileTabBar({
   isActive,
