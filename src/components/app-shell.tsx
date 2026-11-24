@@ -26,6 +26,8 @@ import {
   LogOut,
   Plus,
   PanelLeft,
+  Gem,
+  Search,
   ChevronDown,
   CreditCard,
   Gift,
@@ -34,7 +36,7 @@ import logoUrl from "@/assets/logo.png";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { useWorkspace } from "@/lib/use-workspace";
 import { NotificationsBell } from "@/components/notifications-bell";
-import { GlobalSearch } from "@/components/global-search";
+import { GlobalSearch, openGlobalSearch } from "@/components/global-search";
 import { cn } from "@/lib/utils";
 import { isUnlimited } from "@/lib/plans";
 
@@ -187,12 +189,24 @@ export function AppShell({
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {/* The More menu's first row, like Higgsfield's "Create". */}
+        <div className="lg:hidden space-y-2">
+        <button
+          type="button"
+          onClick={() => {
+            setMobileOpen(false);
+            openGlobalSearch();
+          }}
+          className="lg:hidden flex h-11 w-full items-center gap-2.5 rounded-[10px] bg-surface px-3 text-[16px] leading-5 text-muted-foreground"
+        >
+          <Search className="h-5 w-5" /> Search
+        </button>
         <Link
           to="/projects/new"
           className="lg:hidden flex h-11 items-center gap-2.5 rounded-[10px] border border-primary/30 bg-primary/15 px-2.5 text-[16px] font-semibold leading-5 text-primary-glow"
         >
           <Plus className="w-5 h-5" /> Make a video
         </Link>
+        </div>
         <div>
           <div className="px-2 pb-2 font-display text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">
             Workspace
@@ -323,7 +337,7 @@ export function AppShell({
               <PanelLeft className="h-5 w-5" />
             </button>
 
-            <div className="relative z-10 flex md:flex-1 items-center md:max-w-md max-lg:order-2 max-lg:md:flex-none">
+            <div className="relative z-10 flex md:flex-1 items-center md:max-w-md max-lg:order-2 max-lg:md:flex-none max-lg:[&>button]:hidden">
               <GlobalSearch />
             </div>
 
@@ -331,6 +345,17 @@ export function AppShell({
 
             <div className="relative z-10 flex items-center gap-2 max-lg:order-3">
               <NotificationsBell />
+              {/* Phones and tablets: one bright pill, like Higgsfield's "Upgrade"
+                  before you subscribe. Not for accounts without limits. */}
+              {usage && !isUnlimited(cap) && (
+                <Link
+                  to="/billing"
+                  className="lg:hidden inline-flex h-7 items-center gap-1.5 rounded-full bg-gradient-to-br from-primary to-primary-glow px-3 text-[12px] font-medium leading-4 text-primary-foreground shadow-[0_6px_18px_-6px_color-mix(in_oklab,var(--color-primary)_70%,transparent)]"
+                  data-upgrade-pill
+                >
+                  <Gem className="h-3.5 w-3.5" /> Upgrade
+                </Link>
+              )}
               <Button
                 size="sm"
                 onClick={() => navigate({ to: "/projects/new" })}

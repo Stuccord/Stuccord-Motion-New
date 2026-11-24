@@ -53,6 +53,11 @@ const PAGES = [
   { label: "Help & docs", to: "/help", icon: HelpCircle, words: "support guides faq shortcuts" },
 ] as const;
 
+/** Opens the search from elsewhere on the page (the phone menu's Search row). */
+export function openGlobalSearch() {
+  window.dispatchEvent(new Event("stuccord:open-search"));
+}
+
 export function GlobalSearch() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -65,8 +70,13 @@ export function GlobalSearch() {
         setOpen((o) => !o);
       }
     };
+    const onOpen = () => setOpen(true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("stuccord:open-search", onOpen);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("stuccord:open-search", onOpen);
+    };
   }, []);
 
   // Loaded when it opens (shared with the Projects and Assets pages).

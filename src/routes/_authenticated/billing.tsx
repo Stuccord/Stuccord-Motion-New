@@ -97,6 +97,11 @@ function BillingPage() {
           <div className="mt-3 max-w-sm">
             <Progress value={pct} className="h-1.5 bg-white/10" />
           </div>
+          {!isUnlimited(cap) && (
+            <p className="mt-3 text-xs text-white/70" data-plans-soon>
+              Paid plans with more exports are coming soon.
+            </p>
+          )}
           {voice.data && (
             <div className="mt-4 max-w-sm">
               <div className="text-sm text-white/70">
