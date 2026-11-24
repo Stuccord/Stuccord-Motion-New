@@ -2799,6 +2799,7 @@ function EditorPage() {
             <div className="flex-1 min-h-0">
               {rightTab === "autocut" ? (
                 <AutoCutPanel
+                  projectId={projectId}
                   trackClips={aRoll.filter((c) => !isImageFilename(c.filename))}
                   selectedClip={
                     selectedClip &&

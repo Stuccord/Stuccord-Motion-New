@@ -73,6 +73,14 @@ const MAIN_TYPES = new Set(["auto", "aroll"]);
 const DONE: TickResult = { done: true };
 const next = (ms = 0): TickResult => ({ wait_ms: ms });
 /** An error's words for the customer (a friendly line for problems on the app's side), or the fallback. */
+/** What the cut took out, in words: "pauses, 3 fillers, 1 retake". */
+function cutWhat(fillers = 0, takes = 0): string {
+  const parts = ["pauses"];
+  if (fillers) parts.push(`${fillers} filler${fillers === 1 ? "" : "s"}`);
+  if (takes) parts.push(`${takes} retake${takes === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+
 const message = (e: unknown, fallback: string) =>
   friendlyText((e instanceof Error && e.message.trim()) || fallback);
 const settled = (s: AutoStep | undefined) => s?.state === "done" || s?.state === "skipped";
@@ -234,8 +242,8 @@ class Run {
         "cut",
         c.cutMs > 0 ? "done" : "skipped",
         c.cutMs > 0
-          ? `${(c.cutMs / 1000).toFixed(1)} s of pauses cut. Change it in the editor (Auto-cut).`
-          : "No long pauses to cut.",
+          ? `${(c.cutMs / 1000).toFixed(1)} s cut (${cutWhat(c.fillers, c.takes)}). Change it in the editor (Auto-cut).`
+          : "No long pauses, fillers or retakes to cut.",
       );
     } catch (e) {
       await this.mark(

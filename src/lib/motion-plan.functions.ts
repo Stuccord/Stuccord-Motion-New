@@ -40,6 +40,14 @@ import { planFor, UNLIMITED, type Plan } from "@/lib/plans";
 import { defaultLook } from "@/motion/looks";
 import { applyClipCuts, projectAccess, projectForEdit } from "@/lib/projects.functions";
 import { pauseCuts, placeBroll } from "@/lib/auto-edit";
+import {
+  allFillerDrops,
+  fillerDrops,
+  mergeDrops,
+  takeDrops,
+  type DropRange,
+} from "@/lib/take-cuts";
+import { requestBadTakes } from "@/lib/take-cuts.server";
 
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 const ProjectInput = z.object({ project_id: z.string().uuid() });
@@ -245,11 +253,25 @@ export async function cutPausesFor(
   data: { project_id: string },
 ) {
         const { project } = await projectForEdit(db, data.project_id, userId);
-    if (parseMotionPlan(project.motion_plan)) return { cutMs: 0, clips: 0, skipped: "planned" };
+    if (parseMotionPlan(project.motion_plan))
+      return { cutMs: 0, clips: 0, skipped: "planned", fillers: 0, takes: 0 };
     const { clips, missing, transcripts } = await projectWords(db, project, userId);
     if (missing.length) throw new Error("Some clips have no transcript yet.");
-    const cuts = pauseCuts(clips, transcripts);
-    if (!cuts.length) return { cutMs: 0, clips: 0, skipped: null };
+    // Filler sounds and bad takes go with the pauses. Bad takes need Claude;
+    // without an answer only the pauses and fillers are cut.
+    const fillers = allFillerDrops(transcripts);
+    const spoken = spokenWords(mainSegments(clips), transcripts);
+    const draft = await requestBadTakes(numberedTranscript(spoken), spoken.length);
+    const takes = draft ? takeDrops(spoken, transcripts, draft) : new Map();
+    const drops = mergeDrops(fillers, takes);
+    const count = (m: Map<string, unknown[]>) => [...m.values()].reduce((n, l) => n + l.length, 0);
+    const found = { fillers: count(fillers), takes: count(takes) };
+    console.log(
+      `[auto-edit] ${data.project_id}: ${found.fillers} filler(s), ${found.takes} bad take(s)` +
+        (draft ? "" : " (bad takes not checked)"),
+    );
+    const cuts = pauseCuts(clips, transcripts, undefined, drops);
+    if (!cuts.length) return { cutMs: 0, clips: 0, skipped: null, ...found };
     const byId = new Map(clips.map((c) => [c.id, c]));
     let cutMs = 0;
     for (const c of cuts) {
@@ -258,8 +280,58 @@ export async function cutPausesFor(
       cutMs += Math.max(0, was - c.keep.reduce((n, k) => n + (k.out_ms - k.in_ms), 0));
     }
     await applyClipCuts(db, project.id, cuts);
-    return { cutMs, clips: cuts.length, skipped: null };
+    return { cutMs, clips: cuts.length, skipped: null, ...found };
 }
+
+/**
+ * The filler sounds and bad takes in some of the main track's clips, for the
+ * editor's Auto-cut list (ms into each clip's file, inside its visible part).
+ * Clips whose file has no transcript yet come back in `untranscribed`;
+ * `takesChecked` is false when Claude couldn't be asked.
+ */
+export const suggestTakeCuts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({ project_id: z.string().uuid(), clip_ids: z.array(z.string().uuid()).max(500) })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { project } = await projectForEdit(context.supabase, data.project_id, context.userId);
+    const { clips, transcripts } = await projectWords(context.supabase, project, context.userId);
+    const wanted = new Set(data.clip_ids);
+    const segs = mainSegments(clips).filter((s) => wanted.has(s.clipId));
+    const untranscribed = segs.filter((s) => !transcripts.has(s.storagePath)).map((s) => s.clipId);
+    const heard = segs.filter((s) => transcripts.has(s.storagePath));
+
+    type Suggestion = { fromMs: number; toMs: number; why: "filler" | "take"; text: string; reason: string };
+    const out: Record<string, Suggestion[]> = {};
+    const add = (clipId: string, d: DropRange) =>
+      (out[clipId] ??= []).push({
+        fromMs: d.fromMs,
+        toMs: d.toMs,
+        why: d.why,
+        text: d.text ?? "",
+        reason: d.reason ?? "",
+      });
+
+    for (const s of heard) {
+      const from = s.trimInMs;
+      const to = s.trimInMs + s.durationMs;
+      for (const d of fillerDrops(transcripts.get(s.storagePath) ?? [])) {
+        if (d.fromMs >= from && d.toMs <= to) add(s.clipId, d);
+      }
+    }
+    const spoken = spokenWords(heard, transcripts);
+    const draft = await requestBadTakes(numberedTranscript(spoken), spoken.length);
+    if (draft) {
+      for (const list of takeDrops(spoken, transcripts, draft).values()) {
+        for (const d of list) if (d.clipId) add(d.clipId, d);
+      }
+    }
+    for (const list of Object.values(out)) list.sort((a, b) => a.fromMs - b.fromMs);
+    return { clips: out, untranscribed, takesChecked: !!draft || spoken.length === 0 };
+  });
 
 /**
  * Places the B-roll for the automatic edit (src/lib/auto-edit.ts

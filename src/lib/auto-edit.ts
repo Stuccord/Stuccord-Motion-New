@@ -18,6 +18,7 @@ import {
   type PlanClip,
 } from "@/lib/motion-plan";
 import type { TranscriptWord } from "@/lib/captions";
+import type { DropRange } from "@/lib/take-cuts";
 import { OBJECT_PICTURE_LOOKS } from "@/motion/looks";
 
 /** Most AI pictures one automatic edit makes. */
@@ -205,11 +206,16 @@ export type ClipCut = { id: string; keep: { in_ms: number; out_ms: number }[] };
  * with no words, or too little to cut, is left alone. Run before the graphics
  * are planned: cut pieces after the first get new clip ids. Running it again
  * on cut clips finds nothing more to cut.
+ *
+ * `drops` (per source file) are cut too, however short: filler sounds and
+ * bad takes (src/lib/take-cuts.ts). Their words are left out, speech is split
+ * where they sat, and the padding round the kept words never reaches into them.
  */
 export function pauseCuts(
   clips: PlanClip[],
   transcripts: Map<string, TranscriptWord[]>,
   { minPauseMs, padMs } = AUTO_CUT,
+  drops: Map<string, DropRange[]> = new Map(),
 ): ClipCut[] {
   const out: ClipCut[] = [];
   for (const seg of mainSegments(clips)) {
@@ -219,23 +225,40 @@ export function pauseCuts(
     const from = seg.trimInMs;
     const to = seg.trimInMs + seg.durationMs;
     const fileEnd = clip.duration_ms ?? to;
+    const cutHere = (drops.get(seg.storagePath) ?? []).filter(
+      (d) => d.toMs > from && d.fromMs < to,
+    );
+    // A word is dropped when most of it lies inside a drop.
+    const dropped = (w: TranscriptWord) =>
+      cutHere.some(
+        (d) => Math.min(d.toMs, w.end_ms) - Math.max(d.fromMs, w.start_ms) >= (w.end_ms - w.start_ms) / 2,
+      );
+    const between = (x: number, y: number) => cutHere.some((d) => d.fromMs < y && d.toMs > x);
     const inside = words
       .filter((w) => w.end_ms > from && w.start_ms < to && w.end_ms > w.start_ms)
+      .filter((w) => !dropped(w))
       .sort((a, b) => a.start_ms - b.start_ms);
     if (!inside.length) continue;
 
-    // Runs of speech: words closer together than a pause.
+    // Runs of speech: words closer together than a pause, and with nothing
+    // dropped between them.
     const runs: { a: number; b: number }[] = [];
     for (const w of inside) {
       const last = runs[runs.length - 1];
-      if (last && w.start_ms - last.b < minPauseMs) last.b = Math.max(last.b, w.end_ms);
-      else runs.push({ a: w.start_ms, b: w.end_ms });
+      if (last && w.start_ms - last.b < minPauseMs && !between(last.b, w.start_ms)) {
+        last.b = Math.max(last.b, w.end_ms);
+      } else runs.push({ a: w.start_ms, b: w.end_ms });
     }
+    // The nearest drop edges either side of a run: padding stops there.
+    const dropEndBefore = (t: number) =>
+      Math.max(-Infinity, ...cutHere.filter((d) => d.toMs <= t).map((d) => d.toMs));
+    const dropStartAfter = (t: number) =>
+      Math.min(Infinity, ...cutHere.filter((d) => d.fromMs >= t).map((d) => d.fromMs));
     // Padded, kept inside the clip's part of its file, overlapping pads joined.
     const keep: { in_ms: number; out_ms: number }[] = [];
     for (const r of runs) {
-      const a = Math.round(Math.max(from, r.a - padMs));
-      const b = Math.round(Math.min(to, fileEnd, r.b + padMs));
+      const a = Math.round(Math.max(from, r.a - padMs, dropEndBefore(r.a)));
+      const b = Math.round(Math.min(to, fileEnd, r.b + padMs, dropStartAfter(r.b)));
       if (b - a < 50) continue;
       const last = keep[keep.length - 1];
       if (last && a <= last.out_ms) last.out_ms = Math.max(last.out_ms, b);
