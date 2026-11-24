@@ -30,6 +30,8 @@ export type HfStatus = "queued" | "in_progress" | "completed" | "failed" | "nsfw
 export type HfResult = {
   status: HfStatus;
   request_id: string;
+  /** Why a request failed, in Higgsfield's words (e.g. the credit balance ran out). */
+  error?: string;
   images?: { url: string }[];
   video?: { url: string };
 };
@@ -59,7 +61,7 @@ function explain(status: number, body: unknown, what: string): HiggsfieldError {
   console.warn(`[higgsfield] ${what} → ${status}:`, text.slice(0, 300));
   if (status === 401) return new HiggsfieldError("Higgsfield didn't accept the server's API key.");
   if (status === 403) {
-    return new HiggsfieldError("AI generation is paused: the Higgsfield balance has run out.");
+    return new HiggsfieldError(OUT_OF_CREDIT);
   }
   if (status === 429) {
     return transientError("The AI service is busy right now. Try again in a minute.");
@@ -167,6 +169,15 @@ export async function generationStatus(
   )) as HfResult;
 }
 
+/** What the user is told when Higgsfield's balance has run out (also its HTTP 403). */
+export const OUT_OF_CREDIT =
+  "AI generation is paused: the Higgsfield balance has run out. Top up the Higgsfield account, then try again.";
+
+/** True when a failed request ended because the account has no credit left. */
+export function isOutOfCredit(result: Pick<HfResult, "error">): boolean {
+  return /credit|balance|top ?up|insufficient funds/i.test(result.error ?? "");
+}
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
@@ -200,6 +211,14 @@ export async function waitForGeneration(
       continue;
     }
     if (result.status === "completed") return result;
+    if (result.status !== "queued" && result.status !== "in_progress") {
+      // Higgsfield's whole answer, so the server log says why.
+      console.warn(
+        `[higgsfield] ${requestId} ended ${result.status}:`,
+        JSON.stringify(result).slice(0, 600),
+      );
+    }
+    if (isOutOfCredit(result)) throw new HiggsfieldError(OUT_OF_CREDIT);
     if (result.status === "nsfw") {
       throw new HiggsfieldError(
         "The AI service turned this description down. Try describing it differently.",

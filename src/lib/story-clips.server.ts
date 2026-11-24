@@ -6,6 +6,8 @@
 
 import {
   HiggsfieldError,
+  OUT_OF_CREDIT,
+  isOutOfCredit,
   fetchResult,
   generationStatus,
   submitGeneration,
@@ -78,6 +80,9 @@ export async function checkClip(requestId: string): Promise<
       `[story-clips] clip ${requestId} ended ${result.status}:`,
       JSON.stringify(result).slice(0, 600),
     );
+  }
+  if (result.status !== "completed" && isOutOfCredit(result)) {
+    return { state: "failed", error: OUT_OF_CREDIT, retry: false };
   }
   if (result.status === "nsfw") {
     return {
