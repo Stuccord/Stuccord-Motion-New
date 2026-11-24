@@ -12,6 +12,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { limitThreads } from "./threads.js";
+import { outlineReader, samOutline } from "./sam.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const PERSON_MODEL = path.join(here, "models", "selfie_segmenter.onnx");
@@ -147,6 +148,18 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
     runs.push({ start, a, b });
     prevEnd = b;
   }
+  // SAM's outline of the speaker for each stretch, asked for straight away
+  // (fal works while RVM runs here), one stretch after another so only one
+  // extra decode runs at a time; null where it can't be had (sam.js).
+  let chain = Promise.resolve();
+  const outlines = runs.map((r, index) => {
+    const next = chain.then(() =>
+      samOutline({ ffmpegPath, input, zoom, a: r.a, b: r.b, mw, mh, workdir, index }),
+    );
+    chain = next;
+    return next;
+  });
+  let outline = null;
   const pick = runs.map((r) => `between(n\\,${r.start}\\,${r.b - 1})`).join("+");
   const filters = [zoom, `select=${pick}`, `scale=${mw}:${mh}:flags=area`, "format=rgb24"]
     .filter(Boolean)
@@ -207,11 +220,17 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
       const pha = await runMatte(ort, session, pending.subarray(0, frameBytes), mw, mh, state);
       pending = pending.subarray(frameBytes);
       if (at >= run.a) {
+        if (at === run.a) {
+          const file = await outlines[runIndex];
+          outline = file ? outlineReader(ffmpegPath, file, mw, mh) : null;
+        }
+        // RVM's matte, kept only inside SAM's outline when there is one.
+        const sam = outline ? await outline.next() : null;
         let sure = 0;
         const n = bytes.length;
         const byte = (v) => (v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255));
         for (let i = 0; i < n; i++) {
-          const v = pha[i];
+          const v = sam ? (pha[i] * sam[i]) / 255 : pha[i];
           bytes[i] = byte(v);
           if (v > 0.5) sure++;
         }
@@ -226,11 +245,16 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
       if (at >= run.b) {
         encoder?.stdin.end();
         encoder = null;
+        outline?.close();
+        outline = null;
         runIndex++;
         if (runIndex < runs.length) at = runs[runIndex].start;
       }
     }
   }
+  outline?.close();
+  // Outlines still being made for stretches past the video's end.
+  await Promise.allSettled(outlines);
   if (encoder) {
     // The video ended inside this stretch.
     out[out.length - 1].to = runs[runIndex].a + Math.max(0, at - runs[runIndex].a);
