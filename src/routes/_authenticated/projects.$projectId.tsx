@@ -190,7 +190,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import logoUrl from "@/assets/logo.png";
 import { ExportDialog, type ExportSettings } from "@/components/export-dialog";
 import { useProjectPresence } from "@/lib/use-presence";
 import { getTeamBrandKit } from "@/lib/teams.functions";

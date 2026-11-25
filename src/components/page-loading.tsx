@@ -3,7 +3,7 @@
 // a soft purple glow that pulses. Its own small styles, so it shows before
 // any of the app's code has run.
 
-import logoUrl from "@/assets/logo.png";
+import logoUrl from "@/assets/logo-white.svg";
 
 const CSS = `
 @keyframes stuccord-glow {
@@ -47,7 +47,7 @@ export function PageLoading() {
           alt=""
           width={64}
           height={64}
-          className="relative h-16 w-16 rounded-2xl bg-white object-contain p-1 shadow-[0_8px_30px_-6px_rgba(255,255,255,0.25)]"
+          className="relative h-16 w-16 object-contain drop-shadow-[0_8px_24px_rgba(255,90,31,0.25)]"
           style={{ animation: "stuccord-breathe 1.8s ease-in-out infinite" }}
         />
       </div>

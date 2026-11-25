@@ -11,7 +11,9 @@ import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
-import faviconUrl from "../assets/logo.png";
+import faviconUrl from "../assets/logo-icon.svg";
+import faviconPngUrl from "../assets/favicon-64.png";
+import appIconUrl from "../assets/logo-icon-512.png";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
@@ -105,7 +107,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: faviconUrl, type: "image/png" },
+      { rel: "icon", href: faviconUrl, type: "image/svg+xml" },
+      { rel: "icon", href: faviconPngUrl, type: "image/png", sizes: "64x64" },
+      { rel: "apple-touch-icon", href: appIconUrl },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

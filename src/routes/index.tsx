@@ -24,7 +24,7 @@ import {
   Undo2,
   Wand2,
 } from "lucide-react";
-import logoUrl from "@/assets/logo.png";
+import logoUrl from "@/assets/logo-white.svg";
 import { planFor } from "@/lib/plans";
 import { MAX_UPLOAD_MB } from "@/lib/upload-rules";
 import { AI_VOICE_MONTHLY_CHARS } from "@/lib/ai-voice";
@@ -122,7 +122,7 @@ function LogoMark({ className = "h-10 w-10" }: { className?: string }) {
       alt="Stuccord Motion logo"
       width={80}
       height={80}
-      className={`${className} object-contain rounded-xl bg-white p-0.5 shadow-[0_6px_20px_-6px_rgba(255,255,255,0.25)]`}
+      className={`${className} object-contain`}
     />
   );
 }

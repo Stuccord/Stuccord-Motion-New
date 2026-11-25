@@ -32,7 +32,7 @@ import {
   CreditCard,
   Gift,
 } from "lucide-react";
-import logoUrl from "@/assets/logo.png";
+import logoUrl from "@/assets/logo-white.svg";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { useWorkspace } from "@/lib/use-workspace";
 import { NotificationsBell } from "@/components/notifications-bell";
@@ -170,7 +170,7 @@ export function AppShell({
             alt=""
             width={28}
             height={28}
-            className="h-7 w-7 shrink-0 object-contain rounded-lg bg-white p-px"
+            className="h-7 w-7 shrink-0 object-contain"
           />
           <span className="font-display text-[15px] font-bold tracking-tight truncate text-foreground">
             Stuccord <span className="text-foreground/60">Motion</span>

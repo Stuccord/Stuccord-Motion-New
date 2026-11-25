@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { needsCode, sendPasswordReset, verifySignInCode } from "@/lib/account-security";
-import logoUrl from "@/assets/logo.png";
+import logoUrl from "@/assets/logo-white.svg";
 import editingDesk from "@/assets/editing-desk.jpg";
 
 function safeRelativePath(candidate: string | undefined): string | null {
@@ -230,7 +230,7 @@ function AuthPage() {
       <div className="flex flex-col min-h-screen lg:min-h-0">
         <header className="px-6 lg:px-10 py-5 flex items-center justify-between border-b border-border">
           <Link to="/" className="flex items-center gap-2">
-            <img src={logoUrl} alt="" width={28} height={28} className="h-7 w-7 object-contain rounded-lg bg-white p-px" />
+            <img src={logoUrl} alt="" width={28} height={28} className="h-7 w-7 object-contain" />
             <span className="text-sm font-semibold tracking-tight text-foreground">
               Stuccord <span className="text-primary">Motion</span>
             </span>
