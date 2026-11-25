@@ -12,7 +12,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { limitThreads } from "./threads.js";
-import { outlineReader, samOutline } from "./sam.js";
+import { samReady, samOutline, trimMatte } from "./sam.js";
+import { MatteDoubt, describeDoubt, doubtReason } from "./doubt.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const PERSON_MODEL = path.join(here, "models", "selfie_segmenter.onnx");
@@ -148,18 +149,9 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
     runs.push({ start, a, b });
     prevEnd = b;
   }
-  // SAM's outline of the speaker for each stretch, asked for straight away
-  // (fal works while RVM runs here), one stretch after another so only one
-  // extra decode runs at a time; null where it can't be had (sam.js).
-  let chain = Promise.resolve();
-  const outlines = runs.map((r, index) => {
-    const next = chain.then(() =>
-      samOutline({ ffmpegPath, input, zoom, a: r.a, b: r.b, mw, mh, workdir, index }),
-    );
-    chain = next;
-    return next;
-  });
-  let outline = null;
+  // How sure RVM's matte looks, per stretch (doubt.js): only unsure
+  // stretches are sent to SAM afterwards.
+  const doubts = runs.map(() => new MatteDoubt(mw, mh));
   const pick = runs.map((r) => `between(n\\,${r.start}\\,${r.b - 1})`).join("+");
   const filters = [zoom, `select=${pick}`, `scale=${mw}:${mh}:flags=area`, "format=rgb24"]
     .filter(Boolean)
@@ -197,7 +189,7 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
   // Per stretch: the matte, lossless grey.
   const openEncoder = (i) => {
     const file = path.join(workdir, `matte_${i}.mkv`);
-    out.push({ file, from: runs[i].a, to: runs[i].b, matte: true });
+    out.push({ file, from: runs[i].a, to: runs[i].b, matte: true, run: i });
     return encode(file, "gray", ["-c:v", "ffv1"]);
   };
   const write = (p, buf) =>
@@ -220,17 +212,12 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
       const pha = await runMatte(ort, session, pending.subarray(0, frameBytes), mw, mh, state);
       pending = pending.subarray(frameBytes);
       if (at >= run.a) {
-        if (at === run.a) {
-          const file = await outlines[runIndex];
-          outline = file ? outlineReader(ffmpegPath, file, mw, mh) : null;
-        }
-        // RVM's matte, kept only inside SAM's outline when there is one.
-        const sam = outline ? await outline.next() : null;
+        doubts[runIndex].add(pha);
         let sure = 0;
         const n = bytes.length;
         const byte = (v) => (v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255));
         for (let i = 0; i < n; i++) {
-          const v = sam ? (pha[i] * sam[i]) / 255 : pha[i];
+          const v = pha[i];
           bytes[i] = byte(v);
           if (v > 0.5) sure++;
         }
@@ -245,16 +232,11 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
       if (at >= run.b) {
         encoder?.stdin.end();
         encoder = null;
-        outline?.close();
-        outline = null;
         runIndex++;
         if (runIndex < runs.length) at = runs[runIndex].start;
       }
     }
   }
-  outline?.close();
-  // Outlines still being made for stretches past the video's end.
-  await Promise.allSettled(outlines);
   if (encoder) {
     // The video ended inside this stretch.
     out[out.length - 1].to = runs[runIndex].a + Math.max(0, at - runs[runIndex].a);
@@ -271,7 +253,36 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
     );
     return [];
   }
-  return out.filter((m) => m.to > m.from);
+  return trimUnsure({
+    ffmpegPath, input, zoom, mw, mh, workdir, doubts,
+    mattes: out.filter((m) => m.to > m.from),
+  });
+}
+
+/**
+ * Judges each stretch's matte (doubt.js) and, only where it looks unsure,
+ * asks SAM for the speaker's outline and keeps the matte inside it
+ * (sam.js). Every decision is logged as a [doubt] line, to tune the limits
+ * from real exports. Anything that fails leaves that stretch as RVM made it.
+ */
+async function trimUnsure({ ffmpegPath, input, zoom, mw, mh, workdir, doubts, mattes }) {
+  for (const m of mattes) {
+    const s = doubts[m.run].summary();
+    const reason = doubtReason(s);
+    console.log(
+      `[doubt] Stretch ${m.run} (${m.from}-${m.to}): ${describeDoubt(s)} -> ` +
+        (reason ? `unsure (${reason})${samReady() ? ", asking SAM" : ", no FAL_KEY: RVM alone"}` : "sure, RVM alone"),
+    );
+    if (!reason || !samReady()) continue;
+    const outline = await samOutline({ ffmpegPath, input, zoom, a: m.from, b: m.to, mw, mh, workdir, index: m.run });
+    if (!outline) continue;
+    try {
+      m.file = await trimMatte({ ffmpegPath, matte: m.file, outline, mw, mh, file: path.join(workdir, `matte_sam_${m.run}.mkv`) });
+    } catch (e) {
+      console.warn(`[doubt] Stretch ${m.run} stays on RVM alone: ${e?.message || e}`);
+    }
+  }
+  return mattes;
 }
 
 /**
