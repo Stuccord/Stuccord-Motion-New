@@ -37,6 +37,8 @@ const FPS = 30;
 export const BEHIND_FADE_FRAMES = 9;
 export const BEHIND_DARKEN = 0.45;
 export const BEHIND_BLUR = 0.006;
+/** The size the room behind the graphics is worked out at (a share of the frame). */
+export const ROOM_SCALE = 0.25;
 // The model's input and output size.
 const MASK_SIZE = 256;
 // Only fairly sure pixels: a lower start let a ring of the bright,
@@ -129,12 +131,7 @@ async function runMatte(ort, session, rgb, mw, mh, state) {
  * at MATTE_LONG (white: the speaker, soft at hair and edges). The model
  * starts fresh before each stretch and runs MATTE_PREROLL frames first.
  */
-async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
-  const ort = await import("onnxruntime-node");
-  const session = await ort.InferenceSession.create(MATTING_MODEL, {
-    intraOpNumThreads: 2,
-    graphOptimizationLevel: "all",
-  });
+async function personMattes(ort, session, { ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
   const s = Math.min(1, MATTE_LONG / Math.max(w, h));
   const mw = Math.max(2, Math.round((w * s) / 2) * 2);
   const mh = Math.max(2, Math.round((h * s) / 2) * 2);
@@ -295,15 +292,26 @@ export function maskTiles(w, h) {
  */
 export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w = 1080, h = 1920 }) {
   if (!ranges.length) return [];
-  // The real video matte when its model is in the image (see MATTING_MODEL).
-  if (mattingModelReady()) {
-    return personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h });
-  }
+  // The real video matte when its model is in the image (see MATTING_MODEL),
+  // else the selfie mask.
+  const matting = mattingModelReady();
   const ort = await import("onnxruntime-node");
-  const session = await ort.InferenceSession.create(PERSON_MODEL, {
+  const session = await ort.InferenceSession.create(matting ? MATTING_MODEL : PERSON_MODEL, {
     intraOpNumThreads: 2,
     graphOptimizationLevel: "all",
   });
+  const args = { ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h };
+  try {
+    return await (matting ? personMattes : selfieMasks)(ort, session, args);
+  } finally {
+    // The model (about 200 MB) is let go before the final pass, which needs
+    // the memory most (the worker restarted there on a 2 GB instance).
+    await session.release().catch(() => {});
+  }
+}
+
+/** The person masks from the selfie segmenter (no RVM model in the image). */
+async function selfieMasks(ort, session, { ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
   const inputName = session.inputNames[0];
   const outputName = session.outputNames[0];
 
@@ -436,7 +444,14 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   const graph = [];
   const n = masks.length;
   if (!n) return { inputs, graph, last: picture };
-  const blur = Math.max(0.5, BEHIND_BLUR * h).toFixed(2);
+  // The room behind the graphics (where it is, the clean room, the blur) is
+  // worked out at ROOM_SCALE of the frame and scaled up: it's a soft blur
+  // anyway, so it looks the same, and the final pass needs far less memory
+  // and time (it was 7x slower with a cut-out than without, at full size).
+  // The speaker's own edge (the matte) stays at full size.
+  const qw = Math.max(2, Math.round((w * ROOM_SCALE) / 2) * 2);
+  const qh = Math.max(2, Math.round((h * ROOM_SCALE) / 2) * 2);
+  const blur = Math.max(0.5, BEHIND_BLUR * qh).toFixed(2);
   const k = (1 - BEHIND_DARKEN).toFixed(3);
   // A grey (one-plane) picture as RGB with that value in every channel, made
   // exactly (no range conversion), for the per-pixel maths below.
@@ -463,7 +478,7 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   const tighten = `lut=y='clip((val-${edge.lo})*255/${edge.hi - edge.lo},0,255)'`;
   // How far past the speaker's edge the room is read from (the clean room):
   // enough that none of the speaker is in it.
-  const reach = Math.max(1, h * edge.reach).toFixed(2);
+  const reach = Math.max(0.5, qh * edge.reach).toFixed(2);
   masks.forEach((m, i) => {
     const input = firstInput + pieces.length + i;
     if (m.matte) {
@@ -483,14 +498,14 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
       );
     }
     // Where the room is: everything but the speaker and a margin round them.
-    graph.push(`[ad${i}]gblur=sigma=${reach},lut=y='if(gt(val,4),0,255)'[wr${i}g]`);
+    graph.push(`[ad${i}]scale=${qw}:${qh}:flags=area,gblur=sigma=${reach},lut=y='if(gt(val,4),0,255)'[wr${i}g]`);
     rgb(`wr${i}g`, `wr${i}`);
     graph.push(`[wr${i}]split[wa${i}][wb${i}]`);
     // The clean room (B): the picture blurred over the room only (a blur
     // weighted by where the room is), so the speaker's own colours never
     // smear into it: no dark ghost round a moving hand, and the true colour
     // of the wall right at the speaker's edge.
-    graph.push(`[pb${i}]format=gbrp,split=2[pr${i}][pf${i}]`);
+    graph.push(`[pb${i}]scale=${qw}:${qh}:flags=area,format=gbrp,split=2[pr${i}][pf${i}]`);
     graph.push(`[pr${i}][wa${i}]premultiply=inplace=0,gblur=sigma=${blur}[num${i}]`);
     graph.push(`[wb${i}]gblur=sigma=${blur},split=2[den${i}][dw${i}]`);
     graph.push(`[num${i}][den${i}]unpremultiply=inplace=0[bn${i}]`);
@@ -498,7 +513,7 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
     // say) has nothing to read the clean room from: it takes the plain blur.
     graph.push(`[pf${i}]gblur=sigma=${blur}[bf${i}]`);
     graph.push(`[dw${i}]lut=c0='min(255,val*16)':c1='min(255,val*16)':c2='min(255,val*16)'[dm${i}]`);
-    graph.push(`[bf${i}][bn${i}][dm${i}]maskedmerge[bc${i}]`);
+    graph.push(`[bf${i}][bn${i}][dm${i}]maskedmerge,scale=${w}:${h}:flags=bicubic[bc${i}]`);
     // 1 - matte (how much of what's behind shows through).
     graph.push(`[an${i}]negate[nag${i}]`);
     rgb(`nag${i}`, `naF${i}`);
