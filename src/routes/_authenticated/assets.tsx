@@ -136,7 +136,7 @@ function AssetsPage() {
           <Loader2 className="w-4 h-4 mx-auto animate-spin mb-2" /> Loading your clips…
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-border bg-white/50 p-12 text-center">
+        <div className="rounded-2xl border-2 border-dashed border-border bg-card p-12 text-center">
           <div className="mx-auto w-12 h-12 rounded-full bg-violet-500/10 text-violet-400 grid place-items-center mb-3">
             <Upload className="w-5 h-5" />
           </div>
