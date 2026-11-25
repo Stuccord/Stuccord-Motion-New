@@ -43,17 +43,33 @@ export const Route = createFileRoute("/api/public/render-webhook")({
           edit_plan?: unknown;
           error?: string;
           transcripts?: unknown;
+          /** A "still working" ping while the render runs (no other fields). */
+          heartbeat?: boolean;
         };
         try {
           payload = JSON.parse(body);
         } catch {
           return new Response("Bad JSON", { status: 400 });
         }
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+        // "Still working" (at least once a minute while a render runs): only
+        // the job's updated_at moves, and only while it's running, so a late
+        // heartbeat never undoes a finished or failed job (render-lost.server.ts).
+        if (payload.heartbeat === true && payload.job_id) {
+          const { RUNNING_JOB_STATUSES } = await import("@/lib/render-lost.server");
+          const { error } = await supabaseAdmin
+            .from("render_jobs")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", payload.job_id)
+            .in("status", RUNNING_JOB_STATUSES);
+          if (error) return new Response(error.message, { status: 500 });
+          return Response.json({ ok: true });
+        }
+
         if (!payload.job_id || !payload.status) {
           return new Response("Missing fields", { status: 400 });
         }
-
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
         const jobPatch = {
           status: payload.status,

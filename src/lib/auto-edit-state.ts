@@ -42,6 +42,8 @@ export type AutoEdit = {
   render_job?: string | null;
   /** How many times the render waited for a busy worker. */
   render_tries?: number;
+  /** How many exports the worker lost in a restart (one is made again by itself). */
+  render_lost?: number;
 };
 
 export const AUTO_STEP_IDS: AutoStepId[] = [

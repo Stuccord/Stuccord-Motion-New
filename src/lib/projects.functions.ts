@@ -647,10 +647,24 @@ export const getProject = createServerFn({ method: "POST" })
         .maybeSingle();
       if (t) team = { id: t.id, name: t.name, role: teamRole };
     }
+    // An export the worker lost in a restart says so instead of
+    // "rendering" for ever (render-lost.server.ts).
+    let latestJob = jobs?.[0] ?? null;
+    if (latestJob) {
+      const { isRenderLost, failLostRender, RENDER_LOST_TEXT } =
+        await import("@/lib/render-lost.server");
+      if (isRenderLost(latestJob)) {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        if (await failLostRender(supabaseAdmin, latestJob.id)) {
+          latestJob = { ...latestJob, status: "failed", error: RENDER_LOST_TEXT };
+          if (project.status === "processing") project.status = "failed";
+        }
+      }
+    }
     return {
       project,
       clips: clips ?? [],
-      latestJob: jobs?.[0] ?? null,
+      latestJob,
       access,
       canDelete,
       folder,

@@ -53,6 +53,7 @@ import { describeSpeakerFor } from "@/lib/speaker-look.functions";
 import { startCloudRender } from "@/lib/projects.functions";
 import { workerSecret } from "@/lib/worker-secret";
 import { friendlyText } from "@/lib/service-problems";
+import { failLostRender, isRenderLost, RENDER_LOST_TEXT } from "@/lib/render-lost.server";
 import { motionAccent } from "@/motion/theme";
 
 type Db = SupabaseClient<Database>;
@@ -592,11 +593,32 @@ class Run {
 
     const { data: job, error } = await this.db
       .from("render_jobs")
-      .select("status, error")
+      .select("status, error, updated_at")
       .eq("id", jobId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!job) return this.fail("render", "The render went missing. Try again.");
+    // The worker restarted partway (it went quiet): made again once by
+    // itself; a second loss needs a person (render-lost.server.ts).
+    if (isRenderLost(job) && (await failLostRender(this.db, jobId))) {
+      const lost = (this.a.render_lost ?? 0) + 1;
+      if (lost > 1) return this.fail("render", RENDER_LOST_TEXT);
+      this.a.render_job = null;
+      this.a.render_lost = lost;
+      await patch(
+        this.db,
+        this.id,
+        this.a.run,
+        { render_job: null, render_lost: lost },
+        {
+          render: {
+            state: "active",
+            note: "The renderer restarted, so the video is being made again…",
+          },
+        },
+      );
+      return next(1000);
+    }
     if (job.status === "failed") return this.fail("render", job.error || "The render failed.");
     if (RUNNING_JOB.includes(job.status)) return next(4000);
     await patch(
@@ -710,6 +732,7 @@ export async function startAutoEditRun(
       steps,
       render_job: renderFailed ? null : (old.render_job ?? null),
       render_tries: 0,
+      render_lost: 0,
     };
   } else {
     state = {

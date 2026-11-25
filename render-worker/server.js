@@ -89,6 +89,8 @@ if (!SECRET) console.warn("[Worker] RENDER_WORKER_SECRET not set — /jobs will 
 if (!ffmpegPath) console.warn("[Worker] ffmpeg-static failed to resolve a binary path");
 
 let currentJobId = null;
+/** How often a running render says "still working" (the app gives up after 5 minutes of quiet). */
+const HEARTBEAT_MS = 60_000;
 
 function verifySignature(req) {
   const sig = req.header("x-stuccord-signature") || "";
@@ -350,6 +352,11 @@ app.post("/jobs", async (req, res) => {
   currentJobId = job.job_id;
   res.status(202).json({ ok: true, job_id: job.job_id });
 
+  // "Still working", once a minute, so the app can tell a long render from
+  // one this worker lost in a restart (src/lib/render-lost.server.ts).
+  const heartbeat = setInterval(() => {
+    void callback(job.callback_url, { job_id: job.job_id, heartbeat: true });
+  }, HEARTBEAT_MS);
   (async () => {
     try {
       await runRender(job);
@@ -365,6 +372,7 @@ app.post("/jobs", async (req, res) => {
         console.error(`[Worker] Failed error-callback for job=${job.job_id}:`, cbErr?.message || cbErr);
       }
     } finally {
+      clearInterval(heartbeat);
       currentJobId = null;
     }
   })();
