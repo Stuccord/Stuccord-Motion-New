@@ -195,7 +195,7 @@ const CreateInput = z.object({
 
 export const createProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => CreateInput.parse(d))
+  .validator((d: unknown) => CreateInput.parse(d))
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase
       .from("projects")
@@ -292,7 +292,7 @@ async function roleIn(supabase: SupabaseClient<Database>, teamId: string, userId
 
 export const listProjects = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .validator((d: unknown) => WorkspaceInput.parse(d))
   .handler(async ({ data: input, context }) => {
     const team = input.workspace === PERSONAL ? null : input.workspace;
     let q = context.supabase.from("projects").select("*").order("created_at", { ascending: false });
@@ -368,7 +368,7 @@ export const listProjects = createServerFn({ method: "GET" })
 
 export const getUsageStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .validator((d: unknown) => WorkspaceInput.parse(d))
   .handler(async ({ data: input, context }) => {
     const team = input.workspace === PERSONAL ? null : input.workspace;
     const now = new Date();
@@ -450,7 +450,7 @@ export const getUsageStats = createServerFn({ method: "GET" })
 
 export const listAllClips = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .validator((d: unknown) => WorkspaceInput.parse(d))
   .handler(async ({ data: input, context }) => {
     const team = input.workspace === PERSONAL ? null : input.workspace;
     let q = context.supabase
@@ -546,7 +546,7 @@ export const isCoverPath = (p: string | null | undefined): p is string =>
  */
 export const setProjectCover = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({ project_id: z.string().uuid(), path: z.string().min(1).max(300).nullable() })
       .parse(d),
@@ -584,7 +584,7 @@ export const setProjectCover = createServerFn({ method: "POST" })
 /** Records where a clip's thumbnail was saved (only inside the user's own thumbs folder). */
 export const setClipThumbnail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ id: z.string().uuid(), path: z.string().min(1).max(300) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -608,7 +608,7 @@ export const setClipThumbnail = createServerFn({ method: "POST" })
 
 export const getProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await reapStaleRenderJobs(context.userId, data.id);
     const { access, teamRole, canDelete, folder } = await projectAccess(
@@ -707,7 +707,7 @@ async function listFolder(
 
 export const deleteProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { canDelete, project: owned } = await projectAccess(
       context.supabase,
@@ -801,7 +801,7 @@ export const deleteProject = createServerFn({ method: "POST" })
  */
 export const moveProject = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -978,7 +978,7 @@ const AttachClipInput = z.object({
 
 export const attachClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => AttachClipInput.parse(d))
+  .validator((d: unknown) => AttachClipInput.parse(d))
   .handler(async ({ data, context }) => {
     const { folder } = await projectForEdit(context.supabase, data.project_id, context.userId);
     if (!inFolder(data.storage_path, folder)) {
@@ -1011,7 +1011,7 @@ export const attachClip = createServerFn({ method: "POST" })
 
 export const removeClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: clip, error: cErr } = await context.supabase
       .from("clips")
@@ -1064,7 +1064,7 @@ export const removeClip = createServerFn({ method: "POST" })
 
 export const updateClipOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -1113,7 +1113,7 @@ export const updateClipOrder = createServerFn({ method: "POST" })
 
 export const updateClipTrim = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -1143,7 +1143,7 @@ export const updateClipTrim = createServerFn({ method: "POST" })
 /** Where a clip sits in the frame (moved, resized, rotated); null: its default fit. */
 export const updateClipTransform = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -1174,7 +1174,7 @@ export const updateClipTransform = createServerFn({ method: "POST" })
 
 export const updateClipDuration = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ id: z.string().uuid(), duration_ms: z.number().int().nonnegative() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -1188,7 +1188,7 @@ export const updateClipDuration = createServerFn({ method: "POST" })
 
 export const splitClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ id: z.string().uuid(), at_ms: z.number().int().positive() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -1296,7 +1296,7 @@ export async function applyClipCuts(
  */
 export const cutClipRanges = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -1331,7 +1331,7 @@ export const cutClipRanges = createServerFn({ method: "POST" })
  */
 export const restoreClipLayout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -1390,7 +1390,7 @@ export const restoreClipLayout = createServerFn({ method: "POST" })
 
 export const duplicateClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: src, error: sErr } = await context.supabase
       .from("clips")
@@ -1409,7 +1409,7 @@ export const duplicateClip = createServerFn({ method: "POST" })
 
 export const updateProjectSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         id: z.string().uuid(),
@@ -1472,7 +1472,7 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
 /** Saved transcripts (words in source-file time) for a project's clips. */
 export const listProjectTranscripts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ project_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ project_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: clips, error: cErr } = await context.supabase
       .from("clips")
@@ -1503,7 +1503,7 @@ const TranscriptWordInput = z
  */
 export const saveTranscriptWords = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         storage_path: z.string().min(1).max(1024),
@@ -1526,7 +1526,7 @@ export const saveTranscriptWords = createServerFn({ method: "POST" })
 
 export const getClipSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ path: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ path: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: signed, error } = await context.supabase.storage
       .from("raw-clips")
@@ -1537,7 +1537,7 @@ export const getClipSignedUrl = createServerFn({ method: "POST" })
 
 export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -1559,7 +1559,7 @@ export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
 
 export const getRenderSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ path: z.string() }).parse(d))
+  .validator((d: unknown) => z.object({ path: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: signed, error } = await context.supabase.storage
       .from("renders")
@@ -2015,7 +2015,7 @@ export async function startCloudRender(
 
 export const submitRender = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -2045,7 +2045,7 @@ export const submitRender = createServerFn({ method: "POST" })
  */
 export const startBrowserRender = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -2116,7 +2116,7 @@ export const startBrowserRender = createServerFn({ method: "POST" })
 
 export const finishBrowserRender = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         job_id: z.string().uuid("Invalid job ID format"),

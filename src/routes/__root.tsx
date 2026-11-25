@@ -38,7 +38,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
   useEffect(() => {
@@ -54,9 +54,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
-        {error && (
+        {error != null && (
           <pre className="mt-3 p-3 text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg text-left overflow-auto max-h-40">
-            {error.message || String(error)}
+            {(error instanceof Error && error.message) || String(error)}
           </pre>
         )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
@@ -92,7 +92,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Stuccord Motion turns raw footage into cinematic, motion-graphics-heavy edits. Built for editors and creators who ship every week.",
       },
-      { property: "og:title", content: "Stuccord Motion — AI video editing for motion-driven creators" },
+      {
+        property: "og:title",
+        content: "Stuccord Motion — AI video editing for motion-driven creators",
+      },
       {
         property: "og:description",
         content:
@@ -100,10 +103,25 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "Stuccord Motion — AI video editing for motion-driven creators" },
-      { name: "description", content: "Stuccord Motion Studio automates cinematic, motion-graphics-heavy video edits for content creators." },
-      { property: "og:description", content: "Stuccord Motion Studio automates cinematic, motion-graphics-heavy video edits for content creators." },
-      { name: "twitter:description", content: "Stuccord Motion Studio automates cinematic, motion-graphics-heavy video edits for content creators." },
+      {
+        name: "twitter:title",
+        content: "Stuccord Motion — AI video editing for motion-driven creators",
+      },
+      {
+        name: "description",
+        content:
+          "Stuccord Motion Studio automates cinematic, motion-graphics-heavy video edits for content creators.",
+      },
+      {
+        property: "og:description",
+        content:
+          "Stuccord Motion Studio automates cinematic, motion-graphics-heavy video edits for content creators.",
+      },
+      {
+        name: "twitter:description",
+        content:
+          "Stuccord Motion Studio automates cinematic, motion-graphics-heavy video edits for content creators.",
+      },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

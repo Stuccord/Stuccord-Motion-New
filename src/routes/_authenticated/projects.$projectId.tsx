@@ -128,12 +128,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -156,7 +151,6 @@ import {
   VolumeX,
   Maximize2,
   Minimize2,
-
   Scissors,
   Type,
   Music2,
@@ -186,7 +180,6 @@ import {
   Lock,
   Eye,
   MousePointer2,
-
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -247,32 +240,37 @@ export const Route = createFileRoute("/_authenticated/projects/$projectId")({
     };
   },
   component: EditorRoute,
-  errorComponent: ({ error }) => (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4 text-white">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-neutral-100">Project Not Found</h1>
-        <p className="mt-2 text-sm text-neutral-400">
-          {error?.message === "Project not found"
-            ? "This project does not exist or may have been deleted."
-            : error?.message || "Something went wrong loading this project."}
-        </p>
-        <div className="mt-6 flex justify-center gap-3">
-          <Link
-            to="/dashboard"
-            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-neutral-950 hover:bg-violet-700 transition"
-          >
-            Go to Dashboard
-          </Link>
-          <Link
-            to="/projects/new"
-            className="rounded-lg border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-300 hover:bg-neutral-900 transition"
-          >
-            Create New Project
-          </Link>
+  errorComponent: ({ error: e }) => {
+    const error = e instanceof Error ? e : null;
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 px-4 text-white">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold tracking-tight text-neutral-100">
+            Project Not Found
+          </h1>
+          <p className="mt-2 text-sm text-neutral-400">
+            {error?.message === "Project not found"
+              ? "This project does not exist or may have been deleted."
+              : error?.message || "Something went wrong loading this project."}
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <Link
+              to="/dashboard"
+              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-neutral-950 hover:bg-violet-700 transition"
+            >
+              Go to Dashboard
+            </Link>
+            <Link
+              to="/projects/new"
+              className="rounded-lg border border-neutral-700 px-4 py-2 text-sm font-medium text-neutral-300 hover:bg-neutral-900 transition"
+            >
+              Create New Project
+            </Link>
+          </div>
         </div>
       </div>
-    </div>
-  ),
+    );
+  },
 });
 
 type ClipRow = {
@@ -303,7 +301,6 @@ function clipVisibleMs(c: ClipRow): number {
 function clipSourceMs(c: ClipRow): number | null {
   return c.duration_ms ?? null;
 }
-
 
 /** Phones get a short notice instead of the editor (it needs a bigger screen); tablets and computers the editor. */
 function EditorRoute() {
@@ -626,7 +623,12 @@ function EditorPage() {
       .channel(`project:${projectId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "render_jobs", filter: `project_id=eq.${projectId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "render_jobs",
+          filter: `project_id=eq.${projectId}`,
+        },
         () => refetch(),
       )
       .on(
@@ -820,8 +822,7 @@ function EditorPage() {
   useEffect(() => {
     if (!data) return;
     const todo = (data.clips as ClipRow[]).filter(
-      (c) =>
-        !isAudioRole(c.role) && !thumbnailsRequested.current.has(thumbnailKey(c)),
+      (c) => !isAudioRole(c.role) && !thumbnailsRequested.current.has(thumbnailKey(c)),
     );
     if (todo.length === 0) return;
     for (const c of todo) thumbnailsRequested.current.add(thumbnailKey(c));
@@ -949,8 +950,16 @@ function EditorPage() {
 
   // Undo / Redo in-memory stack
   const [history, setHistory] = useState<{
-    past: { undo: () => void | Promise<void>; redo: () => void | Promise<void>; description: string }[];
-    future: { undo: () => void | Promise<void>; redo: () => void | Promise<void>; description: string }[];
+    past: {
+      undo: () => void | Promise<void>;
+      redo: () => void | Promise<void>;
+      description: string;
+    }[];
+    future: {
+      undo: () => void | Promise<void>;
+      redo: () => void | Promise<void>;
+      description: string;
+    }[];
   }>({ past: [], future: [] });
 
   // The latest history, so undo/redo can act on it outside a state updater:
@@ -960,7 +969,11 @@ function EditorPage() {
   const historyRef = useRef(history);
   historyRef.current = history;
 
-  const pushToHistory = (item: { undo: () => void | Promise<void>; redo: () => void | Promise<void>; description: string }) => {
+  const pushToHistory = (item: {
+    undo: () => void | Promise<void>;
+    redo: () => void | Promise<void>;
+    description: string;
+  }) => {
     const next = { past: [...historyRef.current.past, item].slice(-50), future: [] };
     historyRef.current = next;
     setHistory(next);
@@ -1036,12 +1049,7 @@ function EditorPage() {
     function isTypingTarget(el: EventTarget | null) {
       if (!(el instanceof HTMLElement)) return false;
       const tag = el.tagName;
-      return (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        el.isContentEditable
-      );
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
     }
     function onKey(e: KeyboardEvent) {
       if (isTypingTarget(e.target)) return;
@@ -1120,8 +1128,6 @@ function EditorPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [duration]);
 
-
-
   const changeAspect = useMutation({
     mutationFn: (ratio: "9:16" | "16:9" | "1:1") =>
       updateSettings({ data: { id: projectId, aspect_ratio: ratio } }),
@@ -1146,9 +1152,7 @@ function EditorPage() {
 
   // Track a file can go on: videos and images on V1/V2, audio on A2.
   const fitsTrack = (f: File, track: AddMediaTarget["track"]) =>
-    track === "music"
-      ? f.type.startsWith("audio/")
-      : f.type.startsWith("video/") || isImageFile(f);
+    track === "music" ? f.type.startsWith("audio/") : f.type.startsWith("video/") || isImageFile(f);
 
   type UploadMeta = {
     role: "aroll" | "broll" | "music" | "sfx";
@@ -1538,9 +1542,7 @@ function EditorPage() {
 
   // These hooks MUST be above the early return to avoid "rendered more hooks" errors.
   // They use null-safe access since `data` may be undefined during loading.
-  const videoClipsForHooks = ((data?.clips ?? []) as ClipRow[]).filter(
-    (c) => !isAudioRole(c.role),
-  );
+  const videoClipsForHooks = ((data?.clips ?? []) as ClipRow[]).filter((c) => !isAudioRole(c.role));
 
   // Where each clip starts in the rendered program, matching the export and the
   // timeline: each track (A-roll, B-roll) laid out on its own from 0:00, a
@@ -1669,7 +1671,6 @@ function EditorPage() {
     motionAccent(motion.plan?.colour, brand.data?.kit?.highlightColor).hex,
     footageFrames,
   );
-
 
   // The main player is the live timeline, the render, or the selected clip's
   // file (see PreviewCanvas). currentTime means a position in whichever one it
@@ -2278,7 +2279,11 @@ function EditorPage() {
             aRoll,
             bRoll,
             [selectedClip],
-            insertIndexAt(others, clipVisibleMs, Math.max(0, want) + clipVisibleMs(selectedClip) / 2),
+            insertIndexAt(
+              others,
+              clipVisibleMs,
+              Math.max(0, want) + clipVisibleMs(selectedClip) / 2,
+            ),
             clipVisibleMs,
           )
         : planPlacement(aRoll, bRoll, [selectedClip], track, Math.max(0, want), clipVisibleMs)
@@ -2361,14 +2366,14 @@ function EditorPage() {
       toast("Select a clip first");
       return;
     }
-    
+
     const clipToDelete = { ...selectedClip };
     const originalOrder = videoClips.map((c) => ({
       id: c.id,
       ordinal: c.ordinal,
       role: c.role,
     }));
-    
+
     pushToHistory({
       description: "Delete clip",
       undo: async () => {
@@ -2386,7 +2391,7 @@ function EditorPage() {
             parent_clip_id: clipToDelete.parent_clip_id ?? undefined,
           },
         });
-        
+
         const restoredOrder = originalOrder.map((o) => {
           if (o.id === clipToDelete.id) {
             return { ...o, id: recreated.id };
@@ -2398,9 +2403,10 @@ function EditorPage() {
         refetch();
       },
       redo: () => {
-        const currentClips = qc.getQueryData<{ clips: ClipRow[] }>(["project", projectId])?.clips || clips;
+        const currentClips =
+          qc.getQueryData<{ clips: ClipRow[] }>(["project", projectId])?.clips || clips;
         const matchingClip = currentClips.find(
-          (c) => c.storage_path === clipToDelete.storage_path && c.ordinal === clipToDelete.ordinal
+          (c) => c.storage_path === clipToDelete.storage_path && c.ordinal === clipToDelete.ordinal,
         );
         if (matchingClip) {
           removeClipMut.mutate(matchingClip.id);
@@ -2409,7 +2415,7 @@ function EditorPage() {
         }
       },
     });
-    
+
     removeClipMut.mutate(selectedClipId);
   }
 
@@ -2418,7 +2424,7 @@ function EditorPage() {
       toast("Select a clip first");
       return;
     }
-    
+
     duplicateMut.mutate(selectedClipId, {
       onSuccess: (copy) => {
         if (copy?.id) {
@@ -2457,14 +2463,14 @@ function EditorPage() {
       toast("Move the playhead further into the clip to split");
       return;
     }
-    
+
     const originalTrimOut = selectedClip.trim_out_ms;
     const originalOrder = videoClips.map((c) => ({
       id: c.id,
       ordinal: c.ordinal,
       role: c.role,
     }));
-    
+
     splitMut.mutate(
       { id: selectedClipId, at_ms: relative },
       {
@@ -2474,7 +2480,9 @@ function EditorPage() {
               description: "Split clip",
               undo: async () => {
                 await dropClip({ data: { id: res.right_id } });
-                await trimFn({ data: { id: res.left_id, trim_in_ms: trimIn, trim_out_ms: originalTrimOut } });
+                await trimFn({
+                  data: { id: res.left_id, trim_in_ms: trimIn, trim_out_ms: originalTrimOut },
+                });
                 await reorder({ data: { project_id: projectId, order: originalOrder } });
                 setSelectedClipId(res.left_id);
                 refetch();
@@ -2485,7 +2493,7 @@ function EditorPage() {
             });
           }
         },
-      }
+      },
     );
   }
 
@@ -2584,9 +2592,7 @@ function EditorPage() {
             onOpenThumbnail={() => setThumbOpen(true)}
             onOpenPublish={() => setPublishOpen(true)}
             canPublish={!!project.output_path}
-            isRenderDisabled={
-              render.isPending || (inProgress && project.status !== "ready")
-            }
+            isRenderDisabled={render.isPending || (inProgress && project.status !== "ready")}
             clipCount={clips.length}
             onUndo={undo}
             onRedo={redo}
@@ -2600,25 +2606,28 @@ function EditorPage() {
         }
         leftPanel={
           readOnly ? (
-            <ViewOnlyNote team={data.team?.name ?? "this team"} canDownload={!!project.output_path} />
+            <ViewOnlyNote
+              team={data.team?.name ?? "this team"}
+              canDownload={!!project.output_path}
+            />
           ) : (
-          <MediaLibrary
-            clips={videoClips}
-            audioClips={audioClips}
-            selectedClipId={selectedClipId}
-            onSelectClip={(id) => setSelectedClipId(id)}
-            onRemoveClip={(id) => removeClipMut.mutate(id)}
-            onRemoveFile={(ids) => void removeFileClips(ids)}
-            onUpload={(files) => handleUpload(files)}
-            uploads={
-              <UploadList
-                items={uploadQueue.items}
-                onCancel={uploadQueue.cancel}
-                onRetry={uploadQueue.retry}
-                onDismiss={uploadQueue.remove}
-              />
-            }
-          />
+            <MediaLibrary
+              clips={videoClips}
+              audioClips={audioClips}
+              selectedClipId={selectedClipId}
+              onSelectClip={(id) => setSelectedClipId(id)}
+              onRemoveClip={(id) => removeClipMut.mutate(id)}
+              onRemoveFile={(ids) => void removeFileClips(ids)}
+              onUpload={(files) => handleUpload(files)}
+              uploads={
+                <UploadList
+                  items={uploadQueue.items}
+                  onCancel={uploadQueue.cancel}
+                  onRetry={uploadQueue.retry}
+                  onDismiss={uploadQueue.remove}
+                />
+              }
+            />
           )
         }
         centerPanel={
@@ -2666,8 +2675,8 @@ function EditorPage() {
                         aspect={project.aspect_ratio}
                         layer="front"
                         images={storyImages.urls}
-                      logo={brand.data?.logoUrl ?? null}
-                      look={motion.plan?.look}
+                        logo={brand.data?.logoUrl ?? null}
+                        look={motion.plan?.look}
                       />
                     </Suspense>
                   )}
@@ -2678,9 +2687,7 @@ function EditorPage() {
                     kit={brand.data?.kit}
                     logoUrl={brand.data?.logoUrl}
                     timeMs={timeMs}
-                    phrases={
-                      captionsEnabled && !captionsHiddenAt(timeMs) ? captionWordPhrases : []
-                    }
+                    phrases={captionsEnabled && !captionsHiddenAt(timeMs) ? captionWordPhrases : []}
                     hook={renderHook}
                     clean={graphicsOn && finish.captions === "clean"}
                   />
@@ -2753,7 +2760,11 @@ function EditorPage() {
               // Only the selected clip's own file tells us its length.
               if (selectedClipId && d > 0 && !showingProgram) {
                 const c = data?.clips.find((x) => x.id === selectedClipId) as ClipRow | undefined;
-                if (!readOnly && c && (c.duration_ms == null || Math.abs(c.duration_ms - Math.round(d * 1000)) > 250)) {
+                if (
+                  !readOnly &&
+                  c &&
+                  (c.duration_ms == null || Math.abs(c.duration_ms - Math.round(d * 1000)) > 250)
+                ) {
                   durationMut.mutate({ id: selectedClipId, duration_ms: Math.round(d * 1000) });
                 }
               }
@@ -2785,10 +2796,10 @@ function EditorPage() {
                     ? selectedSound
                       ? "Sound"
                       : selectedGraphic
-                      ? "Graphic"
-                      : selectedClip
-                        ? "Clip"
-                        : "AI"
+                        ? "Graphic"
+                        : selectedClip
+                          ? "Clip"
+                          : "AI"
                     : tab === "captions"
                       ? "Captions"
                       : "Auto-cut"}
@@ -2978,7 +2989,10 @@ function EditorPage() {
                               shots: angleShots.length,
                               canEdit: canEditGraphics,
                               onToggle: (on) =>
-                                motion.update((p) => ({ ...p, angles: { ...p.angles, enabled: on } })),
+                                motion.update((p) => ({
+                                  ...p,
+                                  angles: { ...p.angles, enabled: on },
+                                })),
                             }
                           : undefined
                       }

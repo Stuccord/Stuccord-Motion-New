@@ -189,7 +189,7 @@ export type MotionPlanState = {
 
 export const getMotionPlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .validator((d: unknown) => ProjectInput.parse(d))
   .handler(async ({ data, context }): Promise<MotionPlanState> => {
     const { project, access } = await projectAccess(
       context.supabase,
@@ -244,7 +244,7 @@ export function projectCartoon(project: {
  */
 export const cutPausesForAutoEdit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .validator((d: unknown) => ProjectInput.parse(d))
   .handler(({ data, context }) => cutPausesFor(context.supabase, context.userId, data));
 
 export async function cutPausesFor(
@@ -291,7 +291,7 @@ export async function cutPausesFor(
  */
 export const suggestTakeCuts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({ project_id: z.string().uuid(), clip_ids: z.array(z.string().uuid()).max(500) })
       .parse(d),
@@ -341,7 +341,7 @@ export const suggestTakeCuts = createServerFn({ method: "POST" })
  */
 export const placeBrollForAutoEdit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .validator((d: unknown) => ProjectInput.parse(d))
   .handler(({ data, context }) => placeBrollFor(context.supabase, context.userId, data));
 
 export async function placeBrollFor(
@@ -394,7 +394,7 @@ export async function placeBrollFor(
 
 export const planMotionGraphics = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .validator((d: unknown) => ProjectInput.parse(d))
   .handler(({ data, context }) => planGraphicsFor(context.supabase, context.userId, data));
 
 export async function planGraphicsFor(
@@ -497,7 +497,7 @@ export async function planGraphicsFor(
 /** Puts back the plan the last "Plan graphics" replaced (and keeps the newer one for Redo). */
 export const undoMotionPlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .validator((d: unknown) => ProjectInput.parse(d))
   .handler(async ({ data, context }) => {
     const { project } = await projectForEdit(context.supabase, data.project_id, context.userId);
     const previous = parseMotionPlan(project.motion_plan_previous);
@@ -525,7 +525,7 @@ export const undoMotionPlan = createServerFn({ method: "POST" })
  */
 export const saveMotionPlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -633,7 +633,7 @@ export async function hmacHex(secret: string, body: string): Promise<string> {
 /** Sends the main-track files without a transcript to the worker to be transcribed. */
 export const transcribeForPlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => ProjectInput.parse(d))
+  .validator((d: unknown) => ProjectInput.parse(d))
   .handler(({ data, context }) => transcribeFor(context.supabase, context.userId, data));
 
 export async function transcribeFor(

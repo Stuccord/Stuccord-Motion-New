@@ -103,7 +103,7 @@ export const listMyTeams = createServerFn({ method: "GET" })
 
 export const createTeam = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ name: Name }).parse(d))
+  .validator((d: unknown) => z.object({ name: Name }).parse(d))
   .handler(async ({ data, context }) => {
     const db = await admin();
     const { count } = await db
@@ -132,7 +132,7 @@ export const createTeam = createServerFn({ method: "POST" })
 
 export const renameTeam = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.extend({ name: Name }).parse(d))
+  .validator((d: unknown) => TeamId.extend({ name: Name }).parse(d))
   .handler(async ({ data, context }) => {
     if (!canManage(await myRole(data.teamId, context.userId))) {
       throw new Error("Only the owner or an admin can rename the team");
@@ -146,7 +146,7 @@ export const renameTeam = createServerFn({ method: "POST" })
 /** A team with its members, open invites (for admins) and seat use. */
 export const getTeam = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.parse(d))
+  .validator((d: unknown) => TeamId.parse(d))
   .handler(async ({ data, context }) => {
     const role = await myRole(data.teamId, context.userId);
     const db = await admin();
@@ -204,7 +204,7 @@ export const getTeam = createServerFn({ method: "POST" })
 /** Makes an invite link. The secret is returned once; only its hash is kept. */
 export const createInvite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.extend({ role: ManagedRole }).parse(d))
+  .validator((d: unknown) => TeamId.extend({ role: ManagedRole }).parse(d))
   .handler(async ({ data, context }) => {
     await requireSecondStep(context.userId, context.claims);
     const role = await myRole(data.teamId, context.userId);
@@ -236,7 +236,7 @@ export const createInvite = createServerFn({ method: "POST" })
 
 export const revokeInvite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.extend({ inviteId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => TeamId.extend({ inviteId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     if (!canManage(await myRole(data.teamId, context.userId))) {
       throw new Error("Only the owner or an admin can revoke invites");
@@ -267,7 +267,7 @@ async function findInvite(token: string) {
 /** What an invite link is for, shown before joining. */
 export const getInvite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => Token.parse(d))
+  .validator((d: unknown) => Token.parse(d))
   .handler(async ({ data, context }) => {
     const inv = await findInvite(data.token);
     if (!inv) return { valid: false as const };
@@ -309,7 +309,7 @@ export const getInvite = createServerFn({ method: "POST" })
 
 export const acceptInvite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => Token.parse(d))
+  .validator((d: unknown) => Token.parse(d))
   .handler(async ({ data, context }) => {
     const inv = await findInvite(data.token);
     if (!inv) throw new Error("This invite link has expired or was revoked. Ask for a new one.");
@@ -345,7 +345,7 @@ export const acceptInvite = createServerFn({ method: "POST" })
 
 export const changeMemberRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     TeamId.extend({ userId: z.string().uuid(), role: ManagedRole }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -372,7 +372,7 @@ export const changeMemberRole = createServerFn({ method: "POST" })
 
 export const removeMember = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.extend({ userId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => TeamId.extend({ userId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await requireSecondStep(context.userId, context.claims);
     const me = await myRole(data.teamId, context.userId);
@@ -395,7 +395,7 @@ export const removeMember = createServerFn({ method: "POST" })
 
 export const leaveTeam = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.parse(d))
+  .validator((d: unknown) => TeamId.parse(d))
   .handler(async ({ data, context }) => {
     const me = await myRole(data.teamId, context.userId);
     if (me === "owner") {
@@ -414,7 +414,7 @@ export const leaveTeam = createServerFn({ method: "POST" })
 /** The owner hands the team to another member and becomes an admin. */
 export const transferOwnership = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.extend({ userId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => TeamId.extend({ userId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await requireSecondStep(context.userId, context.claims);
     if ((await myRole(data.teamId, context.userId)) !== "owner") {
@@ -450,7 +450,7 @@ export const transferOwnership = createServerFn({ method: "POST" })
 
 export const deleteTeam = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.extend({ confirmName: z.string() }).parse(d))
+  .validator((d: unknown) => TeamId.extend({ confirmName: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
     await requireSecondStep(context.userId, context.claims);
     if ((await myRole(data.teamId, context.userId)) !== "owner") {
@@ -505,7 +505,7 @@ export const deleteTeam = createServerFn({ method: "POST" })
 /** A team's brand kit (any member can read it; team projects always use it). */
 export const getTeamBrandKit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.parse(d))
+  .validator((d: unknown) => TeamId.parse(d))
   .handler(async ({ data, context }) => {
     const role = await myRole(data.teamId, context.userId);
     const db = await admin();
@@ -521,7 +521,7 @@ export const getTeamBrandKit = createServerFn({ method: "POST" })
 /** Saves a team's brand kit (owner and admins). Its logo must be in the team's folder. */
 export const saveTeamBrandKit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => TeamId.extend({ kit: z.unknown() }).parse(d))
+  .validator((d: unknown) => TeamId.extend({ kit: z.unknown() }).parse(d))
   .handler(async ({ data, context }) => {
     if (!canManage(await myRole(data.teamId, context.userId))) {
       throw new Error("Only the team's owner and admins can change its brand kit");

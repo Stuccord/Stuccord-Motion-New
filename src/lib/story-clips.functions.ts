@@ -69,7 +69,7 @@ export async function clipAllowance(userId: string, teamId: string | null, proje
 /** Starts bringing one of the project's story pictures to life; returns a ticket to check it with. */
 export const startSceneClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -122,7 +122,7 @@ export async function startClipFor(
 /** Checks a started clip: still being made, or stored (its path), or failed (a message). */
 export const checkSceneClip = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),

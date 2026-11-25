@@ -113,7 +113,7 @@ export type SceneImageInput = z.output<typeof SceneImageSchema>;
 /** Makes one scene picture; returns its path and a link to show it. */
 export const makeSceneImage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => SceneImageSchema.parse(d))
+  .validator((d: unknown) => SceneImageSchema.parse(d))
   .handler(({ data, context }) => makeSceneImageFor(context.supabase, context.userId, data));
 
 export async function makeSceneImageFor(
@@ -175,7 +175,7 @@ export async function makeSceneImageFor(
  */
 export const makeSpeakerCartoon = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -236,7 +236,7 @@ export const makeSpeakerCartoon = createServerFn({ method: "POST" })
 /** A one-time link to upload the user's own picture for a scene. */
 export const sceneUploadSlot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -258,7 +258,7 @@ export const sceneUploadSlot = createServerFn({ method: "POST" })
 /** Short-lived links to the project's story pictures, by path. */
 export const signSceneImages = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),
@@ -298,7 +298,7 @@ const MAX_CAPTURE_BYTES = 12 * 1024 * 1024;
  */
 export const captureScreenPage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),

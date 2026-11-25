@@ -86,7 +86,7 @@ export const getPublishingSetup = createServerFn({ method: "GET" })
 
 export const listSocialAccounts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .validator((d: unknown) => WorkspaceInput.parse(d))
   .handler(async ({ data: input, context }): Promise<SocialAccount[]> => {
     let q = context.supabase
       .from("social_accounts")
@@ -104,7 +104,7 @@ export const listSocialAccounts = createServerFn({ method: "GET" })
 /** The platform's sign-in page to send the user to. */
 export const startConnect = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({ platform: z.enum(PLATFORMS), teamId: z.string().uuid().nullable().optional() })
       .parse(d),
@@ -128,7 +128,7 @@ export const startConnect = createServerFn({ method: "POST" })
 /** Finishes connecting, after the platform sends the user back with a code. */
 export const finishConnect = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         platform: z.enum(PLATFORMS),
@@ -198,7 +198,7 @@ export const finishConnect = createServerFn({ method: "POST" })
 /** Disconnects an account: signs out of it and cancels its waiting posts. */
 export const disconnectAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await requireSecondStep(context.userId, context.claims);
     const db = await admin();
@@ -244,7 +244,7 @@ export const disconnectAccount = createServerFn({ method: "POST" })
 
 export const listPosts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => WorkspaceInput.parse(d))
+  .validator((d: unknown) => WorkspaceInput.parse(d))
   .handler(async ({ data: input, context }): Promise<SocialPost[]> => {
     const team = input.workspace === PERSONAL ? null : input.workspace;
     let q = context.supabase
@@ -335,7 +335,7 @@ async function tiktokToken(userId: string, accountId: string) {
  */
 export const getTikTokCreatorInfo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ accountId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ accountId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }): Promise<TikTokCreatorInfo> => {
     const { token } = await tiktokToken(context.userId, data.accountId);
     const { tiktokCreatorInfo } = await import("@/lib/publishing/tiktok.server");
@@ -345,7 +345,7 @@ export const getTikTokCreatorInfo = createServerFn({ method: "POST" })
 /** A short-lived link to a project's latest export, to preview it before posting. */
 export const getExportPreview = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ projectId: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ projectId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: project } = await context.supabase
       .from("projects")
@@ -366,7 +366,7 @@ export const getExportPreview = createServerFn({ method: "POST" })
 /** Makes one post per chosen account for a project's latest export. */
 export const createPosts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => PostInput.parse(d))
+  .validator((d: unknown) => PostInput.parse(d))
   .handler(async ({ data, context }) => {
     // YouTube rejects these in titles.
     const title = data.title.replace(/[<>]/g, "").trim();
@@ -539,7 +539,7 @@ async function postToChange(supabase: SupabaseClient<Database>, userId: string, 
 
 export const cancelPost = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => IdInput.parse(d))
+  .validator((d: unknown) => IdInput.parse(d))
   .handler(async ({ data, context }) => {
     await postToChange(context.supabase, context.userId, data.id);
     const { data: row, error } = await context.supabase
@@ -557,7 +557,7 @@ export const cancelPost = createServerFn({ method: "POST" })
 /** Moves a waiting post, or tries a failed one again (now or at a new time). */
 export const reschedulePost = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     IdInput.extend({ scheduledAt: z.string().datetime().nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -597,7 +597,7 @@ export const reschedulePost = createServerFn({ method: "POST" })
 /** Removes a canceled or failed post from the list. */
 export const deletePost = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => IdInput.parse(d))
+  .validator((d: unknown) => IdInput.parse(d))
   .handler(async ({ data, context }) => {
     await postToChange(context.supabase, context.userId, data.id);
     const { error } = await context.supabase

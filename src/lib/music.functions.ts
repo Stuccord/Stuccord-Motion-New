@@ -89,7 +89,7 @@ export const getAiMusicUsage = createServerFn({ method: "GET" })
  */
 export const makeAiMusic = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),

@@ -65,7 +65,7 @@ export const listApiKeys = createServerFn({ method: "GET" })
 /** Makes a key and returns it (the only time it can be seen). */
 export const createApiKey = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ name: z.string().trim().min(1).max(60), scope: z.enum(["read", "full"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -98,7 +98,7 @@ export const createApiKey = createServerFn({ method: "POST" })
 /** Stops a key working, straight away and for good. */
 export const revokeApiKey = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await requireSecondStep(context.userId, context.claims);
     const { error } = await context.supabase

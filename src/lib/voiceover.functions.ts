@@ -114,7 +114,7 @@ export const getAiVoiceUsage = createServerFn({ method: "GET" })
  */
 export const makeAiVoiceover = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),

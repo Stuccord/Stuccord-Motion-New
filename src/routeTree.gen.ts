@@ -9,63 +9,52 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TermsRouteImport } from './routes/terms'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as McpRouteImport } from './routes/mcp'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedTemplatesRouteImport } from './routes/_authenticated/templates'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/help'
-import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
-import { Route as AuthenticatedAssetsRouteImport } from './routes/_authenticated/assets'
-import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
-import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
-import { Route as AuthenticatedPublishingIndexRouteImport } from './routes/_authenticated/publishing.index'
-import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects.index'
-import { Route as ApiPublicTranscribeWebhookRouteImport } from './routes/api/public/transcribe-webhook'
-import { Route as ApiPublicRenderWebhookRouteImport } from './routes/api/public/render-webhook'
-import { Route as ApiPublicPublishingTickRouteImport } from './routes/api/public/publishing-tick'
-import { Route as ApiPublicPublishWebhookRouteImport } from './routes/api/public/publish-webhook'
-import { Route as ApiPublicAutoEditStepRouteImport } from './routes/api/public/auto-edit-step'
-import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams.$teamId'
-import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects.new'
-import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects.$projectId'
-import { Route as AuthenticatedJoinTokenRouteImport } from './routes/_authenticated/join.$token'
-import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedAssetsRouteImport } from './routes/_authenticated/assets'
+import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedHelpRouteImport } from './routes/_authenticated/help'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedTemplatesRouteImport } from './routes/_authenticated/templates'
 import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
-import { Route as ApiV1ProjectsIndexRouteImport } from './routes/api/v1/projects.index'
-import { Route as ApiV1ExportsExportIdRouteImport } from './routes/api/v1/exports.$exportId'
-import { Route as ApiAuthenticatedUploadsPresignRouteImport } from './routes/api/authenticated/uploads/presign'
-import { Route as AuthenticatedPublishingConnectPlatformRouteImport } from './routes/_authenticated/publishing.connect.$platform'
+import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
+import { Route as AuthenticatedJoinTokenRouteImport } from './routes/_authenticated/join.$token'
+import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects.index'
+import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects.$projectId'
+import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects.new'
+import { Route as AuthenticatedPublishingIndexRouteImport } from './routes/_authenticated/publishing.index'
+import { Route as AuthenticatedTeamsTeamIdRouteImport } from './routes/_authenticated/teams.$teamId'
+import { Route as ApiPublicAutoEditStepRouteImport } from './routes/api/public/auto-edit-step'
+import { Route as ApiPublicPublishWebhookRouteImport } from './routes/api/public/publish-webhook'
+import { Route as ApiPublicPublishingTickRouteImport } from './routes/api/public/publishing-tick'
+import { Route as ApiPublicRenderWebhookRouteImport } from './routes/api/public/render-webhook'
+import { Route as ApiPublicTranscribeWebhookRouteImport } from './routes/api/public/transcribe-webhook'
 import { Route as AuthenticatedProjectsProjectIdMakeRouteImport } from './routes/_authenticated/projects.$projectId_.make'
+import { Route as AuthenticatedPublishingConnectPlatformRouteImport } from './routes/_authenticated/publishing.connect.$platform'
+import { Route as ApiAuthenticatedUploadsPresignRouteImport } from './routes/api/authenticated/uploads/presign'
+import { Route as ApiV1ExportsExportIdRouteImport } from './routes/api/v1/exports.$exportId'
+import { Route as ApiV1ProjectsIndexRouteImport } from './routes/api/v1/projects.index'
 import { Route as ApiV1ProjectsProjectIdIndexRouteImport } from './routes/api/v1/projects.$projectId.index'
-import { Route as ApiV1ProjectsProjectIdUploadsRouteImport } from './routes/api/v1/projects.$projectId.uploads'
-import { Route as ApiV1ProjectsProjectIdExportsRouteImport } from './routes/api/v1/projects.$projectId.exports'
 import { Route as ApiV1ProjectsProjectIdClipsRouteImport } from './routes/api/v1/projects.$projectId.clips'
+import { Route as ApiV1ProjectsProjectIdExportsRouteImport } from './routes/api/v1/projects.$projectId.exports'
+import { Route as ApiV1ProjectsProjectIdUploadsRouteImport } from './routes/api/v1/projects.$projectId.uploads'
 
-const TermsRoute = TermsRouteImport.update({
-  id: '/terms',
-  path: '/terms',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const McpRoute = McpRouteImport.update({
-  id: '/mcp',
-  path: '/mcp',
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -73,38 +62,41 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedTemplatesRoute = AuthenticatedTemplatesRouteImport.update({
-  id: '/templates',
-  path: '/templates',
-  getParentRoute: () => AuthenticatedRouteRoute,
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AuthenticatedRouteRoute,
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedHelpRoute = AuthenticatedHelpRouteImport.update({
-  id: '/help',
-  path: '/help',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedBillingRoute = AuthenticatedBillingRouteImport.update({
-  id: '/billing',
-  path: '/billing',
+const Char91DotmcpChar93ListToolsRoute =
+  Char91DotmcpChar93ListToolsRouteImport.update({
+    id: '/.mcp/list-tools',
+    path: '/.mcp/list-tools',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAssetsRoute = AuthenticatedAssetsRouteImport.update({
@@ -112,71 +104,51 @@ const AuthenticatedAssetsRoute = AuthenticatedAssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
+const AuthenticatedBillingRoute = AuthenticatedBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const Char91DotwellKnownChar93OauthProtectedResourceRoute =
-  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
-    id: '/.well-known/oauth-protected-resource',
-    path: '/.well-known/oauth-protected-resource',
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedHelpRoute = AuthenticatedHelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedTemplatesRoute = AuthenticatedTemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
+  id: '/.lovable/oauth/consent',
+  path: '/.lovable/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Char91DotmcpChar93InvokeToolToolRoute =
+  Char91DotmcpChar93InvokeToolToolRouteImport.update({
+    id: '/.mcp/invoke-tool/$tool',
+    path: '/.mcp/invoke-tool/$tool',
     getParentRoute: () => rootRouteImport,
   } as any)
-const Char91DotmcpChar93ListToolsRoute =
-  Char91DotmcpChar93ListToolsRouteImport.update({
-    id: '/.mcp/list-tools',
-    path: '/.mcp/list-tools',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const AuthenticatedPublishingIndexRoute =
-  AuthenticatedPublishingIndexRouteImport.update({
-    id: '/publishing/',
-    path: '/publishing/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
+const AuthenticatedJoinTokenRoute = AuthenticatedJoinTokenRouteImport.update({
+  id: '/join/$token',
+  path: '/join/$token',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedProjectsIndexRoute =
   AuthenticatedProjectsIndexRouteImport.update({
     id: '/projects/',
     path: '/projects/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const ApiPublicTranscribeWebhookRoute =
-  ApiPublicTranscribeWebhookRouteImport.update({
-    id: '/api/public/transcribe-webhook',
-    path: '/api/public/transcribe-webhook',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicRenderWebhookRoute = ApiPublicRenderWebhookRouteImport.update({
-  id: '/api/public/render-webhook',
-  path: '/api/public/render-webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicPublishingTickRoute = ApiPublicPublishingTickRouteImport.update({
-  id: '/api/public/publishing-tick',
-  path: '/api/public/publishing-tick',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicPublishWebhookRoute = ApiPublicPublishWebhookRouteImport.update({
-  id: '/api/public/publish-webhook',
-  path: '/api/public/publish-webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicAutoEditStepRoute = ApiPublicAutoEditStepRouteImport.update({
-  id: '/api/public/auto-edit-step',
-  path: '/api/public/auto-edit-step',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedTeamsTeamIdRoute =
-  AuthenticatedTeamsTeamIdRouteImport.update({
-    id: '/teams/$teamId',
-    path: '/teams/$teamId',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedProjectsNewRoute =
-  AuthenticatedProjectsNewRouteImport.update({
-    id: '/projects/new',
-    path: '/projects/new',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedProjectsProjectIdRoute =
@@ -185,43 +157,49 @@ const AuthenticatedProjectsProjectIdRoute =
     path: '/projects/$projectId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedJoinTokenRoute = AuthenticatedJoinTokenRouteImport.update({
-  id: '/join/$token',
-  path: '/join/$token',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const Char91DotmcpChar93InvokeToolToolRoute =
-  Char91DotmcpChar93InvokeToolToolRouteImport.update({
-    id: '/.mcp/invoke-tool/$tool',
-    path: '/.mcp/invoke-tool/$tool',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
-  id: '/.lovable/oauth/consent',
-  path: '/.lovable/oauth/consent',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiV1ProjectsIndexRoute = ApiV1ProjectsIndexRouteImport.update({
-  id: '/api/v1/projects/',
-  path: '/api/v1/projects/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiV1ExportsExportIdRoute = ApiV1ExportsExportIdRouteImport.update({
-  id: '/api/v1/exports/$exportId',
-  path: '/api/v1/exports/$exportId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthenticatedUploadsPresignRoute =
-  ApiAuthenticatedUploadsPresignRouteImport.update({
-    id: '/api/authenticated/uploads/presign',
-    path: '/api/authenticated/uploads/presign',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const AuthenticatedPublishingConnectPlatformRoute =
-  AuthenticatedPublishingConnectPlatformRouteImport.update({
-    id: '/publishing/connect/$platform',
-    path: '/publishing/connect/$platform',
+const AuthenticatedProjectsNewRoute =
+  AuthenticatedProjectsNewRouteImport.update({
+    id: '/projects/new',
+    path: '/projects/new',
     getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedPublishingIndexRoute =
+  AuthenticatedPublishingIndexRouteImport.update({
+    id: '/publishing/',
+    path: '/publishing/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedTeamsTeamIdRoute =
+  AuthenticatedTeamsTeamIdRouteImport.update({
+    id: '/teams/$teamId',
+    path: '/teams/$teamId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const ApiPublicAutoEditStepRoute = ApiPublicAutoEditStepRouteImport.update({
+  id: '/api/public/auto-edit-step',
+  path: '/api/public/auto-edit-step',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicPublishWebhookRoute = ApiPublicPublishWebhookRouteImport.update({
+  id: '/api/public/publish-webhook',
+  path: '/api/public/publish-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicPublishingTickRoute = ApiPublicPublishingTickRouteImport.update({
+  id: '/api/public/publishing-tick',
+  path: '/api/public/publishing-tick',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRenderWebhookRoute = ApiPublicRenderWebhookRouteImport.update({
+  id: '/api/public/render-webhook',
+  path: '/api/public/render-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicTranscribeWebhookRoute =
+  ApiPublicTranscribeWebhookRouteImport.update({
+    id: '/api/public/transcribe-webhook',
+    path: '/api/public/transcribe-webhook',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const AuthenticatedProjectsProjectIdMakeRoute =
   AuthenticatedProjectsProjectIdMakeRouteImport.update({
@@ -229,16 +207,38 @@ const AuthenticatedProjectsProjectIdMakeRoute =
     path: '/projects/$projectId/make',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedPublishingConnectPlatformRoute =
+  AuthenticatedPublishingConnectPlatformRouteImport.update({
+    id: '/publishing/connect/$platform',
+    path: '/publishing/connect/$platform',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const ApiAuthenticatedUploadsPresignRoute =
+  ApiAuthenticatedUploadsPresignRouteImport.update({
+    id: '/api/authenticated/uploads/presign',
+    path: '/api/authenticated/uploads/presign',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiV1ExportsExportIdRoute = ApiV1ExportsExportIdRouteImport.update({
+  id: '/api/v1/exports/$exportId',
+  path: '/api/v1/exports/$exportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiV1ProjectsIndexRoute = ApiV1ProjectsIndexRouteImport.update({
+  id: '/api/v1/projects/',
+  path: '/api/v1/projects/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiV1ProjectsProjectIdIndexRoute =
   ApiV1ProjectsProjectIdIndexRouteImport.update({
     id: '/api/v1/projects/$projectId/',
     path: '/api/v1/projects/$projectId/',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiV1ProjectsProjectIdUploadsRoute =
-  ApiV1ProjectsProjectIdUploadsRouteImport.update({
-    id: '/api/v1/projects/$projectId/uploads',
-    path: '/api/v1/projects/$projectId/uploads',
+const ApiV1ProjectsProjectIdClipsRoute =
+  ApiV1ProjectsProjectIdClipsRouteImport.update({
+    id: '/api/v1/projects/$projectId/clips',
+    path: '/api/v1/projects/$projectId/clips',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiV1ProjectsProjectIdExportsRoute =
@@ -247,10 +247,10 @@ const ApiV1ProjectsProjectIdExportsRoute =
     path: '/api/v1/projects/$projectId/exports',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiV1ProjectsProjectIdClipsRoute =
-  ApiV1ProjectsProjectIdClipsRouteImport.update({
-    id: '/api/v1/projects/$projectId/clips',
-    path: '/api/v1/projects/$projectId/clips',
+const ApiV1ProjectsProjectIdUploadsRoute =
+  ApiV1ProjectsProjectIdUploadsRouteImport.update({
+    id: '/api/v1/projects/$projectId/uploads',
+    path: '/api/v1/projects/$projectId/uploads',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -522,39 +522,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/terms': {
-      id: '/terms'
-      path: '/terms'
-      fullPath: '/terms'
-      preLoaderRoute: typeof TermsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mcp': {
-      id: '/mcp'
-      path: '/mcp'
-      fullPath: '/mcp'
-      preLoaderRoute: typeof McpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -564,67 +536,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/templates': {
-      id: '/_authenticated/templates'
-      path: '/templates'
-      fullPath: '/templates'
-      preLoaderRoute: typeof AuthenticatedTemplatesRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/help': {
-      id: '/_authenticated/help'
-      path: '/help'
-      fullPath: '/help'
-      preLoaderRoute: typeof AuthenticatedHelpRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/dashboard': {
-      id: '/_authenticated/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/billing': {
-      id: '/_authenticated/billing'
-      path: '/billing'
-      fullPath: '/billing'
-      preLoaderRoute: typeof AuthenticatedBillingRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/assets': {
-      id: '/_authenticated/assets'
-      path: '/assets'
-      fullPath: '/assets'
-      preLoaderRoute: typeof AuthenticatedAssetsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/analytics': {
-      id: '/_authenticated/analytics'
-      path: '/analytics'
-      fullPath: '/analytics'
-      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/.well-known/oauth-protected-resource': {
-      id: '/.well-known/oauth-protected-resource'
-      path: '/.well-known/oauth-protected-resource'
-      fullPath: '/.well-known/oauth-protected-resource'
-      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/.mcp/list-tools': {
@@ -634,11 +578,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/publishing/': {
-      id: '/_authenticated/publishing/'
-      path: '/publishing'
-      fullPath: '/publishing/'
-      preLoaderRoute: typeof AuthenticatedPublishingIndexRouteImport
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/analytics': {
+      id: '/_authenticated/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/assets': {
+      id: '/_authenticated/assets'
+      path: '/assets'
+      fullPath: '/assets'
+      preLoaderRoute: typeof AuthenticatedAssetsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/billing': {
+      id: '/_authenticated/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof AuthenticatedBillingRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/help': {
+      id: '/_authenticated/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof AuthenticatedHelpRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/templates': {
+      id: '/_authenticated/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof AuthenticatedTemplatesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/.lovable/oauth/consent': {
+      id: '/.lovable/oauth/consent'
+      path: '/.lovable/oauth/consent'
+      fullPath: '/.lovable/oauth/consent'
+      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.mcp/invoke-tool/$tool': {
+      id: '/.mcp/invoke-tool/$tool'
+      path: '/.mcp/invoke-tool/$tool'
+      fullPath: '/.mcp/invoke-tool/$tool'
+      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/join/$token': {
+      id: '/_authenticated/join/$token'
+      path: '/join/$token'
+      fullPath: '/join/$token'
+      preLoaderRoute: typeof AuthenticatedJoinTokenRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects/': {
@@ -648,46 +662,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/public/transcribe-webhook': {
-      id: '/api/public/transcribe-webhook'
-      path: '/api/public/transcribe-webhook'
-      fullPath: '/api/public/transcribe-webhook'
-      preLoaderRoute: typeof ApiPublicTranscribeWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/render-webhook': {
-      id: '/api/public/render-webhook'
-      path: '/api/public/render-webhook'
-      fullPath: '/api/public/render-webhook'
-      preLoaderRoute: typeof ApiPublicRenderWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/publishing-tick': {
-      id: '/api/public/publishing-tick'
-      path: '/api/public/publishing-tick'
-      fullPath: '/api/public/publishing-tick'
-      preLoaderRoute: typeof ApiPublicPublishingTickRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/publish-webhook': {
-      id: '/api/public/publish-webhook'
-      path: '/api/public/publish-webhook'
-      fullPath: '/api/public/publish-webhook'
-      preLoaderRoute: typeof ApiPublicPublishWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/auto-edit-step': {
-      id: '/api/public/auto-edit-step'
-      path: '/api/public/auto-edit-step'
-      fullPath: '/api/public/auto-edit-step'
-      preLoaderRoute: typeof ApiPublicAutoEditStepRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/teams/$teamId': {
-      id: '/_authenticated/teams/$teamId'
-      path: '/teams/$teamId'
-      fullPath: '/teams/$teamId'
-      preLoaderRoute: typeof AuthenticatedTeamsTeamIdRouteImport
+    '/_authenticated/projects/$projectId': {
+      id: '/_authenticated/projects/$projectId'
+      path: '/projects/$projectId'
+      fullPath: '/projects/$projectId'
+      preLoaderRoute: typeof AuthenticatedProjectsProjectIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects/new': {
@@ -697,39 +676,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsNewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/projects/$projectId': {
-      id: '/_authenticated/projects/$projectId'
-      path: '/projects/$projectId'
-      fullPath: '/projects/$projectId'
-      preLoaderRoute: typeof AuthenticatedProjectsProjectIdRouteImport
+    '/_authenticated/publishing/': {
+      id: '/_authenticated/publishing/'
+      path: '/publishing'
+      fullPath: '/publishing/'
+      preLoaderRoute: typeof AuthenticatedPublishingIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/join/$token': {
-      id: '/_authenticated/join/$token'
-      path: '/join/$token'
-      fullPath: '/join/$token'
-      preLoaderRoute: typeof AuthenticatedJoinTokenRouteImport
+    '/_authenticated/teams/$teamId': {
+      id: '/_authenticated/teams/$teamId'
+      path: '/teams/$teamId'
+      fullPath: '/teams/$teamId'
+      preLoaderRoute: typeof AuthenticatedTeamsTeamIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/.mcp/invoke-tool/$tool': {
-      id: '/.mcp/invoke-tool/$tool'
-      path: '/.mcp/invoke-tool/$tool'
-      fullPath: '/.mcp/invoke-tool/$tool'
-      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
+    '/api/public/auto-edit-step': {
+      id: '/api/public/auto-edit-step'
+      path: '/api/public/auto-edit-step'
+      fullPath: '/api/public/auto-edit-step'
+      preLoaderRoute: typeof ApiPublicAutoEditStepRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.lovable/oauth/consent': {
-      id: '/.lovable/oauth/consent'
-      path: '/.lovable/oauth/consent'
-      fullPath: '/.lovable/oauth/consent'
-      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+    '/api/public/publish-webhook': {
+      id: '/api/public/publish-webhook'
+      path: '/api/public/publish-webhook'
+      fullPath: '/api/public/publish-webhook'
+      preLoaderRoute: typeof ApiPublicPublishWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/v1/projects/': {
-      id: '/api/v1/projects/'
-      path: '/api/v1/projects'
-      fullPath: '/api/v1/projects/'
-      preLoaderRoute: typeof ApiV1ProjectsIndexRouteImport
+    '/api/public/publishing-tick': {
+      id: '/api/public/publishing-tick'
+      path: '/api/public/publishing-tick'
+      fullPath: '/api/public/publishing-tick'
+      preLoaderRoute: typeof ApiPublicPublishingTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/render-webhook': {
+      id: '/api/public/render-webhook'
+      path: '/api/public/render-webhook'
+      fullPath: '/api/public/render-webhook'
+      preLoaderRoute: typeof ApiPublicRenderWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/transcribe-webhook': {
+      id: '/api/public/transcribe-webhook'
+      path: '/api/public/transcribe-webhook'
+      fullPath: '/api/public/transcribe-webhook'
+      preLoaderRoute: typeof ApiPublicTranscribeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/projects/$projectId_/make': {
+      id: '/_authenticated/projects/$projectId_/make'
+      path: '/projects/$projectId/make'
+      fullPath: '/projects/$projectId/make'
+      preLoaderRoute: typeof AuthenticatedProjectsProjectIdMakeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/publishing/connect/$platform': {
+      id: '/_authenticated/publishing/connect/$platform'
+      path: '/publishing/connect/$platform'
+      fullPath: '/publishing/connect/$platform'
+      preLoaderRoute: typeof AuthenticatedPublishingConnectPlatformRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/authenticated/uploads/presign': {
+      id: '/api/authenticated/uploads/presign'
+      path: '/api/authenticated/uploads/presign'
+      fullPath: '/api/authenticated/uploads/presign'
+      preLoaderRoute: typeof ApiAuthenticatedUploadsPresignRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/v1/exports/$exportId': {
@@ -739,26 +753,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1ExportsExportIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/authenticated/uploads/presign': {
-      id: '/api/authenticated/uploads/presign'
-      path: '/api/authenticated/uploads/presign'
-      fullPath: '/api/authenticated/uploads/presign'
-      preLoaderRoute: typeof ApiAuthenticatedUploadsPresignRouteImport
+    '/api/v1/projects/': {
+      id: '/api/v1/projects/'
+      path: '/api/v1/projects'
+      fullPath: '/api/v1/projects/'
+      preLoaderRoute: typeof ApiV1ProjectsIndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/publishing/connect/$platform': {
-      id: '/_authenticated/publishing/connect/$platform'
-      path: '/publishing/connect/$platform'
-      fullPath: '/publishing/connect/$platform'
-      preLoaderRoute: typeof AuthenticatedPublishingConnectPlatformRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/projects/$projectId_/make': {
-      id: '/_authenticated/projects/$projectId_/make'
-      path: '/projects/$projectId/make'
-      fullPath: '/projects/$projectId/make'
-      preLoaderRoute: typeof AuthenticatedProjectsProjectIdMakeRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/api/v1/projects/$projectId/': {
       id: '/api/v1/projects/$projectId/'
@@ -767,11 +767,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1ProjectsProjectIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/v1/projects/$projectId/uploads': {
-      id: '/api/v1/projects/$projectId/uploads'
-      path: '/api/v1/projects/$projectId/uploads'
-      fullPath: '/api/v1/projects/$projectId/uploads'
-      preLoaderRoute: typeof ApiV1ProjectsProjectIdUploadsRouteImport
+    '/api/v1/projects/$projectId/clips': {
+      id: '/api/v1/projects/$projectId/clips'
+      path: '/api/v1/projects/$projectId/clips'
+      fullPath: '/api/v1/projects/$projectId/clips'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdClipsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/v1/projects/$projectId/exports': {
@@ -781,11 +781,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1ProjectsProjectIdExportsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/v1/projects/$projectId/clips': {
-      id: '/api/v1/projects/$projectId/clips'
-      path: '/api/v1/projects/$projectId/clips'
-      fullPath: '/api/v1/projects/$projectId/clips'
-      preLoaderRoute: typeof ApiV1ProjectsProjectIdClipsRouteImport
+    '/api/v1/projects/$projectId/uploads': {
+      id: '/api/v1/projects/$projectId/uploads'
+      path: '/api/v1/projects/$projectId/uploads'
+      fullPath: '/api/v1/projects/$projectId/uploads'
+      preLoaderRoute: typeof ApiV1ProjectsProjectIdUploadsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

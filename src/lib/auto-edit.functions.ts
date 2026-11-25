@@ -14,7 +14,7 @@ import { isAutoEditLive, parseAutoEdit, type AutoEdit } from "@/lib/auto-edit-st
  */
 export const startAutoEdit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ project_id: z.string().uuid(), redo: z.boolean().default(false) }).parse(d),
   )
   .handler(async ({ data, context }): Promise<AutoEdit> => {

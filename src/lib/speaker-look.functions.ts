@@ -17,7 +17,7 @@ const INSTRUCTIONS = `Describe the main person in this video frame for an illust
 /** Describes the speaker in one frame (a JPEG, as base64); null when no one is clearly in it. */
 export const describeSpeaker = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         project_id: z.string().uuid(),

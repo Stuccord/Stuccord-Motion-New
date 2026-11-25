@@ -50,7 +50,7 @@ async function listAllFiles(
  */
 export const deleteAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ confirmEmail: z.string().min(3).max(320) }).parse(d))
+  .validator((d: unknown) => z.object({ confirmEmail: z.string().min(3).max(320) }).parse(d))
   .handler(async ({ data, context }) => {
     // Only for a real signed-in request (never the local dev fallback user).
     const auth = getRequest()?.headers.get("authorization") ?? "";
