@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { TEMPLATES } from "@/lib/templates.data";
 import { NEW_PROJECT_STYLES } from "@/lib/presets";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-rules";
+import { FinalUploadError, uploadToSignedUrlWithProgress } from "@/lib/upload-file";
 import { z } from "zod";
 
 const searchSchema = z.object({
@@ -85,8 +86,9 @@ function titleFromFile(name: string): string {
 }
 
 /**
- * Uploads to a Supabase signed upload URL with progress, retrying a dropped
- * connection (slow or shaky networks) up to 3 times.
+ * Uploads to a Supabase signed upload URL with progress. Resumable
+ * (upload-file.ts): a dropped connection carries on from the last piece
+ * that arrived, retried for a couple of minutes, instead of starting over.
  */
 async function uploadWithProgress(
   bucket: string,
@@ -96,46 +98,21 @@ async function uploadWithProgress(
   contentType: string,
   onProgress: (pct: number) => void,
 ): Promise<void> {
-  const base = (import.meta.env.VITE_SUPABASE_URL as string).replace(/\/$/, "");
-  const encoded = path.split("/").map(encodeURIComponent).join("/");
-  const url = `${base}/storage/v1/object/upload/sign/${bucket}/${encoded}?token=${encodeURIComponent(token)}`;
-  let lastError = "upload failed";
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const result = await new Promise<{ ok: boolean; retry: boolean; error?: string }>((resolve) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("PUT", url);
-      xhr.setRequestHeader("content-type", contentType);
-      xhr.setRequestHeader("x-upsert", "true");
-      xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable) onProgress(Math.min(99, Math.round((ev.loaded / ev.total) * 100)));
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve({ ok: true, retry: false });
-        else {
-          let msg = `upload failed (HTTP ${xhr.status})`;
-          try {
-            const body = JSON.parse(xhr.responseText) as { message?: string; error?: string };
-            msg = body.message || body.error || msg;
-          } catch {
-            // not JSON
-          }
-          resolve({ ok: false, retry: xhr.status >= 500 || xhr.status === 408, error: msg });
-        }
-      };
-      xhr.onerror = () =>
-        resolve({ ok: false, retry: true, error: "the connection dropped during the upload" });
-      xhr.ontimeout = () => resolve({ ok: false, retry: true, error: "the upload timed out" });
-      xhr.send(file);
-    });
-    if (result.ok) {
-      onProgress(100);
-      return;
-    }
-    lastError = result.error ?? lastError;
-    if (!result.retry) break;
-    if (attempt < 3) await new Promise((r) => setTimeout(r, 2000 * attempt));
+  try {
+    await uploadToSignedUrlWithProgress(
+      bucket,
+      path,
+      token,
+      file,
+      (loaded, total) => onProgress(Math.min(99, Math.round((loaded / Math.max(1, total)) * 100))),
+      contentType,
+    ).done;
+    onProgress(100);
+  } catch (e) {
+    const why = e instanceof Error ? e.message : "upload failed";
+    if (e instanceof FinalUploadError) throw new Error(why);
+    throw new Error(`${why}. Check your internet connection and try again.`);
   }
-  throw new Error(`${lastError}. Check your internet connection and try again.`);
 }
 
 const sameFile = (a: File, b: File) =>
