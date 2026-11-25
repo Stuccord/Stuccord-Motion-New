@@ -14,7 +14,7 @@ import appCss from "../styles.css?url";
 import faviconUrl from "../assets/logo-icon.svg";
 import faviconPngUrl from "../assets/favicon-64.png";
 import appIconUrl from "../assets/logo-icon-512.png";
-import { reportLovableError } from "../lib/lovable-error-reporting";
+import { initClientSentry, reportClientError } from "../lib/sentry-browser";
 
 function NotFoundComponent() {
   return (
@@ -42,7 +42,7 @@ function ErrorComponent({ error, reset }: { error: unknown; reset: () => void })
   console.error(error);
   const router = useRouter();
   useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
+    reportClientError(error, { boundary: "root_error_screen", route: window.location.pathname });
   }, [error]);
 
   return (
@@ -158,6 +158,8 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  // Error monitoring (on only when VITE_SENTRY_DSN is set).
+  useEffect(() => initClientSentry(), []);
 
   return (
     <QueryClientProvider client={queryClient}>

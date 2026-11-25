@@ -39,6 +39,7 @@ import { NotificationsBell } from "@/components/notifications-bell";
 import { GlobalSearch, openGlobalSearch } from "@/components/global-search";
 import { cn } from "@/lib/utils";
 import { isUnlimited } from "@/lib/plans";
+import { setSentryUser } from "@/lib/sentry-browser";
 
 type NavItem = {
   to: string;
@@ -86,10 +87,14 @@ export function AppShell({
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) setUser(data.user);
+      if (data.user) {
+        setUser(data.user);
+        setSentryUser(data.user.id);
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setSentryUser(session?.user?.id ?? null);
     });
     return () => {
       listener?.subscription?.unsubscribe();

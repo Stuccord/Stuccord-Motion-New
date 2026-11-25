@@ -65,6 +65,14 @@ services:
         sync: false
       - key: INSTAGRAM_APP_SECRET
         sync: false
+      # Error monitoring (optional): a Sentry project's DSN (sentry.io, Project
+      # Settings, Client Keys). SENTRY_DSN for the server, VITE_SENTRY_DSN for
+      # the browser (read at build: redeploy after setting). The same value for
+      # both is fine. Empty = off.
+      - key: SENTRY_DSN
+        sync: false
+      - key: VITE_SENTRY_DSN
+        sync: false
 
   - type: web
     name: stuccord-render-worker
@@ -91,4 +99,7 @@ services:
         sync: false
       # Optional: the app's address, for the once-a-minute scheduled-post tick
       - key: PUBLIC_APP_URL
+        sync: false
+      # Optional: error monitoring, the same Sentry DSN as the app's
+      - key: SENTRY_DSN
         sync: false

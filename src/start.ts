@@ -11,6 +11,10 @@ const friendlyErrors = createMiddleware({ type: "function" }).server(async ({ ne
   try {
     return await next();
   } catch (e) {
+    // The real error goes to error monitoring (when on); the customer gets
+    // the friendly version.
+    const { reportServerError } = await import("@/lib/sentry.server");
+    reportServerError(e, "server-function");
     throw friendlyError(e);
   }
 });
@@ -23,6 +27,8 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
       throw error;
     }
     console.error(error);
+    const { reportServerError } = await import("@/lib/sentry.server");
+    reportServerError(error, "request");
     return new Response(renderErrorPage(), {
       status: 500,
       headers: { "content-type": "text/html; charset=utf-8" },

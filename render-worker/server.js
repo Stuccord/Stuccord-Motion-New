@@ -23,6 +23,8 @@
 // AI edit plan produces a "hook" line, that hook is burned into the first
 // ~3 seconds.
 
+// First, so error monitoring is ready before anything else loads.
+import { reportError } from "./sentry.js";
 import express from "express";
 import crypto from "crypto";
 import { spawn, execFile } from "child_process";
@@ -364,6 +366,7 @@ app.post("/jobs", async (req, res) => {
       await runRender(job);
     } catch (err) {
       console.error(`[Worker] Render failed for job=${job.job_id}:`, err?.message || err);
+      reportError(err, "render", { job_id: job.job_id });
       try {
         await callback(job.callback_url, {
           job_id: job.job_id,
@@ -464,6 +467,10 @@ async function driveAutoEdit(p, lane) {
       });
       if (r.status === 401 || r.status === 400) {
         console.error(`[Worker] Auto edit ${p.project_id} (${lane}): the app refused (${r.status}); stopping`);
+        reportError(new Error(`Auto edit: the app refused the step (${r.status})`), "auto-edit", {
+          project_id: p.project_id,
+          lane,
+        });
         return;
       }
       if (r.ok) answer = await r.json().catch(() => null);
@@ -482,6 +489,10 @@ async function driveAutoEdit(p, lane) {
     failingSince ??= Date.now();
     if (Date.now() - failingSince > AUTO_GIVE_UP_MS) {
       console.error(`[Worker] Auto edit ${p.project_id} (${lane}): giving up after 20 min of failed steps`);
+      reportError(new Error("Auto edit: gave up after 20 min of failed steps"), "auto-edit", {
+        project_id: p.project_id,
+        lane,
+      });
       return;
     }
     await new Promise((ok) => setTimeout(ok, backoff));
@@ -593,6 +604,7 @@ app.post("/transcribe", async (req, res) => {
           });
         } catch (e) {
           console.error(`[Worker] Transcribing failed for project=${p.project_id}:`, e?.message || e);
+          reportError(e, "transcribe", { project_id: p.project_id });
           errors.push(`${f.filename || `File ${i + 1}`}: ${String(e?.message ?? e).slice(0, 200)}`);
         }
       }
@@ -606,6 +618,7 @@ app.post("/transcribe", async (req, res) => {
       }
     } catch (err) {
       console.error(`[Worker] Transcribe run failed for project=${p.project_id}:`, err?.message || err);
+      reportError(err, "transcribe", { project_id: p.project_id });
       await report("failed", { error: String(err?.message ?? err).slice(0, 500) });
     } finally {
       if (workdir) await fsp.rm(workdir, { recursive: true, force: true }).catch(() => {});

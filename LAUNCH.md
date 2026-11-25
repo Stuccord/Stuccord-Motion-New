@@ -56,6 +56,7 @@ key; these are the ones to fill in.
 | `VITE_MAX_UPLOAD_MB` | upload limit | 50 on Supabase Free |
 | `PUBLISHING_TOKEN_KEY` | posting to YouTube / TikTok / Instagram | 32 random bytes as base64 (optional) |
 | `YOUTUBE_*`, `TIKTOK_*`, `INSTAGRAM_*` | each platform's posting | its developer console (optional) |
+| `SENTRY_DSN`, `VITE_SENTRY_DSN` | error monitoring: crashes and failures emailed to you (optional, strongly recommended) | sentry.io, create a project (platform: React), Project Settings, Client Keys (DSN); the same value in both |
 
 Leave `ENABLE_DEV_MOCK_AUTH=false` and `NODE_ENV=production` as they are.
 
@@ -67,6 +68,7 @@ Leave `ENABLE_DEV_MOCK_AUTH=false` and `NODE_ENV=production` as they are.
 | `ELEVENLABS_API_KEY` | captions (speech-to-text), words for the AI graphics, AI voices | elevenlabs.io, Profile, API Keys (needs a plan with credits) |
 | `ANTHROPIC_API_KEY` | a short AI hook line on videos without Motion graphics (optional) | the same key as the app's |
 | `PUBLIC_APP_URL` | sending scheduled posts | your app's address (optional) |
+| `SENTRY_DSN` | error monitoring: failed renders, transcripts, auto edits (optional) | the same DSN as the app's |
 
 After changing keys: **Manual Deploy, Deploy latest commit** on each service
 (the app reads `VITE_` keys when it's built).

@@ -49,6 +49,7 @@ function PrivacyPage() {
           <li><strong>Anthropic (Claude)</strong>: planning the motion graphics and writing hook lines (your transcript, title, script and notes).</li>
           <li><strong>Higgsfield</strong> (and the AI model provider it runs, such as xAI&rsquo;s Grok Image), or <strong>Google (Gemini)</strong> as a backup: AI pictures for story scenes and cartoons (the picture descriptions and, for your speaker cartoon or scenes with you in them, a photo of you, only after you confirm you&rsquo;re that person or have their permission).</li>
           <li><strong>YouTube, TikTok and Instagram</strong>: only when you connect an account and post to it.</li>
+          <li><strong>Sentry</strong>: error reports when something breaks (the error, the page it happened on, your browser type and your account&rsquo;s ID number; never your email, files or videos).</li>
         </ul>
       </section>
 
