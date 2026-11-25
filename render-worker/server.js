@@ -85,7 +85,7 @@ const SECRET = (process.env.RENDER_WORKER_SECRET ?? "")
   .trim()
   .replace(/^(["'])(.*)\1$/, "$2")
   .trim();
-if (!SECRET) console.warn("[Worker] RENDER_WORKER_SECRET not set — /jobs will reject all requests");
+if (!SECRET) console.warn("[Worker] RENDER_WORKER_SECRET not set — every signed route will reject all requests");
 if (!ffmpegPath) console.warn("[Worker] ffmpeg-static failed to resolve a binary path");
 
 let currentJobId = null;
@@ -93,8 +93,10 @@ let currentJobId = null;
 const HEARTBEAT_MS = 60_000;
 
 function verifySignature(req) {
+  // No secret, no entry: an empty key is one anyone can sign with.
+  if (!SECRET) return false;
   const sig = req.header("x-stuccord-signature") || "";
-  const expected = crypto.createHmac("sha256", SECRET || "").update(req.rawBody || Buffer.alloc(0)).digest("hex");
+  const expected = crypto.createHmac("sha256", SECRET).update(req.rawBody || Buffer.alloc(0)).digest("hex");
   const a = Buffer.from(sig), b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
