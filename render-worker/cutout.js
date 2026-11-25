@@ -12,6 +12,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { limitThreads } from "./threads.js";
+import { MatteDoubt, describeDoubt, doubtReason } from "./doubt.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const PERSON_MODEL = path.join(here, "models", "selfie_segmenter.onnx");
@@ -147,6 +148,8 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
     runs.push({ start, a, b });
     prevEnd = b;
   }
+  // How sure each stretch's matte looks (doubt.js), measured as it's made.
+  const doubts = runs.map(() => new MatteDoubt(mw, mh));
   const pick = runs.map((r) => `between(n\\,${r.start}\\,${r.b - 1})`).join("+");
   const filters = [zoom, `select=${pick}`, `scale=${mw}:${mh}:flags=area`, "format=rgb24"]
     .filter(Boolean)
@@ -184,7 +187,7 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
   // Per stretch: the matte, lossless grey.
   const openEncoder = (i) => {
     const file = path.join(workdir, `matte_${i}.mkv`);
-    out.push({ file, from: runs[i].a, to: runs[i].b, matte: true });
+    out.push({ file, from: runs[i].a, to: runs[i].b, matte: true, run: i });
     return encode(file, "gray", ["-c:v", "ffv1"]);
   };
   const write = (p, buf) =>
@@ -207,6 +210,7 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
       const pha = await runMatte(ort, session, pending.subarray(0, frameBytes), mw, mh, state);
       pending = pending.subarray(frameBytes);
       if (at >= run.a) {
+        doubts[runIndex].add(pha);
         let sure = 0;
         const n = bytes.length;
         const byte = (v) => (v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255));
@@ -247,7 +251,19 @@ async function personMattes({ ffmpegPath, input, zoom, ranges, workdir, onProgre
     );
     return [];
   }
-  return out.filter((m) => m.to > m.from);
+  // A stretch whose matte looks unsure isn't cut out: without its matte,
+  // its behind graphics are simply drawn over the picture (behindFilters),
+  // the same as graphics in front of the speaker.
+  return out.filter((m) => {
+    if (m.to <= m.from) return false;
+    const s = doubts[m.run].summary();
+    const reason = doubtReason(s);
+    console.log(
+      `[doubt] Stretch ${m.run} (${m.from}-${m.to}): ${describeDoubt(s)} -> ` +
+        (reason ? `unsure (${reason}): graphics go in front` : "sure: cut out"),
+    );
+    return !reason;
+  });
 }
 
 /**
