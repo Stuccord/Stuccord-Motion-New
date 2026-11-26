@@ -40,9 +40,15 @@ Graphic types (field "type"):
 - chapter: a section divider when the speaker starts a new part, tip or step ("tip number one", "moving on to..."). "text" is the section title.
 - label: a small "you are here" label naming the current item or topic; it may stay up while other graphics come and go.
 - cta: when the speaker asks viewers to like, subscribe, comment or check a link. Set "cta".
-- screen: when the speaker talks about an app, a website, a tool or software on screen ("I asked ChatGPT...", "my dashboard shows...", "on the landing page"). Full screen: a phone or browser window floats in, a cursor clicks, the camera zooms in. Set "screen" {kind, url}: kind "chat" for asking an AI or messaging ("text" is the question as typed, under 15 words; "items" the reply's 1-4 short lines), "dashboard" for results and stats ("text" the panel's title; "number" the headline figure if one was said, else null; "items" 1-5 short row labels), or "page" for a website or product ("text" the page's headline, under 8 words; "emphasis" one word from it; "items" 1-3 short feature lines). "url" is the site's address only if the speaker said it (like "stripe.com"), else "". Use only what was said. At most a few per video.
+- screen: (for the creator's own screenshots, see "The creator's own pictures" below.) When the speaker talks about an app, a website, a tool or software on screen ("I asked ChatGPT...", "my dashboard shows...", "on the landing page"). Full screen: a phone or browser window floats in, a cursor clicks, the camera zooms in. Set "screen" {kind, url}: kind "chat" for asking an AI or messaging ("text" is the question as typed, under 15 words; "items" the reply's 1-4 short lines), "dashboard" for results and stats ("text" the panel's title; "number" the headline figure if one was said, else null; "items" 1-5 short row labels), or "page" for a website or product ("text" the page's headline, under 8 words; "emphasis" one word from it; "items" 1-3 short feature lines). "url" is the site's address only if the speaker said it (like "stripe.com"), else "". Use only what was said. At most a few per video.
 - metaphor: ONLY when the request says metaphors are ON for this video's look; otherwise never use it. When the speaker states an idea that a picture says better than words - a saying or image ("time is money", "it's a long road", "you're at a crossroads", "climb step by step", "find the balance", "hit the target") - show it as a full-screen scene. "text" is the words on screen, short (2-6 words, the speaker's own), with "emphasis" the one word or short phrase to show biggest (e.g. text "time is money", emphasis "money"). "motif" is the drawn scene that fits best, one of: ${MOTIF_LIST} (road: a winding road to a flag - a journey or long way; stairs: steps up - progress; mountain: a path to a flag on top - a hard goal; crossroads: a choice; scale: balance or trade-off; chart: growth or results; clock: time; target: a goal or focus); null if none fits. "scenes" has exactly one scene: "from_word" the metaphor's first word, "text" "", "emphasis" null, "speaker" false, and "prompt" a photo-real object or still life that shows the idea (e.g. "a vintage brass alarm clock beside a stack of gold coins on a dark reflective surface"), one or two sentences, no people, no words or lettering, never a real brand or logo. Use it for the video's strongest ideas only: roughly one every 20-40 seconds, never two in a row, and in place of a keyline for that line.
 - zoom: a punch-in ("in") on an emphatic beat, or an ease back out ("out"). Use zooms to keep stretches without graphics moving.
+
+The creator's own pictures (fields "picture"):
+- The request may include pictures the creator added, numbered "Picture 1", "Picture 2"..., each with their note on when to show it, if they wrote one. They chose them for this video, so show each one at the moment the speaker talks about what it shows (follow the note when there is one). Leave a picture out only when nothing said fits it.
+- A screenshot (an app, a website, a dashboard or stats, a chat or DM, a payment or payout, a post or comment, an email) goes in a screen graphic: "screen" {kind "picture", url ""}, "picture" its number, "text" a short title for it (under 6 words, the speaker's words) or "", "items" []. Timed like any screen, 2-6 seconds over the words about it.
+- A photo (a person, a place, a product, a moment from their life) goes in a story scene: that scene's "picture" is its number, its "prompt" one sentence describing the photo, "speaker" false. A story can mix the creator's photos with AI scenes.
+- Use each picture once. "picture" is null on every other element and scene, and always when no pictures were given; a screen of kind "picture" only with one of the creator's pictures.
 
 Behind the speaker (field "behind"):
 - true draws the graphic behind the speaker: the person is cut out and stays in front, and the room behind them darkens and softly blurs, so the words sit between the room and the person. It is the style's strongest emphasis.
@@ -72,6 +78,16 @@ export type PlanRequest = {
   wordCount: number;
   /** The video's look: metaphors are planned only in the looks that draw them. */
   look?: MotionLookId | null;
+  /** The creator's own pictures, in order (numbered from 1), each with their note. */
+  pictures?: PlanPicture[];
+};
+
+/** One of the creator's pictures, as sent to Claude. */
+export type PlanPicture = {
+  /** The picture, base64. */
+  data: string;
+  mediaType: "image/jpeg" | "image/png" | "image/webp";
+  note: string;
 };
 
 /** What the planner is told about metaphors for this look. */
@@ -97,6 +113,26 @@ export type PlanResult = {
 
 /** A problem the user can act on; its message is shown as is. */
 export class PlanError extends Error {}
+
+/** The request: its words, then the creator's pictures (each labelled with its number and note). */
+function userContent(req: PlanRequest): Anthropic.Beta.Messages.BetaContentBlockParam[] {
+  const pictures = req.pictures ?? [];
+  if (!pictures.length) return [{ type: "text", text: userMessage(req) }];
+  return [
+    {
+      type: "text",
+      text: `The creator added ${pictures.length} picture${pictures.length === 1 ? "" : "s"} to show in this video:`,
+    },
+    ...pictures.flatMap((p, i): Anthropic.Beta.Messages.BetaContentBlockParam[] => [
+      {
+        type: "text",
+        text: `Picture ${i + 1}${p.note.trim() ? ` - the creator's note: <note>${p.note.trim().slice(0, 200)}</note>` : " (no note)"}`,
+      },
+      { type: "image", source: { type: "base64", media_type: p.mediaType, data: p.data } },
+    ]),
+    { type: "text", text: userMessage(req) },
+  ];
+}
 
 function userMessage(req: PlanRequest): string {
   const parts = [
@@ -147,7 +183,7 @@ export async function requestPlan(
       fallbacks: "default",
       output_config: { effort: "medium", format: betaZodOutputFormat(DraftPlan) },
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: userMessage(req) }],
+      messages: [{ role: "user", content: userContent(req) }],
     });
   } catch (e) {
     if (e instanceof Anthropic.APIError && (e.status === 402 || e.type === "billing_error")) {

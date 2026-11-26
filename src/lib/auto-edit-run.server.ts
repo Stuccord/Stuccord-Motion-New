@@ -267,7 +267,18 @@ class Run {
     try {
       const r = await planGraphicsFor(this.db, this.userId, { project_id: this.id });
       const n = r.plan.elements.length;
-      this.a.steps.plan = { state: "done", note: `${n} graphic${n === 1 ? "" : "s"} planned.` };
+      const pics = r.pictures;
+      const picNote = !pics.of
+        ? ""
+        : pics.placed === pics.of
+          ? ` Your ${pics.of === 1 ? "picture is" : `${pics.of} pictures are`} in.`
+          : pics.placed === 0
+            ? ` Nothing said matched your ${pics.of === 1 ? "picture" : `${pics.of} pictures`}, so ${pics.of === 1 ? "it isn't" : "they aren't"} in (add ${pics.of === 1 ? "it" : "them"} in the editor).`
+            : ` ${pics.placed} of your ${pics.of} pictures are in; nothing said matched the rest (add them in the editor).`;
+      this.a.steps.plan = {
+        state: "done",
+        note: `${n} graphic${n === 1 ? "" : "s"} planned.${picNote}`,
+      };
       // Planned: a restart of this run doesn't plan again.
       await patch(this.db, this.id, this.a.run, { redo: false }, { plan: this.a.steps.plan });
     } catch (e) {

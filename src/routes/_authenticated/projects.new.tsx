@@ -32,6 +32,10 @@ import { NEW_PROJECT_STYLES } from "@/lib/presets";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/upload-rules";
 import { FinalUploadError, uploadToSignedUrlWithProgress } from "@/lib/upload-file";
 import { z } from "zod";
+import { NewProjectPictures, type PendingPicture } from "@/components/new-project-pictures";
+import { saveUserPictures, sceneUploadSlot } from "@/lib/story-images.functions";
+import { SCENE_BUCKET } from "@/lib/motion-plan";
+import { shrinkPicture } from "@/lib/user-pictures";
 
 const searchSchema = z.object({
   template: z.string().optional(),
@@ -127,6 +131,8 @@ function NewProject() {
   const attachFn = useServerFn(attachClip);
   const deleteFn = useServerFn(deleteProject);
   const getSignedClipUploadFn = useServerFn(getSignedClipUploadUrl);
+  const pictureSlotFn = useServerFn(sceneUploadSlot);
+  const savePicturesFn = useServerFn(saveUserPictures);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -145,6 +151,7 @@ function NewProject() {
   const [ratio, setRatio] = useState<"9:16" | "16:9" | "1:1">(template?.ratio ?? "9:16");
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [pictures, setPictures] = useState<PendingPicture[]>([]);
 
   /** Adds clips, any number at once; says which ones it can't take and why. */
   function addFiles(list: FileList | File[]) {
@@ -282,6 +289,24 @@ function NewProject() {
               ...(transform ? { transform } : {}),
             },
           });
+        }
+
+        // The creator's own pictures, shrunk, into the project's pictures
+        // folder; the list (with the notes) is kept for the planner.
+        if (pictures.length) {
+          const saved: { path: string; note: string }[] = [];
+          for (const p of pictures) {
+            const { blob, type } = await shrinkPicture(p.file);
+            const slot = await pictureSlotFn({
+              data: { project_id: project.id, content_type: type },
+            });
+            const { error } = await supabase.storage
+              .from(SCENE_BUCKET)
+              .uploadToSignedUrl(slot.path, slot.token, blob, { contentType: type });
+            if (error) throw new Error(`${p.file.name}: ${error.message}`);
+            saved.push({ path: slot.path, note: p.note.trim() });
+          }
+          await savePicturesFn({ data: { project_id: project.id, pictures: saved } });
         }
       } catch (e) {
         // A failed upload doesn't leave an empty project behind.
@@ -465,6 +490,12 @@ function NewProject() {
               ))}
             </ul>
           )}
+
+          <NewProjectPictures
+            pictures={pictures}
+            onChange={setPictures}
+            disabled={submit.isPending}
+          />
 
           {/* 2. The shape. */}
           <h2 className="mt-10 text-sm font-semibold">Shape</h2>

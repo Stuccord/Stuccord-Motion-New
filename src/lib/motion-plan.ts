@@ -264,6 +264,8 @@ export const DraftScene = z.object({
   prompt: z.string(),
   /** The speaker is in the picture (drawn as their cartoon). */
   speaker: z.boolean(),
+  /** A story scene that shows one of the creator's own pictures: its number (from 1), or null. */
+  picture: z.number().int().nullable(),
 });
 export type DraftScene = z.infer<typeof DraftScene>;
 
@@ -298,7 +300,11 @@ export const DraftElement = z.object({
     }),
   ),
   /** An app screen: what it draws, and the site's address if one was said; null for other types. */
-  screen: z.object({ kind: z.enum(["chat", "dashboard", "page"]), url: z.string() }).nullable(),
+  screen: z
+    .object({ kind: z.enum(["chat", "dashboard", "page", "picture"]), url: z.string() })
+    .nullable(),
+  /** An app screen that shows one of the creator's own pictures: its number (from 1), or null. */
+  picture: z.number().int().nullable(),
   /** A metaphor's drawn scene; null for other types. */
   motif: z.enum(MOTIFS).nullable(),
   /** A social profile's details, as far as they were said; null for other types. */
@@ -642,8 +648,19 @@ export function draftsToElements(
   drafts: DraftElement[],
   words: TimelineWord[],
   newId: () => string = () => crypto.randomUUID(),
+  /** The creator's own pictures (their paths), numbered from 1 for the planner. */
+  pictures: string[] = [],
 ): MotionElement[] {
   const last = words.length - 1;
+  // Each of the creator's pictures is shown once: the first graphic that asks for it gets it.
+  const taken = new Set<number>();
+  const pictureOf = (n: number | null | undefined): string | null => {
+    if (n == null || !Number.isInteger(n) || n < 1 || n > pictures.length || taken.has(n)) {
+      return null;
+    }
+    taken.add(n);
+    return pictures[n - 1];
+  };
   const candidates = drafts
     .filter(
       (d) =>
@@ -673,6 +690,7 @@ export function draftsToElements(
             emphasis: em && sceneText.toLowerCase().includes(em.toLowerCase()) ? em : null,
             prompt: clean(sc.prompt, MAX_SCENE_PROMPT),
             speaker: true,
+            picture: null,
           });
         }
       } else if (d.type === "metaphor") {
@@ -686,6 +704,7 @@ export function draftsToElements(
             emphasis: null,
             prompt: clean(sc.prompt, MAX_SCENE_PROMPT),
             speaker: false,
+            picture: null,
           });
         }
       } else if (d.type === "story") {
@@ -702,6 +721,7 @@ export function draftsToElements(
             emphasis: em && sceneText.toLowerCase().includes(em.toLowerCase()) ? em : null,
             prompt,
             speaker: sc.speaker === true,
+            picture: sc.picture,
           });
         }
       }
@@ -736,7 +756,11 @@ export function draftsToElements(
           // Its words, and a drawn scene or an object picture to show.
           return d.text !== "" && (d.motif != null || d.scenes.length === 1);
         case "screen":
-          // A chat needs its question, a page its headline, a dashboard a number or rows.
+          // One of the creator's pictures needs a real one; a chat needs its
+          // question, a page its headline, a dashboard a number or rows.
+          if (d.screen?.kind === "picture") {
+            return d.picture != null && d.picture >= 1 && d.picture <= pictures.length;
+          }
           return d.screen?.kind === "dashboard"
             ? d.number != null || d.items.length > 0
             : d.screen != null && d.text !== "";
@@ -752,6 +776,9 @@ export function draftsToElements(
   let labelEnd = -1;
   for (const d of candidates) {
     if (elements.length >= MAX_ELEMENTS) break;
+    // A screen for a picture another graphic already shows has nothing to show.
+    const screenPicture = d.type === "screen" && d.screen?.kind === "picture";
+    if (screenPicture && (d.picture == null || taken.has(d.picture))) continue;
     if (EXCLUSIVE.has(d.type)) {
       if (d.from_word <= exclusiveEnd) continue;
       exclusiveEnd = d.to_word;
@@ -790,10 +817,28 @@ export function draftsToElements(
       ...(d.type === "stream" || d.type === "profile" ? { scenes: [] } : {}),
       ...(d.type === "profile" ? { profile: cleanProfile(d.profile) } : {}),
       ...(d.type === "screen" && d.screen
-        ? {
-            scenes: [],
-            screen: { kind: d.screen.kind, device: "auto" as const, url: clean(d.screen.url, 200) },
-          }
+        ? screenPicture
+          ? {
+              // Its picture is scenes[0], as when it's uploaded in the editor.
+              scenes: [
+                {
+                  at: anchorOf(from),
+                  text: "",
+                  emphasis: null,
+                  prompt: "",
+                  image: { path: pictureOf(d.picture) as string, source: "upload" as const },
+                },
+              ],
+              screen: { kind: "picture" as const, device: "auto" as const, url: "" },
+            }
+          : {
+              scenes: [],
+              screen: {
+                kind: d.screen.kind,
+                device: "auto" as const,
+                url: clean(d.screen.url, 200),
+              },
+            }
         : {}),
       ...(d.type === "metaphor"
         ? {
@@ -818,14 +863,18 @@ export function draftsToElements(
         : {}),
       ...(SCENE_TYPES.has(d.type)
         ? {
-            scenes: d.scenes.map((sc) => ({
-              at: anchorOf(words[sc.from_word]),
-              text: sc.text,
-              emphasis: sc.emphasis,
-              prompt: sc.prompt,
-              image: null,
-              ...(sc.speaker ? { speaker: true } : {}),
-            })),
+            scenes: d.scenes.map((sc) => {
+              // A story scene can show one of the creator's own pictures.
+              const own = d.type === "story" ? pictureOf(sc.picture) : null;
+              return {
+                at: anchorOf(words[sc.from_word]),
+                text: sc.text,
+                emphasis: sc.emphasis,
+                prompt: sc.prompt,
+                image: own ? { path: own, source: "upload" as const } : null,
+                ...(sc.speaker && !own ? { speaker: true } : {}),
+              };
+            }),
           }
         : {}),
       source: "ai",

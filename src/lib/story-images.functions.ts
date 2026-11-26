@@ -35,6 +35,7 @@ import {
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
 import { MOTION_LOOK_IDS } from "@/motion/looks";
+import { MAX_USER_PICTURES, UserPicture } from "@/lib/user-pictures";
 
 const Hex = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 const LINK_SECONDS = 60 * 60;
@@ -253,6 +254,36 @@ export const sceneUploadSlot = createServerFn({ method: "POST" })
       .createSignedUploadUrl(path);
     if (error || !slot) throw new Error(error?.message ?? "Couldn't prepare the upload");
     return { path, token: slot.token };
+  });
+
+/**
+ * Keeps the creator's own pictures on the project (uploaded first through
+ * sceneUploadSlot), each with its note, for the graphics planner to place.
+ */
+export const saveUserPictures = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) =>
+    z
+      .object({
+        project_id: z.string().uuid(),
+        pictures: z.array(UserPicture).max(MAX_USER_PICTURES),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { project } = await projectForEdit(context.supabase, data.project_id, context.userId);
+    const folder = sceneImageFolder(project.user_id, project.id);
+    if (data.pictures.some((p) => !inFolder(p.path, folder))) {
+      throw new Error("That picture isn't one of this project's.");
+    }
+    const pictures = data.pictures.map((p) => ({ path: p.path, note: p.note.trim() }));
+    const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+    const { error } = await admin
+      .from("projects")
+      .update({ user_pictures: pictures as unknown as Json })
+      .eq("id", project.id);
+    if (error) throw new Error(error.message);
+    return { count: pictures.length };
   });
 
 /** Short-lived links to the project's story pictures, by path. */

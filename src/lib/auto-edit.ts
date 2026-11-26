@@ -70,7 +70,11 @@ export function prepareAutoPlan(plan: MotionPlan): MotionPlan {
  */
 export function pictureJobs(plan: MotionPlan, cap = AUTO_PICTURES): PictureJob[] {
   const stories = pictured(plan);
-  const made = stories.reduce((n, e) => n + (e.scenes ?? []).filter((sc) => sc.image).length, 0);
+  // The creator's own pictures don't count: the cap is on AI pictures.
+  const made = stories.reduce(
+    (n, e) => n + (e.scenes ?? []).filter((sc) => sc.image && sc.image.source !== "upload").length,
+    0,
+  );
   const jobs: PictureJob[] = [];
   for (const e of stories) {
     const scenes = e.scenes ?? [];

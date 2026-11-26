@@ -136,6 +136,7 @@ export type Database = {
           transcribe_status: string | null
           updated_at: string
           user_id: string
+          user_pictures: Json | null
         }
         Insert: {
           aspect_ratio?: Database["public"]["Enums"]["aspect_ratio"]
@@ -162,6 +163,7 @@ export type Database = {
           transcribe_status?: string | null
           updated_at?: string
           user_id: string
+          user_pictures?: Json | null
         }
         Update: {
           aspect_ratio?: Database["public"]["Enums"]["aspect_ratio"]
@@ -188,6 +190,7 @@ export type Database = {
           transcribe_status?: string | null
           updated_at?: string
           user_id?: string
+          user_pictures?: Json | null
         }
         Relationships: []
       }

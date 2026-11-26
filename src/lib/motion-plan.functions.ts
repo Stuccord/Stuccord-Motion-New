@@ -30,6 +30,7 @@ import {
   numberedTranscript,
   parseMotionPlan,
   parseSpeakerCartoon,
+  SCENE_BUCKET,
   SCENE_CLIP_MODEL,
   spokenWords,
   type MotionPlan,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/motion-plan";
 import { planFor, UNLIMITED, type Plan } from "@/lib/plans";
 import { defaultLook } from "@/motion/looks";
+import { parseUserPictures } from "@/lib/user-pictures";
 import { applyClipCuts, projectAccess, projectForEdit } from "@/lib/projects.functions";
 import { pauseCuts, placeBroll } from "@/lib/auto-edit";
 import {
@@ -430,9 +432,13 @@ export async function planGraphicsFor(
       );
     }
 
+    // The creator's own pictures, for Claude to look at and place.
+    const own = await loadUserPictures(project);
+
     let result;
     try {
       result = await requestPlan({
+        pictures: own.map((p) => p.picture),
         title: project.title,
         script: project.script,
         brief: project.brief,
@@ -458,7 +464,12 @@ export async function planGraphicsFor(
     });
     if (runErr) console.error("[planMotionGraphics] Recording the plan failed:", runErr.message);
 
-    const elements = draftsToElements(result.draft.elements, words);
+    const elements = draftsToElements(
+      result.draft.elements,
+      words,
+      undefined,
+      own.map((p) => p.path),
+    );
     // The sound switch and volume carry over; hand-moved or deleted sounds
     // belonged to the old graphics, so they don't. The colour (the same
     // video's) carries over too.
@@ -491,7 +502,55 @@ export async function planGraphicsFor(
       .eq("id", project.id);
     if (error) throw new Error(error.message);
 
-    return { plan, dropped: result.draft.elements.length - elements.length };
+    const shown = new Set(
+      elements.flatMap((e) => (e.scenes ?? []).map((sc) => sc.image?.path).filter(Boolean)),
+    );
+    return {
+      plan,
+      dropped: result.draft.elements.length - elements.length,
+      /** The creator's pictures, and how many of them the plan shows. */
+      pictures: { of: own.length, placed: own.filter((p) => shown.has(p.path)).length },
+    };
+}
+
+/** Claude takes pictures up to 5 MB each. */
+const MAX_PLAN_PICTURE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * The project's own pictures (projects.user_pictures) from storage, ready for
+ * the planner; one that's missing or too big is left out (and logged).
+ */
+async function loadUserPictures(project: { id: string; user_pictures?: Json | null }) {
+  const list = parseUserPictures(project.user_pictures);
+  if (!list.length) return [];
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const loaded = await Promise.all(
+    list.map(async (p) => {
+      const { data: blob, error } = await supabaseAdmin.storage.from(SCENE_BUCKET).download(p.path);
+      if (error || !blob) {
+        console.warn("[planMotionGraphics] A picture of the creator's is missing:", p.path);
+        return null;
+      }
+      if (blob.size > MAX_PLAN_PICTURE_BYTES) {
+        console.warn(
+          "[planMotionGraphics] A picture of the creator's is too big to plan with:",
+          p.path,
+        );
+        return null;
+      }
+      const type =
+        blob.type === "image/png" || blob.type === "image/webp" ? blob.type : "image/jpeg";
+      return {
+        path: p.path,
+        picture: {
+          data: Buffer.from(await blob.arrayBuffer()).toString("base64"),
+          mediaType: type as "image/jpeg" | "image/png" | "image/webp",
+          note: p.note,
+        },
+      };
+    }),
+  );
+  return loaded.filter((p): p is NonNullable<typeof p> => p !== null);
 }
 
 /** Puts back the plan the last "Plan graphics" replaced (and keeps the newer one for Redo). */
