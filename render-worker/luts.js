@@ -258,10 +258,14 @@ export function cubeText(look) {
 /** The look's .cube file (made the first time); null for a look without one. */
 export function lutFile(look) {
   if (!Object.hasOwn(LOOK_LUTS, look ?? "")) return null;
-  const text = cubeText(look);
+  return cachedCube(look, cubeText(look));
+}
+
+/** Writes a .cube to the temp folder (once: named by its contents). */
+function cachedCube(name, text) {
   const hash = crypto.createHash("sha1").update(text).digest("hex").slice(0, 10);
   const dir = path.join(os.tmpdir(), "stuccord-luts");
-  const file = path.join(dir, `${look}-${hash}.cube`);
+  const file = path.join(dir, `${name}-${hash}.cube`);
   if (!fs.existsSync(file)) {
     fs.mkdirSync(dir, { recursive: true });
     // Written whole, then moved in: two exports at once never read half a file.
@@ -271,6 +275,10 @@ export function lutFile(look) {
   }
   return file;
 }
+
+// ffmpeg filter syntax: forward slashes, and the drive colon (Windows) escaped.
+const lut3d = (file) =>
+  `lut3d=file='${file.replace(/\\/g, "/").replace(/:/g, "\\:")}':interp=tetrahedral`;
 
 /**
  * The look's grade as an ffmpeg filter: its LUT, or (a look without one,
@@ -284,10 +292,52 @@ export function lutFilter(look) {
     console.warn(`[Worker] The ${look} LUT couldn't be made:`, e?.message || e);
     return null;
   }
-  if (!file) return null;
-  // ffmpeg filter syntax: forward slashes, and the drive colon (Windows) escaped.
-  const p = file.replace(/\\/g, "/").replace(/:/g, "\\:");
-  return `lut3d=file='${p}':interp=tetrahedral`;
+  return file ? lut3d(file) : null;
+}
+
+// ---------- ready-made LUTs (the packs: import-luts.mjs) ----------
+
+const PACK_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "luts");
+
+/**
+ * A pack LUT as a .cube, mixed with the untouched picture by strength
+ * (0-1, to the nearest 5%); null when there's no such LUT.
+ */
+export function packCubeText(id, strength = 1) {
+  if (typeof id !== "string" || !/^[a-z0-9-]{1,80}$/.test(id)) return null;
+  const file = path.join(PACK_DIR, `${id}.lut`);
+  if (!fs.existsSync(file)) return null;
+  const buf = fs.readFileSync(file);
+  if (buf.length !== SIZE ** 3 * 6) return null;
+  const k = Math.round(Math.min(1, Math.max(0, Number(strength) || 0)) * 20) / 20;
+  const lines = [`TITLE "Stuccord ${id} ${k}"`, `LUT_3D_SIZE ${SIZE}`, "DOMAIN_MIN 0 0 0", "DOMAIN_MAX 1 1 1"];
+  let o = 0;
+  for (let bi = 0; bi < SIZE; bi++)
+    for (let gi = 0; gi < SIZE; gi++)
+      for (let ri = 0; ri < SIZE; ri++) {
+        const src = [ri, gi, bi].map((i) => i / (SIZE - 1));
+        const out = src.map((x) => {
+          const v = buf.readUInt16LE(o) / 65535;
+          o += 2;
+          return x + (v - x) * k;
+        });
+        lines.push(out.map((v) => v.toFixed(6)).join(" "));
+      }
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * A pack LUT as an ffmpeg filter, at a strength (0-1); null when there's no
+ * such LUT or it can't be made (the caller keeps the look's own grade).
+ */
+export function packLutFilter(id, strength = 1) {
+  try {
+    const text = packCubeText(id, strength);
+    return text ? lut3d(cachedCube(`pack-${id}`, text)) : null;
+  } catch (e) {
+    console.warn(`[Worker] The ${id} LUT couldn't be made:`, e?.message || e);
+    return null;
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

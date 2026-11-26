@@ -1902,6 +1902,8 @@ export async function startCloudRender(
             images: sceneImages,
             // The graphics' look: glass or paper.
             look: motionPlan.look ?? "glass",
+            // A ready-made colour LUT in place of the look's own (null: the look's).
+            lut: motionPlan.lut ?? null,
             // Camera angles (on unless turned off) and where the speaker is.
             angles: motionPlan.angles ?? null,
           }

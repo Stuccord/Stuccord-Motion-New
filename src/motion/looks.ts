@@ -5,6 +5,8 @@
 // render-worker/motion.js (LOOK_FINISH), the export. No app imports: the
 // worker bundles src/motion on its own.
 
+import { packLut } from "./lut-packs";
+
 export const MOTION_LOOK_IDS = [
   "glass",
   "paper",
@@ -35,7 +37,8 @@ export type LookFinish = {
   grade: {
     saturation: number;
     contrast: number;
-    curves?: { r: Curve; g: Curve; b: Curve };
+    /** Each channel's output at even inputs (5 for the looks, 9 for a pack LUT). */
+    curves?: { r: readonly number[]; g: readonly number[]; b: readonly number[] };
   } | null;
   /** Film grain over the whole picture, 0 (none) to 1. */
   grain: number;
@@ -278,6 +281,29 @@ export function defaultLook(stylePreset: string | null | undefined): MotionLookI
     : "glass";
 }
 
+/**
+ * The finish with a ready-made LUT's colour in place of the look's grade
+ * (the preview's rough version of it, mixed with the picture by strength);
+ * the finish as it is when there's none or the id is unknown.
+ */
+export function withLut(
+  finish: LookFinish,
+  lut: { id: string; strength: number } | null | undefined,
+): LookFinish {
+  const p = packLut(lut?.id)?.preview;
+  if (!lut || !p) return finish;
+  const k = Math.min(1, Math.max(0, lut.strength));
+  const mix = (c: number[]) => c.map((v, i) => i / (c.length - 1) + (v - i / (c.length - 1)) * k);
+  return {
+    ...finish,
+    grade: {
+      saturation: 1 + (p.saturation - 1) * k,
+      contrast: 1,
+      curves: { r: mix(p.curves.r), g: mix(p.curves.g), b: mix(p.curves.b) },
+    },
+  };
+}
+
 /** The id of the preview's SVG filter holding a look's curves (FinishOverlay draws it). */
 export const GRADE_FILTER_ID = "sm-look-curves";
 
@@ -286,6 +312,7 @@ export const GRADE_FILTER_ID = "sm-look-curves";
  * saturation and contrast. The export uses each look's LUT instead
  * (render-worker/luts.js): this grade plus skin protection, hue moves and
  * shadow/highlight tints, so the export is a little richer than the preview.
+ * A pack LUT (withLut) shows as its rough version; the export uses the real one.
  */
 export function gradeCss(finish: LookFinish): string | undefined {
   const g = finish.grade;

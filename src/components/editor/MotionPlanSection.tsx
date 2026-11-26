@@ -48,6 +48,7 @@ import {
   undoMotionPlan,
 } from "@/lib/motion-plan.functions";
 import { SpeakerCartoonRow, type CartoonControls } from "./SpeakerCartoonRow";
+import { LutRow, type LutControls } from "./LutRow";
 
 const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000);
@@ -128,6 +129,7 @@ export function MotionPlanSection({
   sound,
   colour,
   look,
+  lut,
   angles,
   cartoon,
 }: {
@@ -141,6 +143,8 @@ export function MotionPlanSection({
   colour?: ColourControls;
   /** Shown once there are graphics. */
   look?: LookControls;
+  /** Shown once there are graphics. */
+  lut?: LutControls;
   /** Shown once there are graphics. */
   angles?: AngleControls;
   /** Shown once there are graphics. */
@@ -301,6 +305,7 @@ export function MotionPlanSection({
       )}
 
       {look && current && <LookRow look={look} />}
+      {lut && current && <LutRow lut={lut} />}
       {angles && current && <AnglesRow angles={angles} />}
       {colour && current && <ColourRow colour={colour} />}
       {sound && current && <SoundRow sound={sound} />}
@@ -539,7 +544,11 @@ const LOOKS: { id: MotionLook; label: string; hint: string }[] = [
   { id: "bulletin", label: "Bulletin", hint: "Newsroom: headline bars, stat boxes, red and navy" },
   { id: "impact", label: "Impact", hint: "Huge stamped capitals, black and acid yellow" },
   { id: "noir", label: "Noir", hint: "Black and white, typewriter type, one red word" },
-  { id: "monument", label: "Monument", hint: "Quotes as gold-and-ivory inscriptions, marble sculptures" },
+  {
+    id: "monument",
+    label: "Monument",
+    hint: "Quotes as gold-and-ivory inscriptions, marble sculptures",
+  },
   { id: "talk", label: "Studio Talk", hint: "Warm podcast cards: pull quotes, topic pills, amber" },
   { id: "notebook", label: "Notebook", hint: "Grid paper, handwriting, marker and red pen" },
   { id: "hud", label: "Spec HUD", hint: "Tech readout: callouts, scan lines, lime on black" },

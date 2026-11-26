@@ -54,7 +54,7 @@ import {
 } from "@/lib/motion-plan";
 import { MOTION_FPS, placeGraphics, splitShift, zoomAt } from "@/motion/timing";
 import { DEFAULT_ANGLE_CENTER, angleAt, closeShots } from "@/motion/angles";
-import { defaultLook, gradeCss, lookFinish } from "@/motion/looks";
+import { defaultLook, gradeCss, lookFinish, withLut } from "@/motion/looks";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { behindStrength } from "@/motion/cutout";
 import { readFootageColours } from "@/lib/footage-colours";
@@ -1856,7 +1856,8 @@ function EditorPage() {
   // the point the picture zooms around.
   const anglesOn = !!motionPlan && motionPlan.angles?.enabled !== false;
   // The look's finish: its colour grade, camera pace and captions (looks.ts).
-  const finish = lookFinish(motionPlan?.look);
+  // A ready-made LUT, when one's picked, in place of the look's colour.
+  const finish = withLut(lookFinish(motionPlan?.look), motionPlan?.lut);
   // (Not a hook: this runs after the loading return above. One pass over the words.)
   const angleShots = anglesOn
     ? closeShots(
@@ -2973,6 +2974,19 @@ function EditorPage() {
                               look: motionPlan.look ?? "glass",
                               canEdit: canEditGraphics,
                               onPick: (next) => motion.update((p) => ({ ...p, look: next })),
+                            }
+                          : undefined
+                      }
+                      lut={
+                        motionPlan
+                          ? {
+                              lut: motionPlan.lut ?? null,
+                              canEdit: canEditGraphics,
+                              onPick: (next) =>
+                                motion.update((p) => ({
+                                  ...p,
+                                  lut: next ? { ...next, by: "you" } : null,
+                                })),
                             }
                           : undefined
                       }

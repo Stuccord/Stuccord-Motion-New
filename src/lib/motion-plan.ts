@@ -470,6 +470,19 @@ const MotionColour = z.object({
   footage: z.array(Hex).max(6).nullable().optional(),
 });
 
+/**
+ * A ready-made colour LUT in place of the look's own colour
+ * (src/motion/lut-packs.ts); an id that's no longer in the list is ignored.
+ */
+const MotionLut = z.object({
+  id: z.string().regex(/^[a-z0-9-]{1,80}$/),
+  /** How much of it, 0-1 (the rest: the picture as corrected). */
+  strength: z.number().min(0).max(1),
+  /** Who picked it: the automatic edit or the creator. */
+  by: z.enum(["ai", "you"]).optional(),
+});
+export type MotionLut = z.infer<typeof MotionLut>;
+
 export const MotionPlan = z.object({
   version: z.literal(1),
   style: z.literal(MOTION_STYLE),
@@ -484,6 +497,8 @@ export const MotionPlan = z.object({
   colour: MotionColour.optional(),
   /** The graphics' look, one per video: dark glass (the default), paper on a desk, minimal, film or saas. */
   look: z.enum(MOTION_LOOKS).optional(),
+  /** The colour LUT: a ready-made one, or null/missing for the look's own. */
+  lut: MotionLut.nullable().optional(),
   /**
    * Camera angles: switching between the full shot and a close crop on the
    * speaker (src/motion/angles.ts). On unless turned off; `center` is where
@@ -1079,16 +1094,16 @@ export function withType(el: MotionElement, type: ElementType): MotionElement {
           ? (el.scenes ?? []).slice(0, 1)
           : [{ at: el.start, text: "", emphasis: null, prompt: firstScene(el).prompt, image: null }]
         : type === "stream" || type === "profile" || type === "screen"
-        ? el.type === "stream" || el.type === "profile" || el.type === "screen"
-          ? (el.scenes ?? []).slice(0, maxScenes(type))
-          : []
-        : !SCENE_TYPES.has(type)
-          ? undefined
-          : type === "cartoon"
-            ? [{ ...firstScene(el), speaker: true }]
-            : el.scenes?.length
-              ? el.scenes.slice(0, MAX_SCENES)
-              : [firstScene(el)],
+          ? el.type === "stream" || el.type === "profile" || el.type === "screen"
+            ? (el.scenes ?? []).slice(0, maxScenes(type))
+            : []
+          : !SCENE_TYPES.has(type)
+            ? undefined
+            : type === "cartoon"
+              ? [{ ...firstScene(el), speaker: true }]
+              : el.scenes?.length
+                ? el.scenes.slice(0, MAX_SCENES)
+                : [firstScene(el)],
     profile: type === "profile" ? (el.profile ?? { ...EMPTY_PROFILE }) : undefined,
     screen: type === "screen" ? (el.screen ?? { ...EMPTY_SCREEN }) : undefined,
     motif: type === "metaphor" ? (el.motif ?? "road") : undefined,

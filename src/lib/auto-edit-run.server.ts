@@ -18,7 +18,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { isImageFilename } from "@/lib/media-kind";
-import { parseMotionPlan, withSpeakerLook, type MotionPlan } from "@/lib/motion-plan";
+import {
+  parseMotionPlan,
+  withSpeakerLook,
+  type MotionLut,
+  type MotionPlan,
+} from "@/lib/motion-plan";
+import { pickLut } from "@/lib/lut-pick.server";
 import {
   clipJobs,
   finishAutoPlan,
@@ -284,6 +290,12 @@ class Run {
   /** 4. The first story pictures (Higgsfield), saved on the plan as the automatic edit keeps it. */
   private async pictures(): Promise<TickResult> {
     const start = this.plan();
+    // First the colour: a ready-made LUT when one suits the footage (once:
+    // null means the look's own, and a creator's pick is kept).
+    if (start && start.lut === undefined) {
+      await this.save({ ...start, lut: await this.pickColour(start) });
+      return next();
+    }
     if (!start) {
       await this.mark("pictures", "skipped", "None needed.");
       return next();
@@ -358,22 +370,7 @@ class Run {
    */
   private async readSpeakerLook(): Promise<string | null> {
     try {
-      const { data: clips } = await this.db
-        .from("clips")
-        .select("role, storage_path, filename, trim_in_ms, duration_ms, ordinal")
-        .eq("project_id", this.id)
-        .order("ordinal", { ascending: true });
-      const main = (clips ?? []).find(
-        (c) => MAIN_TYPES.has(c.role) && !isImageFilename(c.filename ?? ""),
-      );
-      if (!main) return null;
-      const { data: s } = await this.db.storage
-        .from("raw-clips")
-        .createSignedUrl(main.storage_path, 60 * 15);
-      if (!s?.signedUrl) return null;
-      // A moment in, where the speaker is settled and talking.
-      const at = (main.trim_in_ms ?? 0) + Math.min(1500, (main.duration_ms ?? 3000) / 2);
-      const frame = await grabFrameOnWorker(s.signedUrl, at, 768);
+      const frame = await this.mainFrame();
       if (!frame) return null;
       const { look } = await describeSpeakerFor(this.db, this.userId, {
         project_id: this.id,
@@ -384,6 +381,48 @@ class Run {
       console.warn("[auto-edit] Couldn't read the speaker's look:", message(e, "unknown"));
       return null;
     }
+  }
+
+  /**
+   * A ready-made colour LUT for this footage, picked by Claude from one
+   * frame, the look and what the video is about; null for the look's own.
+   */
+  private async pickColour(plan: MotionPlan): Promise<MotionLut | null> {
+    try {
+      const frame = await this.mainFrame();
+      if (!frame) return null;
+      const about = [
+        this.project.title,
+        this.project.brief,
+        ...plan.elements.map((e) => e.text).filter(Boolean),
+      ]
+        .filter(Boolean)
+        .join(". ");
+      return await pickLut({ frame, look: plan.look ?? "glass", about });
+    } catch (e) {
+      console.warn("[auto-edit] Couldn't pick a colour LUT:", message(e, "unknown"));
+      return null;
+    }
+  }
+
+  /** One frame of the main footage (JPEG, base64), a moment in; null when there's none. */
+  private async mainFrame(): Promise<string | null> {
+    const { data: clips } = await this.db
+      .from("clips")
+      .select("role, storage_path, filename, trim_in_ms, duration_ms, ordinal")
+      .eq("project_id", this.id)
+      .order("ordinal", { ascending: true });
+    const main = (clips ?? []).find(
+      (c) => MAIN_TYPES.has(c.role) && !isImageFilename(c.filename ?? ""),
+    );
+    if (!main) return null;
+    const { data: s } = await this.db.storage
+      .from("raw-clips")
+      .createSignedUrl(main.storage_path, 60 * 15);
+    if (!s?.signedUrl) return null;
+    // A moment in, where the speaker is settled and talking.
+    const at = (main.trim_in_ms ?? 0) + Math.min(1500, (main.duration_ms ?? 3000) / 2);
+    return await grabFrameOnWorker(s.signedUrl, at, 768);
   }
 
   /**
