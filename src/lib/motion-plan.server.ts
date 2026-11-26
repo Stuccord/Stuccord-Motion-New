@@ -29,7 +29,7 @@ Graphic types (field "type"):
 - list: items that stack one by one as each is named ("faster, cheaper, and at scale"). "items" has 2-8 short items in spoken order; "text" is an optional title.
 - card: a glass UI card for a concept, tip or piece of advice. "text" is the title; "items" up to 4 short lines.
 - compare: an A-vs-B idea ("a powerful tool or an expensive burden"). "items" has exactly the two sides; "text" is an optional title.
-- story: a short story or journey told over a few sentences ("when I started I had nothing... I slept on a friend's floor... then I made my first sale"). Shown as a sequence of cinematic AI-generated pictures joined by one camera move. Set "scenes": 2-6 scenes in spoken order, each with "from_word" (the word that scene's phrase starts on, within the story's words), "text" (3-7 words on screen, the speaker's words), "emphasis" (one word from that text, or null) and "prompt" (what the picture shows: a person or place living that moment, the setting, the light and mood, in one or two sentences; no words or lettering in the picture; never a real, named person, brand or logo) and "speaker" (true when the speaker themself is in that picture - they are drawn as their own cartoon character - e.g. "I slept on a friend's floor"; false for other people or places). When a scene shows someone other than the speaker, say who in "prompt": their gender, rough age and look, taken from their name and what is said about them (e.g. "Akua" is a Ghanaian woman's name: "a young Ghanaian woman"), never the speaker's own look. "text" is an optional title for the whole story. Use it for real stories, and also when the speaker paints a scene the viewer can picture - a time, a place and what someone is doing ("it's 2 a.m., you're lying in bed, scrolling, the phone lighting up your face"): one scene per image they paint. When the speech paints such a scene, prefer a story over a keyline for it. The AI pictures are the style's biggest "wow", so almost every video should have one story: if nothing is told as a story, picture the clearest situation, example, place, person, problem or before-and-after the speaker talks about (2-3 scenes that show what they are saying, never invented facts). Skip it only when nothing said can be pictured. At most one or two per video.
+- story: a short story or journey told over a few sentences ("when I started I had nothing... I slept on a friend's floor... then I made my first sale"). Shown as a sequence of cinematic AI-generated pictures joined by one camera move. Set "scenes": 2-6 scenes in spoken order, each with "from_word" (the word that scene's phrase starts on, within the story's words), "text" (3-7 words on screen, the speaker's words), "emphasis" (one word from that text, or null) and "prompt" (what the picture shows: a person or place living that moment, the setting, the light and mood, in one or two sentences; no words or lettering in the picture; never a real, named person, brand or logo) and "speaker" (true when the speaker themself is in that picture - they are drawn as their own cartoon character - e.g. "I slept on a friend's floor"; false for other people or places). When a scene shows someone other than the speaker, say who in "prompt": their gender, rough age and look, taken from their name and what is said about them (e.g. "Akua" is a Ghanaian woman's name: "a young Ghanaian woman"), never the speaker's own look. "text" is an optional title for the whole story. Use it for real stories, and also when the speaker paints a scene the viewer can picture - a time, a place and what someone is doing ("it's 2 a.m., you're lying in bed, scrolling, the phone lighting up your face"): one scene per image they paint. When the speech paints such a scene, prefer a story over a keyline for it. The AI pictures are the style's biggest "wow", so every video has at least one story, never none: if nothing is told as a story, picture the clearest situation, example, place, person, problem or before-and-after the speaker talks about (2-3 scenes that show what they are saying, never invented facts). Even an abstract talk has something to picture: the person it is for, the life or result being described, the struggle before it. At most one or two per video.
 - cartoon: a full-screen cartoon of the speaker acting out a moment - a pain point or common mistake ("most people just copy what they see online"), a joke or sarcastic aside, or a metaphor taken literally ("I was drowning in work"). Set "scenes" to exactly one scene: "from_word" the cartoon's first word, "text" an optional caption of 2-6 words from what was said ("" for none), "emphasis" one word from it or null, "prompt" what the speaker's cartoon is doing, where, and the expression, in one or two sentences (no words or lettering; never a real, named person, brand or logo), and "speaker" true. Use it for short moments, 2-5 seconds, at most one every 30 seconds.
 - steps: a process or path said as steps ("first you show up, then you build, then you launch"). Full screen: numbered 3D platforms climbing away, each lit as the camera reaches it. "items" has the 2-5 steps in order, 1-3 words each; "text" is an optional title. Use it for real step-by-step moments, at most a few per video.
 - loop: a cycle or routine that repeats ("wake up, go to work, come home, sleep, repeat"). Full screen: a glowing sphere with an orbit drawing round it, a stop lighting up for each item. "items" has the 3-6 stops in order, 1-3 words each; "text" is an optional title. If the speaker then changes one part of the loop ("swap the job for building a system"), set "swap" {item: the stop's number from 0, text: the new words}; otherwise null.
@@ -147,7 +147,7 @@ function userMessage(req: PlanRequest): string {
       : []),
     metaphorNote(req.look),
     `The spoken words (${req.wordCount}), numbered:\n<words>\n${req.numberedWords}\n</words>`,
-    "Plan the graphics for this video.",
+    "Plan the graphics for this video. Include at least one story (2-3 scenes or more).",
   ];
   return parts.join("\n\n");
 }
@@ -166,10 +166,11 @@ export function plannerClient(): Anthropic {
   return new Anthropic({ apiKey, maxRetries: 1, timeout: 240_000 });
 }
 
-export async function requestPlan(
-  req: PlanRequest,
-  client: Anthropic = plannerClient(),
-): Promise<PlanResult> {
+/** One question to Claude: its plan, the raw answer (to ask again from) and its use. */
+async function ask(
+  client: Anthropic,
+  messages: Anthropic.Beta.Messages.BetaMessageParam[],
+): Promise<{ draft: DraftPlan; text: string; model: string; input: number; output: number }> {
   let message;
   try {
     // create(), not parse(): parse() throws on an answer that doesn't fit the
@@ -183,7 +184,7 @@ export async function requestPlan(
       fallbacks: "default",
       output_config: { effort: "medium", format: betaZodOutputFormat(DraftPlan) },
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: userContent(req) }],
+      messages,
     });
   } catch (e) {
     if (e instanceof Anthropic.APIError && (e.status === 402 || e.type === "billing_error")) {
@@ -246,11 +247,50 @@ export async function requestPlan(
   }
   return {
     draft,
+    text,
     model: message.model,
-    inputTokens:
+    input:
       message.usage.input_tokens +
       (message.usage.cache_read_input_tokens ?? 0) +
       (message.usage.cache_creation_input_tokens ?? 0),
-    outputTokens: message.usage.output_tokens,
+    output: message.usage.output_tokens,
   };
+}
+
+/** Plans with no story are sent back once (every video gets AI pictures). */
+const hasStory = (d: DraftPlan) => d.elements.some((e) => e.type === "story");
+
+/** Asked when a plan comes back without a story. */
+const ADD_STORY =
+  "This plan has no story. Every video needs at least one story (the AI pictures are the style's biggest moment). Add one: picture the clearest situation, example, place, person, problem or before-and-after the speaker talks about, in 2-3 scenes that show what they say (never invented facts), on words where no other main graphic is up (move or drop a keyline there if needed). Keep the rest of the plan, and answer with the whole plan again.";
+
+export async function requestPlan(
+  req: PlanRequest,
+  client: Anthropic = plannerClient(),
+): Promise<PlanResult> {
+  const first: Anthropic.Beta.Messages.BetaMessageParam = {
+    role: "user",
+    content: userContent(req),
+  };
+  const a = await ask(client, [first]);
+  let { draft } = a;
+  let input = a.input;
+  let output = a.output;
+  if (!hasStory(draft)) {
+    // Once: a second answer without one is kept (better than no graphics).
+    try {
+      const b = await ask(client, [
+        first,
+        { role: "assistant", content: a.text },
+        { role: "user", content: ADD_STORY },
+      ]);
+      input += b.input;
+      output += b.output;
+      if (hasStory(b.draft)) draft = b.draft;
+      else console.warn("[motion-plan] Asked again for a story; the plan still has none");
+    } catch (e) {
+      console.warn("[motion-plan] Asking again for a story failed; keeping the plan:", e);
+    }
+  }
+  return { draft, model: a.model, inputTokens: input, outputTokens: output };
 }
