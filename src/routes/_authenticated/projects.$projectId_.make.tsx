@@ -59,10 +59,10 @@ type StepState = AutoStepState;
 const STEPS: { id: StepId; label: string; icon: typeof Film }[] = [
   { id: "transcribe", label: "Transcribing what you say", icon: AudioLines },
   { id: "cut", label: "Cutting the pauses", icon: Scissors },
-  { id: "plan", label: "Planning the graphics (Claude)", icon: Wand2 },
-  { id: "pictures", label: "Making the pictures (Higgsfield)", icon: ImageIcon },
-  { id: "animate", label: "Bringing the pictures to life (Higgsfield)", icon: Clapperboard },
-  { id: "music", label: "Making the music (ElevenLabs)", icon: Music2 },
+  { id: "plan", label: "Planning the graphics", icon: Wand2 },
+  { id: "pictures", label: "Making the pictures", icon: ImageIcon },
+  { id: "animate", label: "Bringing the pictures to life", icon: Clapperboard },
+  { id: "music", label: "Making the music", icon: Music2 },
   { id: "render", label: "Rendering your video", icon: Film },
 ];
 
@@ -513,7 +513,7 @@ function MakePage() {
                   <RefreshCw /> Redo the graphics
                 </Button>
                 <p className="text-[11px] text-muted-foreground">
-                  Claude plans them again and the video is re-rendered
+                  The AI plans them again and the video is re-rendered
                   {plansLeft !== null && planState && !isUnlimited(planState.allowance.cap)
                     ? ` (${plansLeft} AI plan${plansLeft === 1 ? "" : "s"} left this month)`
                     : ""}
