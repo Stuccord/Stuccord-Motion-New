@@ -33,8 +33,8 @@ interface PreviewCanvasProps {
     /** Graphics behind the speaker: how far in a time is (0-1), and what's drawn there. */
     behindAt?: (timeMs: number) => number;
     renderBehind?: (timeMs: number) => React.ReactNode;
-    /** A clip's download stalled: re-sign its link. */
-    onStall?: (storagePath: string) => void;
+    /** A clip's download stalled: re-sign its link. True: a fresh link is on its way. */
+    onStall?: (storagePath: string) => boolean;
     /** Whether the clips' own sound is lowered at a time (under a voiceover). */
     duckAt?: (timeMs: number) => boolean;
     /** The selected clip, which gets a box with handles in the picture. */

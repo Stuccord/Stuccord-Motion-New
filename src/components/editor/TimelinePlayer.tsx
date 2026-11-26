@@ -24,6 +24,7 @@ import { parseTransform, transformedBox, type ClipTransform } from "@/lib/clip-t
 import { TransformBox, type BoxTarget } from "./TransformBox";
 import { loadPersonSegmenter, type PersonSegmenter } from "@/lib/person-segmenter";
 import { BEHIND_BLUR, BEHIND_DARKEN } from "@/motion/cutout";
+import { useLocalClips } from "@/lib/clip-download";
 import type { ClipRow } from "./types";
 
 /** What the editor can do with the player (a subset of HTMLVideoElement). */
@@ -76,8 +77,11 @@ type Props = {
    */
   behindAt?: (timeMs: number) => number;
   renderBehind?: (timeMs: number) => React.ReactNode;
-  /** A clip's file stopped downloading: get a fresh link for it (by storage path). */
-  onStall?: (storagePath: string) => void;
+  /**
+   * A clip's file stopped downloading: get a fresh link for it (by storage
+   * path). True: a fresh link is on its way.
+   */
+  onStall?: (storagePath: string) => boolean;
   /** The selected clip: gets a box with handles when it's on screen. */
   selectedClipId?: string | null;
   /** A clip was pressed in the picture. */
@@ -359,6 +363,17 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   const layers = [...withNext(placed.main), ...withNext(placed.over)];
   const mainActive = activeAt(placed.main, t);
 
+  // Every video file, downloaded once into memory: clips play from that copy
+  // once it's in (no more internet for cuts and replays), from the link
+  // meanwhile.
+  const local = useLocalClips(
+    [...placed.main, ...placed.over].map((p) => p.clip).filter((c) => !isImage(c)),
+    urls,
+    (path) => onStall?.(path),
+  );
+  const playUrl = (clip: ClipRow) =>
+    (!isImage(clip) && local[clip.storage_path]?.url) || urls[clip.storage_path];
+
   // Each file's own size, for its box in the frame.
   const [sizes, setSizes] = useState<Record<string, { w: number; h: number }>>({});
   // The frame's height on screen (px), for the size of the room's blur.
@@ -451,13 +466,15 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
         >
           {layers.map((p) => {
             const active = t >= p.start && t < p.end;
-            const url = urls[p.clip.storage_path];
+            const url = playUrl(p.clip);
             if (!url) return null;
+            const download = local[p.clip.storage_path];
             return (
               <Layer
                 key={`${p.track}:${p.clip.id}`}
                 placed={p}
                 url={url}
+                downloadProgress={download?.state === "downloading" ? download.progress : undefined}
                 active={active}
                 timeMs={t}
                 frameRatio={frameRatio}
@@ -474,7 +491,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
                   )
                 }
                 onReady={() => sync(timeRef.current)}
-                onStall={() => onStall?.(p.clip.storage_path)}
+                onStall={() => onStall?.(p.clip.storage_path) ?? false}
               />
             );
           })}
@@ -678,9 +695,12 @@ function Layer({
   onSize,
   onReady,
   onStall,
+  downloadProgress,
 }: {
   placed: Placed;
   url: string;
+  /** How far the file's one-time download is (0-1), while it's on its way. */
+  downloadProgress?: number;
   active: boolean;
   timeMs: number;
   frameRatio: number;
@@ -689,7 +709,7 @@ function Layer({
   videoRef: (el: HTMLVideoElement | null) => void;
   onSize: (w: number, h: number) => void;
   onReady: () => void;
-  onStall: () => void;
+  onStall: () => boolean;
 }) {
   const [size, setSizeState] = useState<{ w: number; h: number } | null>(null);
   const setSize = (next: { w: number; h: number }) => {
@@ -746,6 +766,7 @@ function Layer({
         onReady();
       }}
       onStall={onStall}
+      downloadProgress={downloadProgress}
     />
   );
 }
@@ -762,8 +783,11 @@ function VideoLayer({
   videoRef,
   onSize,
   onStall,
+  downloadProgress,
 }: {
   url: string;
+  /** How far the file's one-time download is (0-1), while it's on its way. */
+  downloadProgress?: number;
   style: React.CSSProperties;
   blurBehind: boolean;
   box: React.CSSProperties;
@@ -772,13 +796,29 @@ function VideoLayer({
   active: boolean;
   videoRef: (el: HTMLVideoElement | null) => void;
   onSize: (w: number, h: number) => void;
-  /** The download stalled: ask for a fresh link (the old one may have expired). */
-  onStall: () => void;
+  /**
+   * The download stalled: ask for a fresh link (the old one may have
+   * expired). True: one is on its way (the video reloads when it comes).
+   */
+  onStall: () => boolean;
 }) {
   const el = useRef<HTMLVideoElement | null>(null);
   const onStallRef = useRef(onStall);
   onStallRef.current = onStall;
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const bg = useRef<HTMLCanvasElement>(null);
+  // The link the video plays from. A renewed link (they're renewed every 50
+  // minutes, and the old one still works for 10 more) is taken up only when
+  // it won't interrupt anything: the clip isn't on screen, or its video
+  // isn't playing well anyway (still loading, stalled, or failed). Taking it
+  // up reloads the video, which would restart a clip that's playing fine.
+  const [link, setLink] = useState(url);
+  // Retries from the same link (no fresh one coming) add a harmless
+  // `retry=n` to it: a new address, so the browser makes a new request
+  // instead of waiting on the stuck one (which it may never give up on).
+  const [attempt, setAttempt] = useState(0);
+  const src = attempt ? `${link}${link.includes("?") ? "&" : "?"}retry=${attempt}` : link;
   // Shown over the frame: still loading (or buffering), or the browser can't
   // play it. Read from the video itself (not from single events, which a
   // paused video may never send again after a seek), checked on its events
@@ -786,12 +826,45 @@ function VideoLayer({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   // Reloads after a stalled download (none of it arriving for a while).
   const [retrying, setRetrying] = useState(false);
+  // When data last arrived (or the clip came on screen), for the stall check.
+  const lastProgress = useRef(performance.now());
+  // Reloads since the video last played well (they wait longer each time).
+  const reloads = useRef(0);
+  // The file's copy in memory (once downloaded) is taken up also while the
+  // clip is on screen but paused: it loads at once, and nothing can stall
+  // after that.
+  useEffect(() => {
+    if (url === link) return;
+    const video = el.current;
+    const playingWell = video != null && !video.error && video.readyState >= 2 && !retrying;
+    const inMemory = url.startsWith("blob:");
+    if (!active || !playingWell || (inMemory && video?.paused)) {
+      setLink(url);
+      setAttempt(0);
+    }
+  }, [url, link, active, status, retrying]);
+  // Coming on screen: give the download a fresh 8 s before calling it stalled
+  // (while hidden it only loaded the start, so nothing arrived for a while).
+  useEffect(() => {
+    if (active) lastProgress.current = performance.now();
+  }, [active]);
+  // The file's one-time download is on its way (see the stall check below).
+  const downloading = useRef(false);
+  downloading.current = downloadProgress != null;
+  // A load stopped for the download, which then can't finish (the file is
+  // too big to hold): load from the link again.
+  useEffect(() => {
+    const video = el.current;
+    if (downloadProgress == null && video && !video.getAttribute("src") && src) {
+      video.setAttribute("src", src);
+      video.load();
+    }
+  }, [downloadProgress, src]);
   useEffect(() => {
     const video = el.current;
     if (!video) return;
     let buffering = false;
-    let lastProgress = performance.now();
-    let reloads = 0;
+    lastProgress.current = performance.now();
     const refresh = () => {
       const next = video.error
         ? "error"
@@ -800,7 +873,7 @@ function VideoLayer({
           : "ready";
       setStatus(next);
       if (next === "ready") {
-        reloads = 0;
+        reloads.current = 0;
         setRetrying(false);
       }
     };
@@ -813,12 +886,12 @@ function VideoLayer({
       refresh();
     };
     const onProgress = () => {
-      lastProgress = performance.now();
+      lastProgress.current = performance.now();
       refresh();
     };
     const onLoadStart = () => {
       buffering = false;
-      lastProgress = performance.now();
+      lastProgress.current = performance.now();
       refresh();
     };
     const flowing = ["playing", "canplay", "canplaythrough", "seeked", "pause"];
@@ -830,17 +903,44 @@ function VideoLayer({
     for (const ev of checks) video.addEventListener(ev, refresh);
     const timer = setInterval(() => {
       refresh();
-      // Nothing to show and nothing arriving for 8 s: the download has
-      // stalled (an expired link, or the browser holding the request).
-      // Ask for a fresh link, which reloads the video, and load again
-      // meanwhile (the player puts it back in place).
-      const starved = !video.error && video.readyState < 2 && video.networkState !== 3;
-      if (starved && performance.now() - lastProgress > 8000 && reloads < 4) {
-        reloads++;
-        lastProgress = performance.now();
+      // On screen, waiting for the picture (none yet, or playing and out of
+      // it) with nothing arriving: the download has stalled. On a shaky
+      // connection one request can hang for good without failing, or the
+      // link has expired. Ask for a fresh link, which reloads the video when
+      // it comes; when none is coming (one was asked for moments ago), load
+      // again with a new request. The player puts it back in place. Waits
+      // 8 s the first time, then longer (up to 30 s), and keeps trying.
+      // A hidden clip (the next one) isn't checked: it only loads its start,
+      // and a reload for it would also reload the clip on screen when both
+      // come from the same file.
+      const waitingForPicture = video.readyState < 2 || (buffering && !video.paused);
+      const starved =
+        activeRef.current && !video.error && waitingForPicture && video.networkState !== 3;
+      const patience = Math.min(8000 + reloads.current * 4000, 30_000);
+      if (
+        starved &&
+        downloading.current &&
+        performance.now() - lastProgress.current > 8000 &&
+        !video.src.startsWith("blob:")
+      ) {
+        // Stalled while the file's one-time download is on its way: stop
+        // this load (on a slow connection it only takes bandwidth from the
+        // download) and play from memory when the download is in.
+        if (video.getAttribute("src")) {
+          console.warn("[preview] Video download stalled; waiting for the full download", {
+            at: video.currentTime.toFixed(1),
+          });
+          setRetrying(false);
+          video.removeAttribute("src");
+          video.load();
+        }
+        lastProgress.current = performance.now();
+      } else if (starved && performance.now() - lastProgress.current > patience) {
+        reloads.current++;
+        lastProgress.current = performance.now();
         setRetrying(true);
         console.warn("[preview] Video download stalled; retrying with a fresh link", {
-          try: reloads,
+          try: reloads.current,
           readyState: video.readyState,
           networkState: video.networkState,
           buffered: video.buffered.length
@@ -848,8 +948,9 @@ function VideoLayer({
             : "none",
           at: video.currentTime.toFixed(1),
         });
-        onStallRef.current();
-        video.load();
+        // A copy in memory can't stall on the network: just load it again.
+        if (video.src.startsWith("blob:")) video.load();
+        else if (!onStallRef.current()) setAttempt((n) => n + 1);
       }
     }, 1000);
     refresh();
@@ -861,7 +962,7 @@ function VideoLayer({
       for (const ev of flowing) video.removeEventListener(ev, onFlowing);
       for (const ev of checks) video.removeEventListener(ev, refresh);
     };
-  }, [url]);
+  }, [src]);
   // The blurred copy: the video drawn small into a canvas each frame it shows.
   useEffect(() => {
     const video = el.current;
@@ -921,11 +1022,13 @@ function VideoLayer({
             el.current = v;
             videoRef(v);
           }}
-          src={url}
+          src={src}
           // Read with CORS (storage allows it), so the speaker cut-out can
           // read its frames; without it they're locked to other code.
           crossOrigin="anonymous"
-          preload="auto"
+          // The clip on screen loads in full; the next one (hidden) only its
+          // start, so it doesn't share the connection with the one playing.
+          preload={active ? "auto" : "metadata"}
           playsInline
           muted
           className={cn("absolute inset-0 w-full h-full", fit)}
@@ -938,6 +1041,9 @@ function VideoLayer({
             <span className="flex items-center gap-1.5 text-[11px] text-neutral-400">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               {retrying ? "Still loading, trying again…" : "Loading video…"}
+              {downloadProgress != null && downloadProgress > 0 && (
+                <span className="tabular-nums">{Math.round(downloadProgress * 100)}%</span>
+              )}
             </span>
           ) : (
             <span className="text-[11px] leading-snug text-neutral-400 max-w-[16rem]">

@@ -572,14 +572,15 @@ function EditorPage() {
     };
   }, []);
   // A file whose download stalled in the preview gets a fresh link now (its
-  // link may have expired), at most every 15 s.
+  // link may have expired), at most every 15 s. True: a fresh link was asked for.
   const lastResign = useRef(new Map<string, number>());
   const resignClipLink = useCallback((path: string) => {
     const now = Date.now();
-    if (now - (lastResign.current.get(path) ?? 0) < 15_000) return;
+    if (now - (lastResign.current.get(path) ?? 0) < 15_000) return false;
     lastResign.current.set(path, now);
     clipUrlsSignedAt.current.delete(path);
     setRenewTick((n) => n + 1);
+    return true;
   }, []);
   useEffect(() => {
     if (!data) return;
