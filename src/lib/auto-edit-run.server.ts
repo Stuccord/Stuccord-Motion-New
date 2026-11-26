@@ -384,13 +384,21 @@ class Run {
   }
 
   /**
-   * A ready-made colour LUT for this footage, picked by Claude from one
-   * frame, the look and what the video is about; null for the look's own.
+   * A ready-made colour LUT that matches this footage (lut-pick.server.ts):
+   * Claude shortlists from frames across the video, then compares those
+   * frames graded each way; null for the look's own grade.
    */
   private async pickColour(plan: MotionPlan): Promise<MotionLut | null> {
     try {
-      const frame = await this.mainFrame();
-      if (!frame) return null;
+      const main = await this.mainClip();
+      if (!main) return null;
+      const look = plan.look ?? "glass";
+      // Three moments across the footage (its light can change).
+      const times = [0.15, 0.5, 0.85].map((f) => Math.round(main.from + (main.to - main.from) * f));
+      const frames = (
+        await Promise.all(times.map((t) => grabFrameOnWorker(main.url, t, 512)))
+      ).filter((f): f is string => !!f);
+      if (!frames.length) return null;
       const about = [
         this.project.title,
         this.project.brief,
@@ -398,7 +406,12 @@ class Run {
       ]
         .filter(Boolean)
         .join(". ");
-      return await pickLut({ frame, look: plan.look ?? "glass", about });
+      return await pickLut({
+        frames,
+        look,
+        about,
+        sheets: (choices) => gradeSheetOnWorker(main.url, times, look, choices),
+      });
     } catch (e) {
       console.warn("[auto-edit] Couldn't pick a colour LUT:", message(e, "unknown"));
       return null;
@@ -407,9 +420,21 @@ class Run {
 
   /** One frame of the main footage (JPEG, base64), a moment in; null when there's none. */
   private async mainFrame(): Promise<string | null> {
+    const main = await this.mainClip();
+    if (!main) return null;
+    // A moment in, where the speaker is settled and talking.
+    return await grabFrameOnWorker(
+      main.url,
+      main.from + Math.min(1500, (main.to - main.from) / 2),
+      768,
+    );
+  }
+
+  /** The main footage: a link to it and the part of it that's used; null when there's none. */
+  private async mainClip(): Promise<{ url: string; from: number; to: number } | null> {
     const { data: clips } = await this.db
       .from("clips")
-      .select("role, storage_path, filename, trim_in_ms, duration_ms, ordinal")
+      .select("role, storage_path, filename, trim_in_ms, trim_out_ms, duration_ms, ordinal")
       .eq("project_id", this.id)
       .order("ordinal", { ascending: true });
     const main = (clips ?? []).find(
@@ -420,9 +445,9 @@ class Run {
       .from("raw-clips")
       .createSignedUrl(main.storage_path, 60 * 15);
     if (!s?.signedUrl) return null;
-    // A moment in, where the speaker is settled and talking.
-    const at = (main.trim_in_ms ?? 0) + Math.min(1500, (main.duration_ms ?? 3000) / 2);
-    return await grabFrameOnWorker(s.signedUrl, at, 768);
+    const from = main.trim_in_ms ?? 0;
+    const to = Math.max(from + 1000, main.trim_out_ms ?? main.duration_ms ?? from + 3000);
+    return { url: s.signedUrl, from, to };
   }
 
   /**
@@ -723,6 +748,30 @@ async function grabFrameOnWorker(url: string, atMs: number, width: number): Prom
   if (!res.ok) return null;
   const bytes = Buffer.from(await res.arrayBuffer());
   return bytes.length > 100 ? bytes.toString("base64") : null;
+}
+
+/** The footage at these moments, graded each way as the export would (worker /grade-sheet). */
+async function gradeSheetOnWorker(
+  url: string,
+  times: number[],
+  look: string,
+  choices: { key: string; id: string; strength: number }[],
+): Promise<{ key: string; jpeg: string }[]> {
+  const secret = workerSecret();
+  if (!secret) return [];
+  const body = JSON.stringify({ url, times_ms: times, look, choices, width: 384 });
+  const res = await fetch(workerEndpoint("grade-sheet").toString(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-stuccord-signature": await hmacHex(secret, body),
+    },
+    body,
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { sheets?: { key: string; jpeg: string }[] };
+  return Array.isArray(data.sheets) ? data.sheets : [];
 }
 
 // ---------- starting ----------

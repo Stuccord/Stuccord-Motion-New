@@ -553,6 +553,72 @@ app.post("/frame", (req, res) => {
   });
 });
 
+// The colour choices on this footage, for the automatic edit's LUT pick: a
+// few frames of the video, each corrected and graded exactly as the export
+// does (colour.js correction, then the look's own grade or a pack LUT),
+// side by side, one JPEG per choice. The AI looks at them and picks.
+app.post("/grade-sheet", async (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  const times = Array.isArray(p.times_ms) ? p.times_ms.map(Number).filter((t) => Number.isFinite(t) && t >= 0) : [];
+  const choices = Array.isArray(p.choices) ? p.choices : [];
+  const width = Math.round(Number(p.width) || 320);
+  if (
+    !isAbsoluteHttpUrl(p.url) || !times.length || times.length > 4 ||
+    !choices.length || choices.length > 6 || !(width >= 128 && width <= 640) ||
+    typeof p.look !== "string"
+  ) {
+    return res.status(400).json({ ok: false, error: "Invalid grade sheet payload" });
+  }
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "grade-sheet-"));
+  try {
+    // The frames, as lossless stills.
+    const frames = [];
+    for (const [i, at] of times.entries()) {
+      const out = path.join(dir, `f${i}.png`);
+      await run(ffmpegPath, [
+        "-hide_banner", "-loglevel", "error",
+        "-ss", (at / 1000).toFixed(3), "-i", p.url,
+        "-frames:v", "1", "-vf", `scale=${width}:-2`, "-y", out,
+      ]);
+      frames.push(out);
+    }
+    // The correction from these frames (the export measures the whole video).
+    const stats = (await Promise.all(frames.map((f) => analyzeColour(ffmpegPath, f)))).filter(Boolean);
+    const mean = (k) => stats.reduce((a, s) => a + s[k], 0) / stats.length;
+    const correction = stats.length
+      ? correctionFilter({ y: mean("y"), low: mean("low"), high: mean("high"), u: mean("u"), v: mean("v") })
+      : null;
+    const finish = lookFinish(p.look);
+    const sheets = [];
+    for (const c of choices) {
+      const key = String(c?.key ?? "").slice(0, 40);
+      const grade =
+        c?.id === "look"
+          ? (lutFilter(p.look) ?? gradeFilter(finish))
+          : packLutFilter(c?.id, Number(c?.strength ?? 1));
+      if (!key || (c?.id !== "look" && !grade)) continue;
+      const chain = [correction, grade, "format=yuv420p"].filter(Boolean).join(",");
+      const inputs = frames.flatMap((f) => ["-i", f]);
+      const graph =
+        frames.map((_, i) => `[${i}:v]${chain}[g${i}]`).join(";") +
+        `;${frames.map((_, i) => `[g${i}]`).join("")}${frames.length > 1 ? `hstack=inputs=${frames.length}` : "null"}[out]`;
+      const out = path.join(dir, `${sheets.length}.jpg`);
+      await run(ffmpegPath, [
+        "-hide_banner", "-loglevel", "error", ...inputs,
+        "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-q:v", "3", "-y", out,
+      ]);
+      sheets.push({ key, jpeg: (await fsp.readFile(out)).toString("base64") });
+    }
+    res.json({ ok: true, sheets });
+  } catch (e) {
+    console.warn("[Worker] Grade sheet failed:", e?.message || e);
+    res.status(422).json({ ok: false, error: "Couldn't make the grade sheet" });
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
 app.post("/transcribe", async (req, res) => {
   if (!verifySignature(req)) return res.status(401).send("bad signature");
   const p = req.body;
