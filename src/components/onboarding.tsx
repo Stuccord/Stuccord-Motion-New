@@ -55,31 +55,64 @@ const GOALS = [
   { id: "voice", label: "AI voiceover", icon: Mic },
 ];
 
+/** Saves on the account that the welcome steps were seen (finished or skipped). */
+async function markOnboarded(how: string) {
+  const { error } = await supabase.auth.updateUser({
+    data: { onboarded_at: new Date().toISOString(), onboarded_how: how },
+  });
+  if (error) console.warn("[onboarding] Couldn't save that the welcome was seen:", error.message);
+}
+
 export function OnboardingGate() {
   const [userId, setUserId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
 
+  // Shown once per account, on the first visit only. Seen (finished or
+  // skipped) is saved on the account, so it doesn't come back on another
+  // phone, browser or private window. People who already have projects
+  // aren't new: they don't get it either (and are marked as having seen it).
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const id = data.user?.id ?? null;
-      setUserId(id);
-      if (id) {
-        const done = typeof window !== "undefined" && localStorage.getItem(STORAGE_PREFIX + id);
-        setOpen(!done);
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+      if (cancelled) return;
+      setUserId(user?.id ?? null);
+      if (!user) {
+        setReady(true);
+        return;
       }
+      const seenOnAccount = Boolean(user.user_metadata?.onboarded_at);
+      let seenHere = false;
+      try {
+        seenHere = Boolean(localStorage.getItem(STORAGE_PREFIX + user.id));
+      } catch {
+        /* storage blocked */
+      }
+      let seen = seenOnAccount || seenHere;
+      if (!seen) {
+        const { count, error } = await supabase
+          .from("projects")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id);
+        // Can't tell (offline, an error): don't show it rather than risk
+        // showing it to someone who isn't new.
+        seen = error != null || (count ?? 0) > 0;
+      }
+      if (cancelled) return;
+      if (seen && !seenOnAccount) void markOnboarded(seenHere ? "earlier" : "has-projects");
+      setOpen(!seen);
       setReady(true);
-    });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!ready || !userId || !open) return null;
 
-  return (
-    <Onboarding
-      userId={userId}
-      onClose={() => setOpen(false)}
-    />
-  );
+  return <Onboarding userId={userId} onClose={() => setOpen(false)} />;
 }
 
 function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }) {
@@ -103,6 +136,7 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
     } catch {
       /* no-op */
     }
+    void markOnboarded("finished");
     onClose();
     if (go === "project") navigate({ to: "/projects/new" });
   }
@@ -113,6 +147,7 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
     } catch {
       /* no-op */
     }
+    void markOnboarded("skipped");
     onClose();
   }
 
@@ -194,7 +229,11 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
                 key={i}
                 className={cn(
                   "h-1.5 rounded-full transition-all",
-                  i === step ? "w-6 bg-foreground" : i < step ? "w-1.5 bg-muted-foreground/60" : "w-1.5 bg-surface-2",
+                  i === step
+                    ? "w-6 bg-foreground"
+                    : i < step
+                      ? "w-1.5 bg-muted-foreground/60"
+                      : "w-1.5 bg-surface-2",
                 )}
               />
             ))}
@@ -206,11 +245,7 @@ function Onboarding({ userId, onClose }: { userId: string; onClose: () => void }
               </Button>
             )}
             {step < total - 1 ? (
-              <Button
-                size="sm"
-                disabled={!canNext}
-                onClick={() => setStep((s) => s + 1)}
-              >
+              <Button size="sm" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>
                 Continue <ArrowRight className="w-4 h-4" />
               </Button>
             ) : (
@@ -240,8 +275,8 @@ function StepWelcome({ name, onName }: { name: string; onName: (v: string) => vo
         Welcome to Stuccord Motion
       </h2>
       <p className="mt-2 text-[14px] text-muted-foreground leading-relaxed max-w-lg">
-        We'll turn your raw footage into cinematic, motion-graphics-heavy edits — in minutes.
-        Let's set up your studio in 4 quick steps.
+        We'll turn your raw footage into cinematic, motion-graphics-heavy edits — in minutes. Let's
+        set up your studio in 4 quick steps.
       </p>
 
       <div className="mt-6 max-w-sm">
@@ -320,9 +355,27 @@ function StepFormat({
   onAspect: (v: "9:16" | "16:9" | "1:1") => void;
 }) {
   const opts = [
-    { id: "9:16" as const, label: "Vertical", desc: "TikTok, Reels, Shorts", icon: Smartphone, box: "aspect-[9/16] w-12" },
-    { id: "16:9" as const, label: "Widescreen", desc: "YouTube, web", icon: Monitor, box: "aspect-video w-20" },
-    { id: "1:1" as const, label: "Square", desc: "Feed posts", icon: Square, box: "aspect-square w-14" },
+    {
+      id: "9:16" as const,
+      label: "Vertical",
+      desc: "TikTok, Reels, Shorts",
+      icon: Smartphone,
+      box: "aspect-[9/16] w-12",
+    },
+    {
+      id: "16:9" as const,
+      label: "Widescreen",
+      desc: "YouTube, web",
+      icon: Monitor,
+      box: "aspect-video w-20",
+    },
+    {
+      id: "1:1" as const,
+      label: "Square",
+      desc: "Feed posts",
+      icon: Square,
+      box: "aspect-square w-14",
+    },
   ];
   return (
     <div>
@@ -354,12 +407,12 @@ function StepFormat({
                 className={cn(
                   "rounded-md bg-gradient-to-br grid place-items-center",
                   o.box,
-                  active
-                    ? "from-violet-500 to-violet-700"
-                    : "from-white/10 to-white/5",
+                  active ? "from-violet-500 to-violet-700" : "from-white/10 to-white/5",
                 )}
               >
-                <o.icon className={cn("w-4 h-4", active ? "text-white" : "text-muted-foreground")} />
+                <o.icon
+                  className={cn("w-4 h-4", active ? "text-white" : "text-muted-foreground")}
+                />
               </div>
               <div className="text-center">
                 <div className="text-[13px] font-semibold">{o.label}</div>
@@ -423,7 +476,12 @@ function StepStyle({
                 <div className="text-[13px] font-semibold">{s.label}</div>
                 {active && <Check className="w-4 h-4" />}
               </div>
-              <div className={cn("text-[11.5px] mt-0.5", active ? "text-white/70" : "text-muted-foreground")}>
+              <div
+                className={cn(
+                  "text-[11.5px] mt-0.5",
+                  active ? "text-white/70" : "text-muted-foreground",
+                )}
+              >
                 {s.desc}
               </div>
             </button>
@@ -477,14 +535,15 @@ function StepFinish({ profile }: { profile: Profile }) {
       <div className="mt-6 rounded-xl border border-border bg-surface divide-y divide-border">
         <SummaryRow label="Profile" value={profile.niche || "—"} />
         <SummaryRow label="Default format" value={profile.aspect} />
-        <SummaryRow label="Signature style" value={STYLES.find((s) => s.id === profile.style)?.label ?? profile.style} />
+        <SummaryRow
+          label="Signature style"
+          value={STYLES.find((s) => s.id === profile.style)?.label ?? profile.style}
+        />
         <SummaryRow
           label="Enabled features"
           value={
             profile.goals.length
-              ? profile.goals
-                  .map((g) => GOALS.find((x) => x.id === g)?.label ?? g)
-                  .join(" · ")
+              ? profile.goals.map((g) => GOALS.find((x) => x.id === g)?.label ?? g).join(" · ")
               : "None"
           }
         />
