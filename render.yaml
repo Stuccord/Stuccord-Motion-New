@@ -97,6 +97,12 @@ services:
       # graphics (the same Anthropic API key as the app)
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Optional: the behind-the-speaker cut-out asks SAM 3.1 on fal.ai
+      # (fal.ai dashboard, Keys) to tidy stretches where it looks unsure;
+      # about $0.01 per 16 frames, only for those stretches. Without it,
+      # unsure stretches put their graphics in front of the speaker.
+      - key: FAL_KEY
+        sync: false
       # Optional: the app's address, for the once-a-minute scheduled-post tick
       - key: PUBLIC_APP_URL
         sync: false

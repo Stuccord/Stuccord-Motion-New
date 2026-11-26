@@ -1,7 +1,10 @@
 // How sure RVM's matte looks, per stretch (cutout.js): measured for free on
-// every frame while RVM runs. A stretch whose matte looks unsure isn't cut
-// out: its graphics are drawn in front of the speaker instead, which always
-// looks right, rather than showing through a patchy cut-out.
+// every frame while RVM runs. A stretch whose matte looks unsure is sent to
+// SAM (sam.js, fal.ai, paid per frame, when FAL_KEY is set) to drop pieces
+// that aren't a person, then judged again; one still unsure isn't cut out:
+// its graphics are drawn in front of the speaker instead, which always
+// looks right, rather than showing through a patchy cut-out. Clean footage
+// never calls SAM.
 //
 // Measured on a grid of every STEP-th pixel (only "stray" decides; the
 // others are logged to learn from):
@@ -58,8 +61,11 @@ export class MatteDoubt {
     this.flickerFrames = 0;
   }
 
-  /** One frame of RVM's matte (0-1 per pixel, mw x mh). */
-  add(pha) {
+  /**
+   * One frame of the matte (mw x mh): RVM's (0-1 per pixel), or a grey
+   * frame (0-255) with `scale` 1/255 (a matte trimmed by SAM).
+   */
+  add(pha, scale = 1) {
     const { gw, gh, mw, cur, label, queue } = this;
     const n = gw * gh;
     let area = 0;
@@ -67,7 +73,7 @@ export class MatteDoubt {
     for (let gy = 0; gy < gh; gy++) {
       const row = gy * STEP * mw;
       for (let gx = 0; gx < gw; gx++) {
-        const v = pha[row + gx * STEP];
+        const v = pha[row + gx * STEP] * scale;
         const i = gy * gw + gx;
         const on = v > SURE ? 1 : 0;
         cur[i] = on;

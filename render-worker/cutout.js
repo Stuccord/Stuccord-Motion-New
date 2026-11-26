@@ -12,6 +12,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { limitThreads } from "./threads.js";
+import { samReady, samOutline, trimMatte } from "./sam.js";
 import { MatteDoubt, describeDoubt, doubtReason } from "./doubt.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -248,19 +249,62 @@ async function personMattes(ort, session, { ffmpegPath, input, zoom, ranges, wor
     );
     return [];
   }
-  // A stretch whose matte looks unsure isn't cut out: without its matte,
-  // its behind graphics are simply drawn over the picture (behindFilters),
-  // the same as graphics in front of the speaker.
-  return out.filter((m) => {
-    if (m.to <= m.from) return false;
+  return judgeMattes({
+    ffmpegPath, input, zoom, mw, mh, workdir, doubts,
+    mattes: out.filter((m) => m.to > m.from),
+  });
+}
+
+/**
+ * Judges each stretch's matte (doubt.js). A sure one is cut out as RVM made
+ * it. An unsure one is first sent to SAM (sam.js, fal.ai, when FAL_KEY is
+ * set), which drops the matte's pieces that aren't a person; the trimmed
+ * matte is judged again and cut out if it now looks sure. One still unsure
+ * (or with no SAM, or SAM failing) isn't cut out: without its matte, its
+ * behind graphics are drawn over the picture (behindFilters), the same as
+ * graphics in front of the speaker. Every decision is logged as a [doubt]
+ * line, to tune the limits from real exports.
+ */
+async function judgeMattes({ ffmpegPath, input, zoom, mw, mh, workdir, doubts, mattes }) {
+  const kept = [];
+  for (const m of mattes) {
     const s = doubts[m.run].summary();
     const reason = doubtReason(s);
-    console.log(
-      `[doubt] Stretch ${m.run} (${m.from}-${m.to}): ${describeDoubt(s)} -> ` +
-        (reason ? `unsure (${reason}): graphics go in front` : "sure: cut out"),
-    );
-    return !reason;
-  });
+    const label = `[doubt] Stretch ${m.run} (${m.from}-${m.to})`;
+    if (!reason) {
+      console.log(`${label}: ${describeDoubt(s)} -> sure: cut out`);
+      kept.push(m);
+      continue;
+    }
+    if (!samReady()) {
+      console.log(`${label}: ${describeDoubt(s)} -> unsure (${reason}), no FAL_KEY: graphics go in front`);
+      continue;
+    }
+    console.log(`${label}: ${describeDoubt(s)} -> unsure (${reason}): asking SAM`);
+    const outline = await samOutline({ ffmpegPath, input, zoom, a: m.from, b: m.to, mw, mh, workdir, index: m.run });
+    if (!outline) {
+      console.log(`${label}: no SAM outline: graphics go in front`);
+      continue;
+    }
+    try {
+      const again = new MatteDoubt(mw, mh);
+      const file = await trimMatte({
+        ffmpegPath, matte: m.file, outline, mw, mh,
+        file: path.join(workdir, `matte_sam_${m.run}.mkv`),
+        onFrame: (frame) => again.add(frame, 1 / 255),
+      });
+      const s2 = again.summary();
+      const still = doubtReason(s2);
+      console.log(
+        `${label} after SAM: ${describeDoubt(s2)} -> ` +
+          (still ? `still unsure (${still}): graphics go in front` : "sure: cut out"),
+      );
+      if (!still) kept.push({ ...m, file });
+    } catch (e) {
+      console.warn(`${label}: SAM trim failed (${e?.message || e}): graphics go in front`);
+    }
+  }
+  return kept;
 }
 
 /**
