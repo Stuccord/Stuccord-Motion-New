@@ -14,6 +14,8 @@ import {
 
 const ASK_AGAIN_MS = 15 * 60 * 1000;
 const asked = new Map<string, number>();
+/** Pieces the worker can't make (no Pixelcut, an old worker), until when. */
+const refused = new Map<string, number>();
 
 async function admin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -42,7 +44,10 @@ async function requestCutout(piece: CutoutStretch): Promise<void> {
   try {
     const { workerSecret } = await import("@/lib/worker-secret");
     const secret = workerSecret();
-    if (!secret || !process.env.RENDER_WORKER_URL?.trim()) return;
+    if (!secret || !process.env.RENDER_WORKER_URL?.trim()) {
+      refused.set(key, Date.now() + ASK_AGAIN_MS);
+      return;
+    }
     const { hmacHex, workerEndpoint } = await import("@/lib/motion-plan.functions");
     const storage = await admin();
     const [{ data: source }, { data: upload }] = await Promise.all([
@@ -71,6 +76,7 @@ async function requestCutout(piece: CutoutStretch): Promise<void> {
     if (res.status !== 202) {
       console.warn(`[cutout-preview] The worker didn't take ${key}: HTTP ${res.status}`);
       asked.set(key, Date.now() + ASK_AGAIN_MS * 4);
+      refused.set(key, Date.now() + ASK_AGAIN_MS * 5);
     }
   } catch (e) {
     console.warn(`[cutout-preview] Couldn't ask for ${key}:`, e);
@@ -83,12 +89,14 @@ async function requestCutout(piece: CutoutStretch): Promise<void> {
  */
 export async function previewCutouts(
   stretches: CutoutStretch[],
-): Promise<{ cutouts: PreviewCutout[]; waiting: number }> {
+): Promise<{ cutouts: PreviewCutout[]; waiting: number; unavailable: number }> {
   const byPath = new Map<string, CutoutStretch[]>();
   for (const s of stretches) byPath.set(s.path, [...(byPath.get(s.path) ?? []), s]);
   const storage = await admin();
   const cutouts: PreviewCutout[] = [];
   let waiting = 0;
+  // Pieces that won't come (the worker can't make them): the editor uses its own cut-out.
+  let unavailable = 0;
   for (const [path, wanted] of byPath) {
     const saved = await savedFor(path);
     const used = new Set<CutoutStretch>();
@@ -102,6 +110,7 @@ export async function previewCutouts(
         };
         const have = saved.find((c) => covers(c, part));
         if (have) used.add(have);
+        else if ((refused.get(cutoutPath(piece)) ?? 0) > Date.now()) unavailable++;
         else {
           waiting++;
           void requestCutout(piece);
@@ -113,7 +122,7 @@ export async function previewCutouts(
       if (data?.signedUrl) cutouts.push({ ...c, url: data.signedUrl });
     }
   }
-  return { cutouts, waiting };
+  return { cutouts, waiting, unavailable };
 }
 
 /** Removes the files' saved cut-outs (their files are going); never throws. */

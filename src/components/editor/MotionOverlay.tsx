@@ -12,22 +12,19 @@ import type { MotionLookId } from "@/motion/looks";
 import { MOTION_FPS, frameSize, type PlacedGraphic } from "@/motion/timing";
 
 let fontsAdded = false;
-/** Loads the graphics' fonts from /fonts once. */
+/**
+ * Makes the graphics' fonts (/fonts) known to the page once. Each is only
+ * downloaded when a graphic on screen uses it (they're 3.4 MB together, and
+ * a video's look uses one or two); until then the fallback font shows.
+ */
 function useMotionFonts() {
   useEffect(() => {
     if (fontsAdded || typeof document === "undefined" || typeof FontFace === "undefined") return;
     fontsAdded = true;
     for (const f of MOTION_FONTS) {
-      const face = new FontFace(f.family, `url(/fonts/${f.file})`, {
-        style: f.style,
-        weight: f.weight,
-      });
-      face
-        .load()
-        .then((loaded) => document.fonts.add(loaded))
-        .catch(() => {
-          // The fallback fonts still show the graphics.
-        });
+      document.fonts.add(
+        new FontFace(f.family, `url(/fonts/${f.file})`, { style: f.style, weight: f.weight }),
+      );
     }
   }, []);
 }

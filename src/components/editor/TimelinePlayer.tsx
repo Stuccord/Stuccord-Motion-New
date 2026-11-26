@@ -85,6 +85,11 @@ type Props = {
    */
   cutouts?: Record<string, PreviewCutout[]>;
   /**
+   * Whether to cut the speaker out in the browser where there's no saved
+   * cut-out (its model is a 13 MB download). Default: yes.
+   */
+  browserCutout?: boolean;
+  /**
    * A clip's file stopped downloading: get a fresh link for it (by storage
    * path). True: a fresh link is on its way.
    */
@@ -122,6 +127,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     behindAt,
     renderBehind,
     cutouts,
+    browserCutout = true,
     onStall,
     selectedClipId = null,
     onSelectClip,
@@ -575,6 +581,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
                 <CutoutLayer
                   key={`${p.track}:${p.clip.id}`}
                   getVideo={() => videos.current.get(p.clip.id) ?? null}
+                  browserCutout={browserCutout}
                   getCutout={(sec) => {
                     const ms = sec * 1000;
                     const c = cutouts?.[p.clip.storage_path]?.find(
@@ -909,6 +916,7 @@ function drawSavedCutout(
 function CutoutLayer({
   getVideo,
   getCutout,
+  browserCutout,
   style,
   box,
   fit,
@@ -916,19 +924,23 @@ function CutoutLayer({
   getVideo: () => HTMLVideoElement | null;
   /** The saved cut-out holding this time of the clip's file (seconds), if any. */
   getCutout?: (sourceSec: number) => CutoutSource | null;
+  /** Use the browser's own cut-out where there's no saved one. */
+  browserCutout: boolean;
   style: React.CSSProperties;
   box: React.CSSProperties;
   fit: string;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [segmenter, setSegmenter] = useState<PersonSegmenter | null>(null);
+  // The browser's cut-out model (a large download) only when it's wanted.
   useEffect(() => {
+    if (!browserCutout) return;
     let alive = true;
     void loadPersonSegmenter().then((s) => alive && setSegmenter(s));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [browserCutout]);
   const getVideoRef = useRef(getVideo);
   getVideoRef.current = getVideo;
   const getCutoutRef = useRef(getCutout);

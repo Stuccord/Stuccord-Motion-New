@@ -176,7 +176,7 @@ export function PreviewCanvas({
   onLoadedMetadata,
 }: PreviewCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const cutouts = usePreviewCutouts(
+  const { byPath: cutouts, fallback: cutoutFallback } = usePreviewCutouts(
     timeline?.cutouts?.projectId,
     timeline?.cutouts?.stretches ?? [],
     !!timeline?.cutouts,
@@ -489,6 +489,9 @@ export function PreviewCanvas({
               behindAt={timeline!.behindAt}
               renderBehind={timeline!.renderBehind}
               cutouts={cutouts}
+              // The browser's own cut-out only when the worker's can't come
+              // (or isn't asked for, e.g. view-only).
+              browserCutout={!timeline!.cutouts || cutoutFallback}
               onStall={timeline!.onStall}
               duckAt={timeline!.duckAt}
               selectedClipId={timeline!.selectedClipId}

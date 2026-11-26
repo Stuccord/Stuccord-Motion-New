@@ -1591,7 +1591,7 @@ export const getPreviewCutouts = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const stretches = data.stretches.filter((s) => s.toMs > s.fromMs && !isCutoutPath(s.path));
-    if (!stretches.length) return { cutouts: [], waiting: 0 };
+    if (!stretches.length) return { cutouts: [], waiting: 0, unavailable: 0 };
     // Only this project's own files, that the user can see.
     const { data: rows, error } = await context.supabase
       .from("clips")

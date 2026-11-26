@@ -25,7 +25,6 @@ import {
   cutClipRanges,
   restoreClipLayout,
 } from "@/lib/projects.functions";
-import { renderProjectInBrowser, aspectDims } from "@/lib/client-render";
 import {
   cleanTranscriptWords,
   groupIntoPhrases,
@@ -82,6 +81,13 @@ import type { AutoAudio } from "@/components/editor/usePreviewAudio";
 
 // The graphics renderer (Remotion) loads only when the editor shows graphics,
 // so it doesn't slow down opening the page.
+// Tools opened now and then: their code loads the first time they're opened.
+const ThumbnailMaker = lazy(() =>
+  import("@/components/editor/ThumbnailMaker").then((m) => ({ default: m.ThumbnailMaker })),
+);
+const VoiceoverDialog = lazy(() =>
+  import("@/components/editor/VoiceoverDialog").then((m) => ({ default: m.VoiceoverDialog })),
+);
 const MotionOverlay = lazy(() =>
   import("@/components/editor/MotionOverlay").then((m) => ({ default: m.MotionOverlay })),
 );
@@ -104,9 +110,7 @@ import {
 } from "@/lib/upload-file";
 import { uploadSummary, useUploadQueue } from "@/components/editor/useUploadQueue";
 import { UploadList } from "@/components/editor/UploadList";
-import { ThumbnailMaker } from "@/components/editor/ThumbnailMaker";
 import { AutoCutPanel, type AutoCutClip } from "@/components/editor/AutoCutPanel";
-import { VoiceoverDialog } from "@/components/editor/VoiceoverDialog";
 import { makeAiVoiceover, type AiVoice } from "@/lib/voiceover.functions";
 import type { Range } from "@/lib/auto-cut";
 import {
@@ -471,6 +475,9 @@ function EditorPage() {
   }, [search.autocut]);
   // The voiceover recorder / AI voice (?voiceover=1 opens it from Home).
   const [voiceoverOpen, setVoiceoverOpen] = useState(!!search.voiceover);
+  // Mounted (and its code loaded) from the first time it's opened.
+  const voiceoverUsed = useRef(false);
+  if (voiceoverOpen) voiceoverUsed.current = true;
   useEffect(() => {
     if (!search.voiceover) return;
     setVoiceoverOpen(true);
@@ -1415,6 +1422,8 @@ function EditorPage() {
   const [downloading, setDownloading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [thumbOpen, setThumbOpen] = useState(!!search.thumbnail);
+  const thumbUsed = useRef(false);
+  if (thumbOpen) thumbUsed.current = true;
   const [publishOpen, setPublishOpen] = useState(false);
   const closeThumbnailMaker = (open: boolean) => {
     setThumbOpen(open);
@@ -1483,6 +1492,8 @@ function EditorPage() {
         data: { project_id: data!.project.id, ext: "mp4" },
       });
 
+      // The in-browser export's code, loaded only now (it's rarely used).
+      const { renderProjectInBrowser, aspectDims } = await import("@/lib/client-render");
       const dims = aspectDims(started.aspect_ratio || data!.project.aspect_ratio);
       const scale = settings.resolution === "4k" ? 2 : 1;
 
@@ -3156,28 +3167,36 @@ function EditorPage() {
         progressMsg={renderMsg}
       />
 
-      <VoiceoverDialog
-        open={voiceoverOpen}
-        onOpenChange={setVoiceoverOpen}
-        startMs={timelinePlayheadMs}
-        onAddRecording={addRecordedVoiceover}
-        onMakeAi={addAiVoiceover}
-      />
+      {voiceoverUsed.current && (
+        <Suspense fallback={null}>
+          <VoiceoverDialog
+            open={voiceoverOpen}
+            onOpenChange={setVoiceoverOpen}
+            startMs={timelinePlayheadMs}
+            onAddRecording={addRecordedVoiceover}
+            onMakeAi={addAiVoiceover}
+          />
+        </Suspense>
+      )}
 
-      <ThumbnailMaker
-        open={thumbOpen}
-        onOpenChange={closeThumbnailMaker}
-        projectId={projectId}
-        folder={data.folder}
-        projectTitle={project.title}
-        aspectRatio={project.aspect_ratio}
-        clips={[...aRoll, ...bRoll]}
-        urls={clipUrls}
-        initialClipId={selectedClipId}
-        kit={brand.data?.kit}
-        logoUrl={brand.data?.logoUrl}
-        hasCover={!!project.thumbnail_url}
-      />
+      {thumbUsed.current && (
+        <Suspense fallback={null}>
+          <ThumbnailMaker
+            open={thumbOpen}
+            onOpenChange={closeThumbnailMaker}
+            projectId={projectId}
+            folder={data.folder}
+            projectTitle={project.title}
+            aspectRatio={project.aspect_ratio}
+            clips={[...aRoll, ...bRoll]}
+            urls={clipUrls}
+            initialClipId={selectedClipId}
+            kit={brand.data?.kit}
+            logoUrl={brand.data?.logoUrl}
+            hasCover={!!project.thumbnail_url}
+          />
+        </Suspense>
+      )}
 
       <PublishDialog
         open={publishOpen}

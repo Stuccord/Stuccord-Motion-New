@@ -1,7 +1,9 @@
 // The editor's side of the preview cut-outs (see cutout-preview.ts): asks
 // for the behind stretches' cut-outs a moment after they appear or change,
 // then again every so often while some are still being made, and hands
-// back the saved ones by file.
+// back the saved ones by file, and whether the editor should fall back on
+// its own (browser) cut-out: only when the worker can't make them, so the
+// browser's 13 MB cut-out model isn't downloaded for nothing.
 
 import { useEffect, useRef, useState } from "react";
 import { getPreviewCutouts } from "@/lib/projects.functions";
@@ -20,8 +22,9 @@ export function usePreviewCutouts(
   projectId: string | undefined,
   stretches: CutoutStretch[],
   enabled: boolean,
-): Record<string, PreviewCutout[]> {
+): { byPath: Record<string, PreviewCutout[]>; fallback: boolean } {
   const [byPath, setByPath] = useState<Record<string, PreviewCutout[]>>({});
+  const [fallback, setFallback] = useState(false);
   const key = enabled && projectId ? JSON.stringify(stretches) : "";
   const latest = useRef(stretches);
   latest.current = stretches;
@@ -41,6 +44,7 @@ export function usePreviewCutouts(
         });
         if (!alive) return;
         waiting = res.waiting;
+        if (res.unavailable > 0) setFallback(true);
         const got = res.cutouts
           .map((c) => `${c.path}@${c.fromMs}-${c.toMs}`)
           .sort()
@@ -70,6 +74,8 @@ export function usePreviewCutouts(
       refreshing = false;
       if (waiting > 0 && Date.now() - lastNewAt < GIVE_UP_MS)
         timer = setTimeout(ask, LOOK_AGAIN_MS);
+      // Still missing after all that: the worker gave up on them.
+      else if (waiting > 0) setFallback(true);
       else if (known) {
         timer = setTimeout(() => {
           refreshing = true;
@@ -83,5 +89,5 @@ export function usePreviewCutouts(
       if (timer) clearTimeout(timer);
     };
   }, [key, projectId]);
-  return byPath;
+  return { byPath, fallback };
 }
