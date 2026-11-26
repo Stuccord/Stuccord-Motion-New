@@ -121,6 +121,10 @@ function MakePage() {
   const [progress, setProgress] = useState<{ pct: number; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  // The same video as a download (saved, not opened in a new page).
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const titleRef = useRef("");
+  titleRef.current = title;
   // The export finished but the graphics couldn't be drawn (the worker's reason).
   const [graphicsError, setGraphicsError] = useState<string | null>(null);
   const [planState, setPlanState] = useState<MotionPlanState | null>(null);
@@ -157,11 +161,17 @@ function MakePage() {
   /** Shows the finished video. */
   const showVideo = useCallback(
     async (outputPath: string, job: LatestJob) => {
-      const { url } = await signFn({ data: { path: outputPath } });
+      const name = `${(titleRef.current || "stuccord-export").replace(/[^\w.-]+/g, "_")}.${
+        outputPath.split(".").pop() || "mp4"
+      }`;
+      const { url, downloadUrl: saveUrl } = await signFn({
+        data: { path: outputPath, download: name },
+      });
       setProgress(null);
       const ge = job?.edit_plan?.graphics_error;
       setGraphicsError(typeof ge === "string" ? ge : null);
       setVideoUrl(url);
+      setDownloadUrl(saveUrl);
       setPlanState(await fetchPlan({ data: { project_id: projectId } }));
       void qc.invalidateQueries({ queryKey: ["projects"] });
     },
@@ -307,6 +317,7 @@ function MakePage() {
       music_volume?: number | null;
     };
     setVideoUrl(null);
+    setDownloadUrl(null);
     await renderFn({
       data: {
         project_id: projectId,
@@ -383,6 +394,7 @@ function MakePage() {
     try {
       const started = await startFn({ data: { project_id: projectId, redo: true } });
       setVideoUrl(null);
+      setDownloadUrl(null);
       showRun(started);
       if (started.status === "failed") setError(started.error || "The video couldn't be started.");
       else setWatch((w) => w + 1);
@@ -429,7 +441,7 @@ function MakePage() {
                   {graphicsError}). Change the look or redo the graphics to try again.
                 </div>
               )}
-              <a href={videoUrl ?? undefined} download className="block">
+              <a href={downloadUrl ?? undefined} download className="block">
                 <Button size="lg" className="w-full rounded-full" disabled={busy}>
                   <Download /> Download
                 </Button>
@@ -525,18 +537,6 @@ function MakePage() {
               />
             ))}
           </ol>
-        )}
-
-        {done && !busy && (
-          <ul className="text-xs text-muted-foreground space-y-1">
-            {STEPS.map((s) =>
-              notes[s.id] ? (
-                <li key={s.id}>
-                  <span className="font-medium text-foreground/80">{s.label}:</span> {notes[s.id]}
-                </li>
-              ) : null,
-            )}
-          </ul>
         )}
 
         {runNotes.length > 0 && (

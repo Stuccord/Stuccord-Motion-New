@@ -1557,15 +1557,29 @@ export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
     return { path, token: signed.token, signedUrl: signed.signedUrl };
   });
 
+/**
+ * Links to an export: `url` to play it, and `downloadUrl`, which saves it
+ * as `download` (a file name) instead of opening it. The storage server
+ * sends that one as an attachment: browsers ignore a link's own `download`
+ * for a file on another site and open the video in a new page.
+ */
 export const getRenderSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((d: unknown) => z.object({ path: z.string() }).parse(d))
+  .validator((d: unknown) =>
+    z.object({ path: z.string(), download: z.string().max(200).optional() }).parse(d),
+  )
   .handler(async ({ data, context }) => {
-    const { data: signed, error } = await context.supabase.storage
-      .from("renders")
-      .createSignedUrl(data.path, 3600);
+    const storage = context.supabase.storage.from("renders");
+    const { data: signed, error } = await storage.createSignedUrl(data.path, 3600);
     if (error) throw new Error(error.message);
-    return { url: signed.signedUrl };
+    const name = (data.download ?? data.path.split("/").pop() ?? "stuccord-export.mp4")
+      .replace(/[^\w.-]+/g, "_")
+      .slice(0, 120);
+    const { data: saved, error: dErr } = await storage.createSignedUrl(data.path, 3600, {
+      download: name,
+    });
+    if (dErr) throw new Error(dErr.message);
+    return { url: signed.signedUrl, downloadUrl: saved.signedUrl };
   });
 
 function resolveWorkerJobsEndpoint(rawUrl: string | undefined): URL {

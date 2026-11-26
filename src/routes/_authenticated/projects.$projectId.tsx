@@ -1419,9 +1419,10 @@ function EditorPage() {
     const path = data?.project.output_path;
     if (!path) return;
     try {
-      const { url } = await signRender({ data: { path } });
       const safeTitle = (data.project.title || "stuccord-export").replace(/[^\w.-]+/g, "_");
-      triggerDownload(url, `${safeTitle}.${path.split(".").pop() || "mp4"}`);
+      const name = `${safeTitle}.${path.split(".").pop() || "mp4"}`;
+      const { downloadUrl } = await signRender({ data: { path, download: name } });
+      triggerDownload(downloadUrl, name);
       toast.success("Downloading");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't download the export");
@@ -1449,10 +1450,13 @@ function EditorPage() {
         data.project.output_path &&
         data.latestJob?.status === "completed"
       ) {
-        const { url } = await signRender({ data: { path: data.project.output_path } });
         const safeTitle = (data.project.title || "stuccord-export").replace(/[^\w.-]+/g, "_");
         const outExt = data.project.output_path.split(".").pop() || "mp4";
-        triggerDownload(url, `${safeTitle}_${settings.resolution}.${outExt}`);
+        const name = `${safeTitle}_${settings.resolution}.${outExt}`;
+        const { downloadUrl } = await signRender({
+          data: { path: data.project.output_path, download: name },
+        });
+        triggerDownload(downloadUrl, name);
         toast.success("Downloading");
         setExportOpen(false);
         return;
@@ -1528,9 +1532,12 @@ function EditorPage() {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["usage-stats"] });
 
-      const { url } = await signRender({ data: { path: started.upload.path } });
+      // Saved from the copy just made here (no second download; a link on
+      // this page also saves rather than opens).
       const safeTitle = (data!.project.title || "stuccord-export").replace(/[^\w.-]+/g, "_");
-      triggerDownload(url, `${safeTitle}_${settings.resolution}.${result.ext}`);
+      const local = URL.createObjectURL(result.blob);
+      triggerDownload(local, `${safeTitle}_${settings.resolution}.${result.ext}`);
+      setTimeout(() => URL.revokeObjectURL(local), 60_000);
       toast.success(`Rendered ${(result.durationMs / 1000).toFixed(1)}s — MP4 downloading`);
       setExportOpen(false);
     } catch (e) {
