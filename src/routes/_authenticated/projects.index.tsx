@@ -42,6 +42,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { presetLabel } from "@/lib/presets";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 export const Route = createFileRoute("/_authenticated/projects/")({
   head: () => ({ meta: [{ title: "Library — Stuccord Motion" }] }),
@@ -167,7 +168,11 @@ function ProjectsPage() {
               key={t.id}
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Move "${p.title}" to ${t.name}? Everyone in the team will be able to open it.`)) onMove(t.id);
+                void confirmDialog({
+                  title: `Move "${p.title}" to ${t.name}?`,
+                  description: "Everyone in the team will be able to open it.",
+                  confirmLabel: "Move",
+                }).then((ok) => ok && onMove(t.id));
               }}
             >
               <Users className="w-4 h-4 mr-2" /> Move to {t.name}
@@ -177,7 +182,11 @@ function ProjectsPage() {
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Move "${p.title}" out of the team to your personal space? Only you will have it.`)) onMove(PERSONAL);
+                void confirmDialog({
+                  title: `Move "${p.title}" to Personal?`,
+                  description: "It leaves the team and only you will have it.",
+                  confirmLabel: "Move",
+                }).then((ok) => ok && onMove(PERSONAL));
               }}
             >
               <User className="w-4 h-4 mr-2" /> Move to Personal
@@ -189,7 +198,12 @@ function ProjectsPage() {
               className="text-red-400"
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Delete "${p.title}"?`)) onDelete();
+                void confirmDialog({
+                  title: `Delete "${p.title}"?`,
+                  description: "The project, its footage and its exports are deleted. This can't be undone.",
+                  confirmLabel: "Delete",
+                  tone: "danger",
+                }).then((ok) => ok && onDelete());
               }}
             >
               <Trash2 className="w-4 h-4 mr-2" /> Delete

@@ -25,6 +25,7 @@ import { useWorkspace } from "@/lib/use-workspace";
 import { isAudioRole, isImageFilename } from "@/lib/media-kind";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+import { confirmDialog } from "@/components/confirm-dialog";
 
 export const Route = createFileRoute("/_authenticated/assets")({
   head: () => ({ meta: [{ title: "Assets — Stuccord Motion" }] }),
@@ -193,9 +194,12 @@ function AssetsPage() {
               </button>
               <button
                 onClick={() => {
-                  if (confirm(`Remove "${c.filename}"? This deletes the file from storage.`)) {
-                    del.mutate(c.id);
-                  }
+                  void confirmDialog({
+                    title: `Remove "${c.filename}"?`,
+                    description: "The file is deleted from storage. This can't be undone.",
+                    confirmLabel: "Remove",
+                    tone: "danger",
+                  }).then((ok) => ok && del.mutate(c.id));
                 }}
                 className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-400"
                 title="Delete"

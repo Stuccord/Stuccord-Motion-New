@@ -15,6 +15,7 @@ import faviconUrl from "../assets/logo-icon.svg";
 import faviconPngUrl from "../assets/favicon-64.png";
 import appIconUrl from "../assets/logo-icon-512.png";
 import { initClientSentry, reportClientError } from "../lib/sentry-browser";
+import { ConfirmDialogHost } from "@/components/confirm-dialog";
 
 function NotFoundComponent() {
   return (
@@ -165,6 +166,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <Outlet />
       <Toaster />
+      <ConfirmDialogHost />
     </QueryClientProvider>
   );
 }
