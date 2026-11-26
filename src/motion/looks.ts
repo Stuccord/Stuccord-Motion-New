@@ -283,7 +283,9 @@ export const GRADE_FILTER_ID = "sm-look-curves";
 
 /**
  * The grade as a CSS filter for the preview: the curves (an SVG filter), then
- * saturation and contrast. The export uses ffmpeg's curves and eq the same way.
+ * saturation and contrast. The export uses each look's LUT instead
+ * (render-worker/luts.js): this grade plus skin protection, hue moves and
+ * shadow/highlight tints, so the export is a little richer than the preview.
  */
 export function gradeCss(finish: LookFinish): string | undefined {
   const g = finish.grade;

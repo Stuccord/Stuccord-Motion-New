@@ -64,6 +64,7 @@ import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 import { CaptureError, capturePage } from "./capture.js";
 import { limitThreads } from "./threads.js";
 import { analyzeColour, correctionFilter } from "./colour.js";
+import { lutFilter } from "./luts.js";
 import {
   buildAudioMixArgs,
   masterArgs,
@@ -1874,7 +1875,9 @@ async function runRender(job) {
     } catch (e) {
       console.warn(`[Worker] Colour analysis failed for job=${job.job_id}:`, e?.message || e);
     }
-    const grade = [correction, motionJob ? gradeFilter(finish) : null].filter(Boolean).join(",") || null;
+    // The look's grade is its LUT (luts.js); the simple grade if it has none.
+    const lookGrade = motionJob ? (lutFilter(motionJob.look) ?? gradeFilter(finish)) : null;
+    const grade = [correction, lookGrade].filter(Boolean).join(",") || null;
     const filmFinish = motionJob ? finishFilters(finish, w, h) : [];
     // Notes pages: when the speaker moves aside for them.
     let split = null;
