@@ -79,8 +79,7 @@ export function NewProjectPictures({
         </span>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Screenshots or photos you want in the video: a dashboard, a payout, a post, your product.
-        The AI shows each one when you talk about it. A note helps it pick the moment.
+        Screenshots or photos, shown when you talk about them.
       </p>
 
       {pictures.length > 0 && (

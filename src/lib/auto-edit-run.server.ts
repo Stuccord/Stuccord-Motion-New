@@ -20,7 +20,6 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { isImageFilename } from "@/lib/media-kind";
 import { parseMotionPlan, withSpeakerLook, type MotionPlan } from "@/lib/motion-plan";
 import {
-  AUTO_PICTURES,
   clipJobs,
   finishAutoPlan,
   needsAutoPictures,
@@ -74,14 +73,6 @@ const MAIN_TYPES = new Set(["auto", "aroll"]);
 const DONE: TickResult = { done: true };
 const next = (ms = 0): TickResult => ({ wait_ms: ms });
 /** An error's words for the customer (a friendly line for problems on the app's side), or the fallback. */
-/** What the cut took out, in words: "pauses, 3 fillers, 1 retake". */
-function cutWhat(fillers = 0, takes = 0): string {
-  const parts = ["pauses"];
-  if (fillers) parts.push(`${fillers} filler${fillers === 1 ? "" : "s"}`);
-  if (takes) parts.push(`${takes} retake${takes === 1 ? "" : "s"}`);
-  return parts.join(", ");
-}
-
 const message = (e: unknown, fallback: string) =>
   friendlyText((e instanceof Error && e.message.trim()) || fallback);
 const settled = (s: AutoStep | undefined) => s?.state === "done" || s?.state === "skipped";
@@ -242,9 +233,7 @@ class Run {
       await this.mark(
         "cut",
         c.cutMs > 0 ? "done" : "skipped",
-        c.cutMs > 0
-          ? `${(c.cutMs / 1000).toFixed(1)} s cut (${cutWhat(c.fillers, c.takes)}). Change it in the editor (Auto-cut).`
-          : "No long pauses, fillers or retakes to cut.",
+        c.cutMs > 0 ? `${(c.cutMs / 1000).toFixed(1)} s cut.` : "Nothing to cut.",
       );
     } catch (e) {
       await this.mark(
@@ -260,7 +249,7 @@ class Run {
   private async planGraphics(): Promise<TickResult> {
     const existing = this.plan();
     if (existing && !this.a.redo) {
-      await this.mark("plan", "done", `${existing.elements.length} graphics planned.`);
+      await this.mark("plan", "done", `${existing.elements.length} graphics.`);
       return next();
     }
     await this.mark("plan", "active");
@@ -268,16 +257,17 @@ class Run {
       const r = await planGraphicsFor(this.db, this.userId, { project_id: this.id });
       const n = r.plan.elements.length;
       const pics = r.pictures;
+      // Short: "6 graphics, 1 of your 2 pictures."
       const picNote = !pics.of
         ? ""
-        : pics.placed === pics.of
-          ? ` Your ${pics.of === 1 ? "picture is" : `${pics.of} pictures are`} in.`
-          : pics.placed === 0
-            ? ` Nothing said matched your ${pics.of === 1 ? "picture" : `${pics.of} pictures`}, so ${pics.of === 1 ? "it isn't" : "they aren't"} in (add ${pics.of === 1 ? "it" : "them"} in the editor).`
-            : ` ${pics.placed} of your ${pics.of} pictures are in; nothing said matched the rest (add them in the editor).`;
+        : pics.of === 1
+          ? pics.placed
+            ? ", with your picture"
+            : ", your picture not used"
+          : `, ${pics.placed} of your ${pics.of} pictures`;
       this.a.steps.plan = {
         state: "done",
-        note: `${n} graphic${n === 1 ? "" : "s"} planned.${picNote}`,
+        note: `${n} graphic${n === 1 ? "" : "s"}${picNote}.`,
       };
       // Planned: a restart of this run doesn't plan again.
       await patch(this.db, this.id, this.a.run, { redo: false }, { plan: this.a.steps.plan });
@@ -295,7 +285,7 @@ class Run {
   private async pictures(): Promise<TickResult> {
     const start = this.plan();
     if (!start) {
-      await this.mark("pictures", "skipped", "No graphics to make pictures for.");
+      await this.mark("pictures", "skipped", "None needed.");
       return next();
     }
     if (!needsAutoPictures(start)) {
@@ -303,7 +293,7 @@ class Run {
         (e) => (e.type === "story" || e.type === "metaphor") && e.scenes?.some((sc) => sc.image),
       );
       if (made) await this.mark("pictures", "done", "Already made.");
-      else await this.mark("pictures", "skipped", "No pictures needed in this video.");
+      else await this.mark("pictures", "skipped", "None needed.");
       return next();
     }
     await this.mark("pictures", "active");
@@ -355,9 +345,7 @@ class Run {
       await this.mark(
         "pictures",
         jobs.length ? "done" : "skipped",
-        jobs.length
-          ? `${made} made (up to ${AUTO_PICTURES} a video).`
-          : "No pictures needed in this video.",
+        jobs.length ? `${made} made.` : "None needed.",
       );
     }
     return next();
@@ -504,11 +492,7 @@ class Run {
           : `${problem} The pictures stay still.`,
       );
     } else {
-      await this.mark(
-        "animate",
-        "done",
-        `${made} picture${made === 1 ? "" : "s"} brought to life.`,
-      );
+      await this.mark("animate", "done", `${made} animated.`);
     }
     return next();
   }
