@@ -472,7 +472,7 @@ export async function planGraphicsFor(
     );
     // The sound switch and volume carry over; hand-moved or deleted sounds
     // belonged to the old graphics, so they don't. The colour (the same
-    // video's) carries over too.
+    // video's) carries over too, and so does the colour LUT.
     const old = parseMotionPlan(project.motion_plan);
     const before = old?.sound;
     const colourBefore = old?.colour;
@@ -488,6 +488,7 @@ export async function planGraphicsFor(
         : {}),
       ...(colourBefore ? { colour: colourBefore } : {}),
       look,
+      ...(old?.lut !== undefined ? { lut: old.lut } : {}),
       elements,
     };
 
@@ -498,6 +499,7 @@ export async function planGraphicsFor(
       .update({
         motion_plan: plan as unknown as Json,
         ...(previous ? { motion_plan_previous: previous as unknown as Json } : {}),
+        ...renderOutOfDate(project.status),
       })
       .eq("id", project.id);
     if (error) throw new Error(error.message);
@@ -566,6 +568,7 @@ export const undoMotionPlan = createServerFn({ method: "POST" })
       .update({
         motion_plan: previous as unknown as Json,
         motion_plan_previous: project.motion_plan,
+        ...renderOutOfDate(project.status),
       })
       .eq("id", project.id);
     if (error) throw new Error(error.message);
@@ -640,12 +643,49 @@ export async function savePlanFor(
     const ids = new Set(plan.elements.map((e) => e.id));
     if (ids.size !== plan.elements.length) throw new Error("Two graphics have the same id.");
 
+    // Only a real change makes the render out of date: not saving the same
+    // plan again, nor the editor filling in, the first time it opens a plan,
+    // the video's colours and where the speaker is.
+    const changed = !current || renderSide(current, current) !== renderSide(plan, current);
     const { error } = await db
       .from("projects")
-      .update({ motion_plan: plan as unknown as Json })
+      .update({
+        motion_plan: plan as unknown as Json,
+        ...(changed ? renderOutOfDate(project.status) : {}),
+      })
       .eq("id", project.id);
     if (error) throw new Error(error.message);
     return { plan };
+}
+
+/**
+ * A finished render no longer matches once the graphics change (their
+ * look, colour LUT, words or timing): a "ready" project goes back to
+ * "draft", so the next export renders again instead of handing out the old
+ * video (as clip edits do: projects.functions markProjectEdited).
+ */
+function renderOutOfDate(status: string | null): { status?: "draft" } {
+  return status === "ready" ? { status: "draft" } : {};
+}
+
+/**
+ * A plan for comparing, with what the editor fills in by itself left out
+ * while `saved` doesn't have it yet (the footage's colours, the speaker's
+ * place); missing and empty count the same.
+ */
+function renderSide(plan: MotionPlan, saved: MotionPlan): string {
+  const { colour, angles, ...rest } = plan;
+  return JSON.stringify({
+    ...rest,
+    colour: {
+      ...colour,
+      footage: saved.colour?.footage != null ? (colour?.footage ?? null) : null,
+    },
+    angles: {
+      ...angles,
+      center: saved.angles?.center !== undefined ? (angles?.center ?? null) : null,
+    },
+  });
 }
 
 // ---------- transcribing ----------
