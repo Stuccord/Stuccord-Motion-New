@@ -1638,6 +1638,8 @@ export type ExportAllowance = {
   /** The team whose allowance it is; null for the person's own. */
   team: { id: string; name: string } | null;
   plan: string;
+  /** Exports carry the "Made with Stuccord" watermark (free plans; never the app's owner). */
+  watermark: boolean;
 };
 
 /**
@@ -1670,6 +1672,7 @@ export async function exportAllowance(
       cap: (await ownerCap(userId)) ?? plan.teamExports,
       team: { id: teamId, name: team?.name ?? "This team" },
       plan: plan.label,
+      watermark: plan.watermark && (await ownerCap(userId)) == null,
     };
   }
   const plan = planFor("free");
@@ -1681,6 +1684,7 @@ export async function exportAllowance(
     cap: (await ownerCap(userId)) ?? plan.personalExports,
     team: null,
     plan: plan.label,
+    watermark: plan.watermark && (await ownerCap(userId)) == null,
   };
 }
 
@@ -1732,7 +1736,8 @@ export async function startCloudRender(
   // person's. Stale jobs are failed first so a dead render doesn't count;
   // failed exports never count, so retrying after a failure is free.
   await reapStaleRenderJobs(userId);
-  assertAllowanceLeft(await exportAllowance(userId, project.team_id));
+  const allowance = await exportAllowance(userId, project.team_id);
+  assertAllowanceLeft(allowance);
 
   const { data: clips, error: cErr } = await db
     .from("clips")
@@ -1888,6 +1893,8 @@ export async function startCloudRender(
       captions: data.captions,
       music: data.music,
       brand_kit: brandKit,
+      // "Made with Stuccord" in a corner, for free plans (see plans.ts).
+      watermark: allowance.watermark,
       // Motion Explainer graphics: each anchored to a clip and a word in its
       // transcript; the worker places them from the words, like captions,
       // and draws them in the colours below (see src/motion).
@@ -2062,7 +2069,8 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       context.userId,
     );
     await reapStaleRenderJobs(context.userId);
-    assertAllowanceLeft(await exportAllowance(context.userId, project.team_id));
+    const allowance = await exportAllowance(context.userId, project.team_id);
+    assertAllowanceLeft(allowance);
 
     const { data: clips, error: cErr } = await context.supabase
       .from("clips")
@@ -2113,6 +2121,8 @@ export const startBrowserRender = createServerFn({ method: "POST" })
       aspect_ratio: project.aspect_ratio,
       clips: signed,
       upload: { path: outputPath, token: up.token },
+      // "Made with Stuccord" in a corner, for free plans (see plans.ts).
+      watermark: allowance.watermark,
     };
   });
 

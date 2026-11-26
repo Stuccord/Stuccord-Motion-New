@@ -9,6 +9,7 @@
 import { IMAGE_DEFAULT_MS, IMAGE_ZOOM, isAudioRole, isImageFilename } from "@/lib/media-kind";
 import { layoutTrack } from "@/lib/timeline-layout";
 import { parseTransform, transformedBox, type ClipTransform } from "@/lib/clip-transform";
+import watermarkUrl from "@/assets/watermark.png";
 
 export type BrowserClipInput = {
   id: string;
@@ -50,6 +51,8 @@ export type RenderOptions = {
   onProgress?: (pct: number, msg: string) => void;
   /** The brand kit's logo, drawn in its corner on every frame (as the cloud export does). */
   logo?: { url: string; corner: "tl" | "tr" | "bl" | "br"; width: number; opacity: number } | null;
+  /** "Made with Stuccord" in a bottom corner (free plans), as the cloud export draws it. */
+  watermark?: boolean;
 };
 
 export type RenderResult = {
@@ -228,9 +231,7 @@ function releaseClip(clip: LoadedClip) {
 export async function renderProjectInBrowser(opts: RenderOptions): Promise<RenderResult> {
   const { width, height } = opts;
   const fps = opts.fps ?? 30;
-  const videoClips = opts.clips.filter(
-    (c) => !isAudioRole(c.role) && c.download_url,
-  );
+  const videoClips = opts.clips.filter((c) => !isAudioRole(c.role) && c.download_url);
   if (videoClips.length === 0) throw new Error("Add at least one video clip before exporting.");
 
   // Same layout as the editor timeline (and the cloud worker): A-roll plays
@@ -254,6 +255,19 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       () => img,
       () => null,
     );
+  }
+
+  // The watermark (free plans): the same picture, size and place as the
+  // cloud export's (render-worker/server.js watermarkMark).
+  let watermarkImage: HTMLImageElement | null = null;
+  if (opts.watermark) {
+    const img = new Image();
+    img.src = watermarkUrl;
+    watermarkImage = await img.decode().then(
+      () => img,
+      () => null,
+    );
+    if (!watermarkImage) console.warn("[export] Couldn't load the watermark picture");
   }
 
   const canvas = document.createElement("canvas");
@@ -398,6 +412,17 @@ export async function renderProjectInBrowser(opts: RenderOptions): Promise<Rende
       const y = opts.logo.corner.startsWith("t") ? m : height - lh - m;
       ctx.globalAlpha = opts.logo.opacity;
       ctx.drawImage(logoImage, x, y, lw, lh);
+      ctx.globalAlpha = 1;
+    }
+    if (watermarkImage) {
+      // A third of the shorter side wide, in the bottom corner the logo isn't in.
+      const short = Math.min(width, height);
+      const ww = short * 0.32;
+      const wh = (ww * watermarkImage.naturalHeight) / Math.max(1, watermarkImage.naturalWidth);
+      const m = short * 0.04;
+      const x = opts.logo?.corner === "bl" ? width - ww - m : m;
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(watermarkImage, x, height - wh - m, ww, wh);
       ctx.globalAlpha = 1;
     }
     requestAnimationFrame(draw);

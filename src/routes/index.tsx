@@ -71,9 +71,7 @@ function Nav() {
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5">
         <a href="#top" className="flex items-center gap-2.5">
           <LogoMark />
-          <span className="text-[16px] font-semibold tracking-tight text-foreground">
-            Stuccord
-          </span>
+          <span className="text-[16px] font-semibold tracking-tight text-foreground">Stuccord</span>
           <span className="rounded-full border border-white/10 bg-gradient-to-r from-primary/15 to-primary/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-primary">
             Motion
           </span>
@@ -167,8 +165,8 @@ function Hero() {
             </div>
             <p className="mx-auto mt-6 max-w-md text-[16px] leading-relaxed text-muted-foreground lg:ml-auto lg:mr-0 lg:text-right">
               Stuccord turns a raw talking-head video into a finished motion-graphics edit:
-              captions, graphics on your words, AI story scenes, zooms and studio sound. Made
-              for you, automatically.
+              captions, graphics on your words, AI story scenes, zooms and studio sound. Made for
+              you, automatically.
             </p>
             <div className="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center lg:justify-end">
               <a
@@ -187,7 +185,7 @@ function Hero() {
               </a>
             </div>
             <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[13px] text-muted-foreground lg:justify-end">
-              {["No card", "No watermark", "Your footage never trains AI"].map((t) => (
+              {["No card", "Free to start", "Your footage never trains AI"].map((t) => (
                 <li key={t} className="flex items-center gap-1.5">
                   <Check className="h-3.5 w-3.5 text-foreground/70" />
                   {t}
@@ -293,14 +291,17 @@ function SelectedWord({ children }: { children: React.ReactNode }) {
   return (
     <span className="relative mt-2 inline-block rounded-sm border-2 border-primary-glow/80 bg-white/[0.06] px-3 pb-1 pt-2 text-gradient-violet">
       {children}
-      {["-left-1.5 -top-1.5", "-right-1.5 -top-1.5", "-bottom-1.5 -left-1.5", "-bottom-1.5 -right-1.5"].map(
-        (pos) => (
-          <span
-            key={pos}
-            className={"absolute h-3 w-3 rounded-full border-2 border-primary bg-white " + pos}
-          />
-        ),
-      )}
+      {[
+        "-left-1.5 -top-1.5",
+        "-right-1.5 -top-1.5",
+        "-bottom-1.5 -left-1.5",
+        "-bottom-1.5 -right-1.5",
+      ].map((pos) => (
+        <span
+          key={pos}
+          className={"absolute h-3 w-3 rounded-full border-2 border-primary bg-white " + pos}
+        />
+      ))}
     </span>
   );
 }
@@ -352,9 +353,26 @@ function HeroCurve() {
         stroke="url(#hero-curve)"
         strokeWidth="1.5"
       />
-      <line x1="0" y1="560" x2="1440" y2="560" stroke="var(--color-primary)" strokeOpacity="0.35" strokeDasharray="2 6" />
+      <line
+        x1="0"
+        y1="560"
+        x2="1440"
+        y2="560"
+        stroke="var(--color-primary)"
+        strokeOpacity="0.35"
+        strokeDasharray="2 6"
+      />
       {[120, 380, 700, 1010, 1300].map((x) => (
-        <rect key={x} x={x - 4} y={556} width="8" height="8" rx="2" fill="var(--color-primary)" opacity="0.8" />
+        <rect
+          key={x}
+          x={x - 4}
+          y={556}
+          width="8"
+          height="8"
+          rx="2"
+          fill="var(--color-primary)"
+          opacity="0.8"
+        />
       ))}
     </svg>
   );
@@ -362,7 +380,10 @@ function HeroCurve() {
 
 /** The phone in the middle: the finished video on top, the editor's tracks below. */
 function PhoneEditor() {
-  const wave = [4, 9, 14, 8, 16, 22, 12, 18, 26, 14, 9, 20, 28, 16, 10, 6, 14, 22, 18, 12, 8, 16, 24, 12, 7, 13, 19, 11];
+  const wave = [
+    4, 9, 14, 8, 16, 22, 12, 18, 26, 14, 9, 20, 28, 16, 10, 6, 14, 22, 18, 12, 8, 16, 24, 12, 7, 13,
+    19, 11,
+  ];
   return (
     <div className="relative w-[270px] rounded-[44px] border border-white/15 bg-[#0b0b12] p-2.5 shadow-[0_40px_100px_-30px_color-mix(in_oklab,var(--color-primary)_60%,black)] sm:w-[300px]">
       <div className="overflow-hidden rounded-[36px] bg-black">
@@ -378,11 +399,19 @@ function PhoneEditor() {
 
         {/* The finished video */}
         <div className="relative mx-2.5 mt-1 aspect-[4/5] overflow-hidden rounded-2xl">
-          <img src={creatorPortrait} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img
+            src={creatorPortrait}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
           <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/70" />
           <div className="absolute inset-x-3 top-3 flex items-center justify-between text-[10px] font-medium text-white/90">
-            <span className="rounded-md bg-black/40 px-1.5 py-0.5 backdrop-blur">3-second hook</span>
-            <span className="rounded-md bg-primary px-1.5 py-0.5 text-primary-foreground">1080p</span>
+            <span className="rounded-md bg-black/40 px-1.5 py-0.5 backdrop-blur">
+              3-second hook
+            </span>
+            <span className="rounded-md bg-primary px-1.5 py-0.5 text-primary-foreground">
+              1080p
+            </span>
           </div>
           <div className="absolute inset-x-3 bottom-4 text-center font-display text-[19px] font-bold uppercase leading-[1.05] text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.7)]">
             You&rsquo;ve been{" "}
@@ -412,24 +441,42 @@ function PhoneEditor() {
             <span className="absolute -left-1 -top-1 h-2 w-2 rotate-45 bg-primary-glow" />
           </div>
           <Track icon={Layers}>
-            <span className="w-[34%] rounded-md bg-primary/70 px-1.5 text-[8px] leading-4 text-white">Key line</span>
-            <span className="ml-[6%] w-[44%] rounded-md bg-primary-glow/60 px-1.5 text-[8px] leading-4 text-white">Story · 2 scenes</span>
+            <span className="w-[34%] rounded-md bg-primary/70 px-1.5 text-[8px] leading-4 text-white">
+              Key line
+            </span>
+            <span className="ml-[6%] w-[44%] rounded-md bg-primary-glow/60 px-1.5 text-[8px] leading-4 text-white">
+              Story · 2 scenes
+            </span>
           </Track>
           <Track icon={Captions}>
             {[16, 22, 14, 20, 12].map((w, i) => (
-              <span key={i} className="mr-[3%] rounded bg-white/25" style={{ width: `${w}%`, height: 10 }} />
+              <span
+                key={i}
+                className="mr-[3%] rounded bg-white/25"
+                style={{ width: `${w}%`, height: 10 }}
+              />
             ))}
           </Track>
           <Track icon={Volume2}>
             <span className="flex h-4 w-full items-center gap-[2px]">
               {wave.map((h, i) => (
-                <span key={i} className="w-full rounded-full bg-primary-glow/70" style={{ height: `${h / 2}px` }} />
+                <span
+                  key={i}
+                  className="w-full rounded-full bg-primary-glow/70"
+                  style={{ height: `${h / 2}px` }}
+                />
               ))}
             </span>
           </Track>
           <Track icon={Film}>
             {[creatorPortrait, phoneShort, creatorPortrait, phoneShort].map((src, i) => (
-              <img key={i} src={src} alt="" loading="lazy" className="mr-[2%] h-5 w-[23%] rounded object-cover" />
+              <img
+                key={i}
+                src={src}
+                alt=""
+                loading="lazy"
+                className="mr-[2%] h-5 w-[23%] rounded object-cover"
+              />
             ))}
           </Track>
         </div>
@@ -504,10 +551,6 @@ function MakingProgress() {
 
 /* Vertical 9:16 phone-style preview inside the editor */
 
-
-
-
-
 /* ============================================================
    Logo strip — creators shipping with Stuccord
    ============================================================ */
@@ -523,9 +566,7 @@ function Features() {
           title={
             <>
               Every move a top creator-editor makes.{" "}
-              <span className="text-muted-foreground">
-                On your footage, in one pass.
-              </span>
+              <span className="text-muted-foreground">On your footage, in one pass.</span>
             </>
           }
           subtitle="Cut. Zoom. Caption. Graphics. SFX. Music. One pass."
@@ -538,8 +579,8 @@ function Features() {
               <div>
                 <FeatureBadge icon={Type}>Word-by-word captions</FeatureBadge>
                 <h3 className="mt-6 max-w-md font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-                  Frame-accurate, pop-on captions in your brand type.
-                  Emphasis words highlighted automatically.
+                  Frame-accurate, pop-on captions in your brand type. Emphasis words highlighted
+                  automatically.
                 </h3>
               </div>
               {/* Visualization — animated caption strip */}
@@ -652,9 +693,7 @@ function Features() {
               <span className="rounded border border-hairline bg-surface px-1.5 py-0.5">
                 impact
               </span>
-              <span className="rounded border border-hairline bg-surface px-1.5 py-0.5">
-                sub
-              </span>
+              <span className="rounded border border-hairline bg-surface px-1.5 py-0.5">sub</span>
             </div>
           </BentoCard>
 
@@ -693,20 +732,16 @@ function Features() {
               Paste your script — or don&rsquo;t. Either works.
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              With a script, the AI plans from the lines you wrote. Without
-              one, it works from your words.
+              With a script, the AI plans from the lines you wrote. Without one, it works from your
+              words.
             </p>
             <div className="mt-5 rounded border border-hairline bg-surface px-3 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
               <span className="text-foreground">// beat 03</span>
               <br />
-              <span className="rounded bg-white/[0.06] px-1 text-primary">
-                [ZOOM]
-              </span>{" "}
-              &ldquo;your own content&rdquo;
+              <span className="rounded bg-white/[0.06] px-1 text-primary">[ZOOM]</span> &ldquo;your
+              own content&rdquo;
               <br />
-              <span className="rounded bg-white/[0.06] px-1 text-primary">
-                [KEY LINE]
-              </span>{" "}
+              <span className="rounded bg-white/[0.06] px-1 text-primary">[KEY LINE]</span>{" "}
               &ldquo;editing your own content&rdquo;
             </div>
           </BentoCard>
@@ -717,14 +752,14 @@ function Features() {
               <div>
                 <FeatureBadge icon={Layers}>Motion graphics on your words</FeatureBadge>
                 <h3 className="mt-5 max-w-lg font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-                  Say a number, it counts up. Name three things, they stack.
-                  Every graphic lands on the word that triggers it.
+                  Say a number, it counts up. Name three things, they stack. Every graphic lands on
+                  the word that triggers it.
                 </h3>
                 <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-                  The AI reads your transcript and plans key lines, numbers, lists,
-                  steps, loops, comparisons, chapters, story scenes and calls to
-                  action, some drawn behind you. Pick a glass or paper look, then
-                  move, retype or delete any graphic on its own track.
+                  The AI reads your transcript and plans key lines, numbers, lists, steps, loops,
+                  comparisons, chapters, story scenes and calls to action, some drawn behind you.
+                  Pick a glass or paper look, then move, retype or delete any graphic on its own
+                  track.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                   <span className="rounded border border-hairline bg-surface px-2 py-1">
@@ -761,7 +796,12 @@ function Features() {
                       key={c.l}
                       className="relative aspect-video overflow-hidden rounded-sm border border-hairline"
                     >
-                      <img src={c.img} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      <img
+                        src={c.img}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
                       <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 font-mono text-[7px] text-white">
                         {c.l}
                       </span>
@@ -790,10 +830,7 @@ function Features() {
                     <div
                       key={s.l}
                       className={
-                        "relative flex items-center justify-center rounded-sm " +
-                        s.c +
-                        " " +
-                        s.w
+                        "relative flex items-center justify-center rounded-sm " + s.c + " " + s.w
                       }
                     >
                       <span className="font-mono text-[8px] uppercase tracking-widest text-background">
@@ -883,22 +920,18 @@ function Workflow() {
       k: "03",
       title: "Download, or make it yours",
       body: "Get the finished MP4 straight away. Or change the look, redo the graphics, or open the editor and move, retype or delete anything the AI did.",
-      detail: "MP4 · 1080p · no watermark",
+      detail: "MP4 · 1080p",
     },
   ];
 
   return (
-    <section
-      id="workflow"
-      className="relative overflow-hidden border-b border-hairline bg-surface"
-    >
+    <section id="workflow" className="relative overflow-hidden border-b border-hairline bg-surface">
       <div className="mx-auto max-w-7xl px-5 py-24 md:py-32">
         <SectionHeader
           eyebrow="02 — How it works"
           title={
             <>
-              Three steps.{" "}
-              <span className="text-muted-foreground">You only do the first.</span>
+              Three steps. <span className="text-muted-foreground">You only do the first.</span>
             </>
           }
         />
@@ -934,10 +967,7 @@ function Workflow() {
 
         <div
           ref={ref}
-          className={
-            "mt-8 grid gap-3 md:grid-cols-3 " +
-            (shown ? "animate-fade-up" : "opacity-0")
-          }
+          className={"mt-8 grid gap-3 md:grid-cols-3 " + (shown ? "animate-fade-up" : "opacity-0")}
         >
           {steps.map((s, i) => (
             <div
@@ -955,9 +985,7 @@ function Workflow() {
               <h3 className="mt-6 font-display text-lg font-semibold tracking-tight text-foreground">
                 {s.title}
               </h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {s.body}
-              </p>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
               <div className="mt-6 rounded border border-hairline bg-surface px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
                 {s.detail}
               </div>
@@ -988,7 +1016,9 @@ const SOUND_POINTS = [
 ];
 
 function StudioSound() {
-  const bars = [6, 10, 16, 24, 30, 22, 14, 26, 34, 28, 18, 12, 20, 30, 36, 26, 16, 10, 22, 28, 18, 12, 8, 14];
+  const bars = [
+    6, 10, 16, 24, 30, 22, 14, 26, 34, 28, 18, 12, 20, 30, 36, 26, 16, 10, 22, 28, 18, 12, 8, 14,
+  ];
   return (
     <section id="sound" className="relative overflow-hidden border-b border-hairline">
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-24 md:grid-cols-2 md:py-32">
@@ -1015,8 +1045,18 @@ function StudioSound() {
         <div className="rounded-2xl border border-hairline bg-surface p-5 shadow-2xl">
           {[
             { name: "Voice", hint: "cleaned · levelled", scale: 1, tone: "bg-primary" },
-            { name: "Music", hint: "under the voice · ducks", scale: 0.35, tone: "from-primary/40 to-primary/20" },
-            { name: "Sound effects", hint: "on the graphics", scale: 0.5, tone: "from-primary-glow/70 to-primary/30" },
+            {
+              name: "Music",
+              hint: "under the voice · ducks",
+              scale: 0.35,
+              tone: "from-primary/40 to-primary/20",
+            },
+            {
+              name: "Sound effects",
+              hint: "on the graphics",
+              scale: 0.5,
+              tone: "from-primary-glow/70 to-primary/30",
+            },
           ].map((t) => (
             <div key={t.name} className="border-b border-hairline py-4 last:border-0">
               <div className="flex items-center justify-between text-[13px]">
@@ -1036,7 +1076,9 @@ function StudioSound() {
           ))}
           <div className="mt-2 flex items-center justify-between rounded-lg bg-background px-3 py-2.5 text-[12px]">
             <span className="text-muted-foreground">Master</span>
-            <span className="font-medium text-foreground">Mastered for TikTok, Reels and YouTube</span>
+            <span className="font-medium text-foreground">
+              Mastered for TikTok, Reels and YouTube
+            </span>
           </div>
         </div>
       </div>
@@ -1056,8 +1098,7 @@ function Compare() {
           eyebrow="03 — Before / after"
           title={
             <>
-              Same take.{" "}
-              <span className="text-muted-foreground">Very different post.</span>
+              Same take. <span className="text-muted-foreground">Very different post.</span>
             </>
           }
           subtitle="Drag the handle. Left is the frame as shot. Right is the same frame through Stuccord’s colour correction and Motion Explainer grade, with the zoom, graphics, captions and sound it adds."
@@ -1067,7 +1108,12 @@ function Compare() {
           {/* Slider */}
           <div className="relative aspect-video overflow-hidden rounded-xl border border-hairline bg-black">
             {/* RAW side (base): the frame as shot, untouched */}
-            <img src={creatorPortrait} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+            <img
+              src={creatorPortrait}
+              alt=""
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
             <div className="absolute left-4 top-4 rounded border border-white/20 bg-black/50 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-white/80 backdrop-blur">
               RAW · your take
             </div>
@@ -1079,7 +1125,12 @@ function Compare() {
               className="absolute inset-0 overflow-hidden"
               style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
             >
-              <img src={creatorPortraitGraded} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+              <img
+                src={creatorPortraitGraded}
+                alt=""
+                loading="lazy"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
 
               {/* Zoom marker */}
               <div className="absolute inset-6 rounded border border-primary/70">
@@ -1091,9 +1142,13 @@ function Compare() {
 
               {/* B-roll thumb — real photo */}
               <div className="absolute left-4 top-[26%] w-20 overflow-hidden rounded-sm border border-white/30 shadow-lg">
-                <img src={editingDesk} alt="" loading="lazy" className="aspect-video w-full object-cover" />
+                <img
+                  src={editingDesk}
+                  alt=""
+                  loading="lazy"
+                  className="aspect-video w-full object-cover"
+                />
               </div>
-
 
               {/* Caption */}
               <div className="absolute inset-x-6 bottom-8 text-center">
@@ -1180,7 +1235,7 @@ const PLANS = [
     price: "$0",
     tag: "Everything, while Stuccord is in beta. No card.",
     features: [
-      `${FREE.personalExports} exports a month, no watermark`,
+      `${FREE.personalExports} exports a month (with a small Stuccord watermark)`,
       `${FREE.personalPlans} AI motion-graphics plans a month`,
       `${FREE.personalImages} AI pictures a month (story scenes, cartoons)`,
       "Word-by-word captions, sounds and music",
@@ -1200,8 +1255,7 @@ function Pricing() {
           eyebrow="05 — Pricing"
           title={
             <>
-              Free while{" "}
-              <span className="text-muted-foreground">we&rsquo;re in beta.</span>
+              Free while <span className="text-muted-foreground">we&rsquo;re in beta.</span>
             </>
           }
           subtitle="Paid plans with more exports will come later. You'll always see the limits up front."
@@ -1256,10 +1310,7 @@ function Pricing() {
               <ul className="mt-8 space-y-3 text-sm">
                 {p.features.map((f) => (
                   <li key={f} className="flex items-start gap-2.5">
-                    <Check
-                      className="mt-0.5 h-4 w-4 shrink-0 text-primary"
-                      strokeWidth={2.25}
-                    />
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" strokeWidth={2.25} />
                     <span>{f}</span>
                   </li>
                 ))}
@@ -1332,8 +1383,8 @@ function FAQ() {
               creators actually ask.
             </h2>
             <p className="mt-5 max-w-sm text-sm leading-relaxed text-muted-foreground">
-              Still on the fence? It&rsquo;s free while we&rsquo;re in beta:
-              upload a raw take and see the edit on your own footage.
+              Still on the fence? It&rsquo;s free while we&rsquo;re in beta: upload a raw take and
+              see the edit on your own footage.
             </p>
             <a
               href="/auth"
@@ -1353,11 +1404,7 @@ function FAQ() {
                 >
                   <span className="text-[15px] font-medium text-foreground">{f.q}</span>
                   <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-hairline text-muted-foreground">
-                    {open === i ? (
-                      <Minus className="h-3 w-3" />
-                    ) : (
-                      <Plus className="h-3 w-3" />
-                    )}
+                    {open === i ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                   </span>
                 </button>
                 {open === i && (
@@ -1393,8 +1440,7 @@ function CTA() {
           <div
             className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full opacity-40 blur-3xl"
             style={{
-              background:
-                "radial-gradient(circle, rgba(255,255,255,0.25), transparent 60%)",
+              background: "radial-gradient(circle, rgba(255,255,255,0.25), transparent 60%)",
             }}
           />
           <div className="relative grid gap-10 md:grid-cols-[1.4fr_1fr] md:items-end">
@@ -1406,8 +1452,8 @@ function CTA() {
                 Your next post is one upload away.
               </h2>
               <p className="mt-5 max-w-lg text-white/70">
-                Drop a raw take. Get an edited, captioned short with motion
-                graphics back in minutes. No card, no watermark.
+                Drop a raw take. Get an edited, captioned short with motion graphics back in
+                minutes. No card needed.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <a
@@ -1428,7 +1474,7 @@ function CTA() {
             <ul className="space-y-3 border-t border-white/15 pt-6 md:border-l md:border-t-0 md:pl-8 md:pt-0">
               {[
                 "Free while in beta, no card",
-                "MP4 exports with no watermark",
+                "MP4 exports in 1080p",
                 "Your footage is never used to train AI",
                 "Edit every AI decision before you export",
               ].map((l) => (
@@ -1461,8 +1507,8 @@ function Footer() {
               </span>
             </div>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted-foreground">
-              An AI motion-graphics editor for the creator economy. Built by
-              people who&rsquo;ve edited a lot of shorts at 2am.
+              An AI motion-graphics editor for the creator economy. Built by people who&rsquo;ve
+              edited a lot of shorts at 2am.
             </p>
           </div>
           {[
@@ -1556,9 +1602,8 @@ function SectionHeader({
    Page
    ============================================================ */
 function Landing() {
-
   // Silence unused-import warnings for reserved icons kept for future sections.
-  
+
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
       <Nav />

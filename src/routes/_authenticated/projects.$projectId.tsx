@@ -1486,6 +1486,7 @@ function EditorPage() {
             brand.data?.kit.logo && brand.data.logoUrl
               ? { ...brand.data.kit.logo, url: brand.data.logoUrl }
               : null,
+          watermark: started.watermark,
           videoBitsPerSecond: settings.bitrateMbps * 1_000_000,
           onProgress: (pct, msg) => {
             setRenderPct(pct);

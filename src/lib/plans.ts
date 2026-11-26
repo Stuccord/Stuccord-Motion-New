@@ -20,6 +20,8 @@ export type Plan = {
   personalImages: number;
   /** AI story pictures a month for a team, shared by its members. */
   teamImages: number;
+  /** Exports carry the "Made with Stuccord" watermark (not for the app's owner). */
+  watermark: boolean;
 };
 
 export const PLANS: Record<PlanId, Plan> = {
@@ -33,6 +35,8 @@ export const PLANS: Record<PlanId, Plan> = {
     teamPlans: 3,
     personalImages: 10,
     teamImages: 10,
+    // Paid plans (when payments exist) export without it.
+    watermark: true,
   },
 };
 

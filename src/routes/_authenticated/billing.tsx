@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_authenticated/billing")({
 const INCLUDED = [
   "5 exports a month (cloud or browser)",
   "Cloud exports in 1080p; browser exports up to 4K",
-  "No watermark",
+  'A small "Made with Stuccord" watermark in a bottom corner',
   "Word-by-word captions from your speech",
   "Music and sound effects, quieter under your voice",
   "Voiceovers: record your own (no limit) or AI voice, " +
@@ -75,7 +75,9 @@ function BillingPage() {
           >
             Current plan
           </Badge>
-          <div className="caps-label text-3xl sm:text-4xl">{allowances?.personal.plan ?? "Free"}</div>
+          <div className="caps-label text-3xl sm:text-4xl">
+            {allowances?.personal.plan ?? "Free"}
+          </div>
           <div className="text-sm text-white/70 mt-1">
             {isLoading ? (
               "Loading your usage…"

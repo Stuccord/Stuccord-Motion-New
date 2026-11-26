@@ -1030,20 +1030,59 @@ function assColor(hex) {
   return `&H00${n.slice(4, 6)}${n.slice(2, 4)}${n.slice(0, 2)}`.toUpperCase();
 }
 
+/** Where a mark goes: `corner` (tl/tr/bl/br), m px in from the edges. */
+function cornerXY(corner, m) {
+  return {
+    x: corner.endsWith("l") ? `${m}` : `W-w-${m}`,
+    y: corner.startsWith("t") ? `${m}` : `H-h-${m}`,
+  };
+}
+
 /**
- * Puts the logo in its corner (4% of the shorter side in from the edges, as
- * the preview shows it), in one more encode.
+ * The "Made with Stuccord" watermark on free plans' exports (the job's
+ * `watermark`): the logo and name on a soft dark pill (assets/watermark.png),
+ * a third of the frame's short side wide, in a bottom corner below where
+ * captions sit (they keep 20% of the height clear), the one the brand logo
+ * isn't in.
  */
-async function overlayLogo(input, logoPath, kit, w, h, out) {
-  const lw = Math.max(2, Math.round((w * kit.logo.width) / 2) * 2);
-  const m = Math.round(Math.min(w, h) * 0.04);
-  const x = kit.logo.corner.endsWith("l") ? `${m}` : `W-w-${m}`;
-  const y = kit.logo.corner.startsWith("t") ? `${m}` : `H-h-${m}`;
+const WATERMARK_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "watermark.png");
+const WATERMARK_WIDTH = 0.32;
+const WATERMARK_OPACITY = 0.9;
+
+function watermarkMark(kit, w, h) {
+  const corner = kit.logo?.corner === "bl" ? "br" : "bl";
+  return {
+    file: WATERMARK_FILE,
+    width: Math.max(2, Math.round((Math.min(w, h) * WATERMARK_WIDTH) / 2) * 2),
+    opacity: WATERMARK_OPACITY,
+    ...cornerXY(corner, Math.round(Math.min(w, h) * 0.04)),
+  };
+}
+
+/** The brand logo in its corner (4% of the shorter side in from the edges, as the preview shows it). */
+function logoMark(kit, logoPath, w, h) {
+  return {
+    file: logoPath,
+    width: Math.max(2, Math.round((w * kit.logo.width) / 2) * 2),
+    opacity: kit.logo.opacity,
+    ...cornerXY(kit.logo.corner, Math.round(Math.min(w, h) * 0.04)),
+  };
+}
+
+/** Puts pictures (the brand logo, the watermark) over the video, in one more encode. */
+async function overlayMarks(input, marks, out) {
+  const graph = [];
+  let last = "0:v";
+  marks.forEach((mk, i) => {
+    graph.push(`[${i + 1}:v]scale=${mk.width}:-1,format=rgba,colorchannelmixer=aa=${mk.opacity.toFixed(2)}[m${i}]`);
+    graph.push(`[${last}][m${i}]overlay=x=${mk.x}:y=${mk.y}:format=auto[o${i}]`);
+    last = `o${i}`;
+  });
+  graph.push(`[${last}]format=yuv420p[vout]`);
   await run(ffmpegPath, [
-    "-y", "-i", input, "-i", logoPath,
-    "-filter_complex",
-    `[1:v]scale=${lw}:-1,format=rgba,colorchannelmixer=aa=${kit.logo.opacity.toFixed(2)}[lg];[0:v][lg]overlay=x=${x}:y=${y}:format=auto,format=yuv420p`,
-    "-map", "0:a?",
+    "-y", "-i", input, ...marks.flatMap((mk) => ["-i", mk.file]),
+    "-filter_complex", graph.join(";"),
+    "-map", "[vout]", "-map", "0:a?",
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
     "-c:a", "copy", "-movflags", "+faststart",
     out,
@@ -2190,15 +2229,28 @@ async function runRender(job) {
       }
     }
 
-    // 5b. The brand logo in its corner (best-effort: a problem keeps the video without it).
-    if (kit.logo) {
-      try {
-        const logoPath = path.join(workdir, "logo.png");
-        await download(kit.logo.url, logoPath);
-        finalOut = await overlayLogo(finalOut, logoPath, kit, w, h, path.join(workdir, "final-logo.mp4"));
-      } catch (e) {
-        console.warn(`[Worker] Logo overlay failed for job=${job.job_id}:`, e?.message || e);
-        editPlan = { ...(editPlan ?? {}), logo_error: String(e?.message ?? e).slice(0, 300) };
+    // 5b. The brand logo in its corner and, on free plans, the watermark
+    // (best-effort: a problem keeps the video without them).
+    {
+      const marks = [];
+      if (kit.logo) {
+        try {
+          const logoPath = path.join(workdir, "logo.png");
+          await download(kit.logo.url, logoPath);
+          marks.push(logoMark(kit, logoPath, w, h));
+        } catch (e) {
+          console.warn(`[Worker] Logo download failed for job=${job.job_id}:`, e?.message || e);
+          editPlan = { ...(editPlan ?? {}), logo_error: String(e?.message ?? e).slice(0, 300) };
+        }
+      }
+      if (job.watermark === true) marks.push(watermarkMark(kit, w, h));
+      if (marks.length) {
+        try {
+          finalOut = await overlayMarks(finalOut, marks, path.join(workdir, "final-marks.mp4"));
+        } catch (e) {
+          console.warn(`[Worker] Logo/watermark overlay failed for job=${job.job_id}:`, e?.message || e);
+          editPlan = { ...(editPlan ?? {}), logo_error: String(e?.message ?? e).slice(0, 300) };
+        }
       }
     }
 
