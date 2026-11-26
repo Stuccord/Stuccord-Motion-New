@@ -370,6 +370,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     [...placed.main, ...placed.over].map((p) => p.clip).filter((c) => !isImage(c)),
     urls,
     (path) => onStall?.(path),
+    1,
   );
   const playUrl = (clip: ClipRow) =>
     (!isImage(clip) && local[clip.storage_path]?.url) || urls[clip.storage_path];

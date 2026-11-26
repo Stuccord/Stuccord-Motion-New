@@ -32,6 +32,7 @@ import {
   signSceneImages,
 } from "@/lib/story-images.functions";
 import type { MotionPlanState } from "@/lib/motion-plan.functions";
+import { useLocalClips } from "@/lib/clip-download";
 
 /** Uploaded pictures: these types, up to the bucket's 10 MB. */
 export const SCENE_UPLOAD_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -124,11 +125,56 @@ export function useStoryImages(
     queryFn: () => signFn({ data: { project_id: projectId, paths } }),
     enabled: typeof window !== "undefined" && paths.length > 0,
     staleTime: 45 * 60 * 1000,
-    refetchInterval: 45 * 60 * 1000,
+    // Older pictures' small copies are being made: ask again shortly for them.
+    refetchInterval: (q) => (q.state.data?.previewsPending ? 15_000 : 45 * 60 * 1000),
   });
   // Links for pictures made just now, until the list above catches up.
   const [fresh, setFresh] = useState<Record<string, string>>({});
-  const urls = useMemo(() => ({ ...fresh, ...(signed.data?.urls ?? {}) }), [fresh, signed.data]);
+  // Story clips, downloaded once into memory (see clip-download.ts).
+  const clipPaths = useMemo(
+    () =>
+      [
+        ...new Set(
+          (motion.plan?.elements ?? [])
+            .flatMap((e) => e.scenes ?? [])
+            .map((sc) => sc.image?.clip)
+            .filter((x): x is string => !!x),
+        ),
+      ].map((path) => ({ storage_path: path, size_bytes: null })),
+    [motion.plan],
+  );
+  const signedUrls = signed.data?.urls;
+  const clipLinks = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const c of clipPaths)
+      if (signedUrls?.[c.storage_path]) out[c.storage_path] = signedUrls[c.storage_path];
+    return out;
+  }, [clipPaths, signedUrls]);
+  const refetchSigned = signed.refetch;
+  const localClips = useLocalClips(clipPaths, clipLinks, () => void refetchSigned());
+  // What the editor shows for each file: a picture's small copy (scene-
+  // preview.ts) when it has one, else the picture; a story clip from memory
+  // once it's downloaded, and meanwhile its scene's still picture (so the
+  // frame isn't empty while the clip comes in).
+  const urls = useMemo(() => {
+    const out: Record<string, string> = {
+      ...fresh,
+      ...(signed.data?.urls ?? {}),
+      ...(signed.data?.previews ?? {}),
+    };
+    for (const sc of (motion.plan?.elements ?? []).flatMap((e) => e.scenes ?? [])) {
+      const clip = sc.image?.clip;
+      if (!clip) continue;
+      const inMemory = localClips[clip]?.url;
+      // The `#.mp4` keeps it recognised as a clip (scene-media.tsx looks
+      // at the extension; a memory link has none). It's ignored when loading.
+      if (inMemory) out[clip] = `${inMemory}#.mp4`;
+      else if (localClips[clip]?.state === "too-big" || localClips[clip]?.state === "failed") {
+        continue;
+      } else if (sc.image?.path && out[sc.image.path]) out[clip] = out[sc.image.path];
+    }
+    return out;
+  }, [fresh, signed.data, motion.plan, localClips]);
 
   // Scenes being made or uploaded: "elementId:index".
   const [busy, setBusy] = useState<Set<string>>(new Set());
@@ -172,7 +218,8 @@ export function useStoryImages(
             prompt: scene.prompt,
             reference_path: el.type === "story" && index > 0 ? first : null,
             accent,
-            style: el.type === "cartoon" ? "cartoon" : el.type === "metaphor" ? "object" : "cinematic",
+            style:
+              el.type === "cartoon" ? "cartoon" : el.type === "metaphor" ? "object" : "cinematic",
             with_speaker: speaker,
             look: latestPlan.current?.look ?? null,
           },
@@ -266,7 +313,8 @@ export function useStoryImages(
     for (const el of plan.elements) {
       // Metaphors get their object picture only in the look that shows it.
       const pictured =
-        SCENE_TYPES.has(el.type) || (el.type === "metaphor" && OBJECT_PICTURE_LOOKS.has(plan.look ?? ""));
+        SCENE_TYPES.has(el.type) ||
+        (el.type === "metaphor" && OBJECT_PICTURE_LOOKS.has(plan.look ?? ""));
       if (!pictured || el.source !== "ai") continue;
       const waiting = (el.scenes ?? []).some((sc, i) => !sc.image && withSpeaker(el, i));
       const key = `${plan.created_at}:${el.id}:${waiting ? (character?.image ?? "-") : ""}`;

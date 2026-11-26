@@ -23,7 +23,10 @@ const PIECE_BYTES = 1024 * 1024;
 const QUIET_MS = 15_000;
 
 type Entry = {
-  state: "downloading" | "done" | "too-big";
+  /** too-big and failed: not held; the file plays from its link. */
+  state: "downloading" | "done" | "too-big" | "failed";
+  /** Bytes in so far (also when the size isn't known). */
+  received?: number;
   /** 0-1, once the size is known. */
   progress: number;
   /** The file in memory (done only). */
@@ -33,6 +36,10 @@ type Entry = {
 };
 
 const entries = new Map<string, Entry>();
+// In development, readable from the browser console: window.__clipDownloads.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __clipDownloads: Map<string, Entry> }).__clipDownloads = entries;
+}
 /** The latest link for each file (they're renewed), read before each piece. */
 const links = new Map<string, string>();
 /** Asks the editor for a fresh link (the old one stopped working). */
@@ -126,7 +133,7 @@ async function fetchPiece(
   }
 }
 
-async function download(path: string, knownSize: number | null) {
+async function download(path: string, knownSize: number | null, urgent: boolean) {
   const entry = entries.get(path)!;
   const pieces: Uint8Array[] = [];
   let have = 0;
@@ -142,6 +149,11 @@ async function download(path: string, knownSize: number | null) {
   let failures = 0;
   while (total == null || have < total) {
     if (entries.get(path) !== entry) return; // let go meanwhile
+    // The footage first: wait while any of it is downloading.
+    if (!urgent && urgentRunning > 0) {
+      await wait(500);
+      continue;
+    }
     const url = links.get(path);
     if (!url) {
       await wait(1000);
@@ -151,6 +163,7 @@ async function download(path: string, knownSize: number | null) {
       let lastShown = 0;
       const piece = await fetchPiece(url, have, have + PIECE_BYTES - 1, (n) => {
         // Shown as it arrives (a slow piece can take a minute), a few times a second.
+        entry.received = have + n;
         const now = performance.now();
         if (!total || now - lastShown < 250) return;
         lastShown = now;
@@ -190,6 +203,12 @@ async function download(path: string, knownSize: number | null) {
         total = have;
         continue;
       }
+      // The file isn't there: give up (it plays from its link, as before).
+      if (status === 404 || (status != null && status >= 400 && failures >= 5)) {
+        entry.state = "failed";
+        changed();
+        return;
+      }
       failures++;
       // An expired or refused link: ask for a fresh one (it arrives in `links`).
       if (status === 400 || status === 401 || status === 403) askFresh.get(path)?.();
@@ -216,8 +235,34 @@ async function download(path: string, knownSize: number | null) {
   trim(new Set([path]));
 }
 
+/**
+ * The more urgent files first: the footage before story clips. On a slow
+ * connection everything downloading at once makes each as slow as all of
+ * them together, so:
+ * - footage (priority > 0) starts at once, however many files are going;
+ * - story clips go AT_ONCE at a time, and pause between pieces while any
+ *   footage is downloading (they may have started first, their links
+ *   being ready sooner).
+ */
+const AT_ONCE = 2;
+const waiting: { path: string; size: number | null }[] = [];
+let lowRunning = 0;
+/** Footage files downloading now. */
+let urgentRunning = 0;
+
+function next() {
+  while (lowRunning < AT_ONCE && waiting.length) {
+    const job = waiting.shift()!;
+    lowRunning++;
+    void download(job.path, job.size, false).finally(() => {
+      lowRunning--;
+      next();
+    });
+  }
+}
+
 /** Starts downloading a file, if it isn't held or on its way already. */
-function ensure(path: string, size: number | null) {
+function ensure(path: string, size: number | null, priority: number) {
   const e = entries.get(path);
   if (e) {
     e.usedAt = Date.now();
@@ -225,7 +270,15 @@ function ensure(path: string, size: number | null) {
   }
   entries.set(path, { state: "downloading", progress: 0, bytes: 0, usedAt: Date.now() });
   changed();
-  void download(path, size);
+  if (priority > 0) {
+    urgentRunning++;
+    void download(path, size, true).finally(() => {
+      urgentRunning--;
+    });
+  } else {
+    waiting.push({ path, size });
+    next();
+  }
 }
 
 export type LocalClip = { url?: string; progress: number; state: Entry["state"] };
@@ -239,6 +292,8 @@ export function useLocalClips(
   files: { storage_path: string; size_bytes: number | null }[],
   signedLinks: Record<string, string>,
   onFreshLinkNeeded?: (path: string) => void,
+  /** Higher downloads first (the footage: 1; story clips: 0). */
+  priority = 0,
 ): Record<string, LocalClip> {
   const freshRef = useRef(onFreshLinkNeeded);
   freshRef.current = onFreshLinkNeeded;
@@ -252,9 +307,9 @@ export function useLocalClips(
       if (!link) continue;
       links.set(path, link);
       askFresh.set(path, () => freshRef.current?.(path));
-      ensure(path, sizesRef.current.get(path) ?? null);
+      ensure(path, sizesRef.current.get(path) ?? null, priority);
     }
-  }, [key, signedLinks]);
+  }, [key, signedLinks, priority]);
   useSyncExternalStore(
     (l) => {
       listeners.add(l);

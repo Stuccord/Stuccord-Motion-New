@@ -36,6 +36,7 @@ import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 import { projectAccess, projectForEdit } from "@/lib/projects.functions";
 import { MOTION_LOOK_IDS } from "@/motion/looks";
 import { MAX_USER_PICTURES, UserPicture } from "@/lib/user-pictures";
+import { hasPreview, previewPathOf } from "@/lib/scene-preview";
 
 const Hex = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 const LINK_SECONDS = 60 * 60;
@@ -90,7 +91,16 @@ async function keepImage(
     upsert: false,
   });
   if (upErr) throw new Error(`Couldn't store the picture: ${upErr.message}`);
-  const { data: signed } = await storage.createSignedUrl(path, LINK_SECONDS);
+  // Its small copy for the editor (scene-preview.ts); the link given back is
+  // the copy's when it was made.
+  let shown = path;
+  try {
+    const { storePreview } = await import("@/lib/scene-preview.server");
+    if (await storePreview(admin, path, image.data)) shown = previewPathOf(path);
+  } catch (e) {
+    console.warn("[story-images] Couldn't make the picture's preview copy:", e);
+  }
+  const { data: signed } = await storage.createSignedUrl(shown, LINK_SECONDS);
   return { path, url: signed?.signedUrl ?? null };
 }
 
@@ -302,15 +312,39 @@ export const signSceneImages = createServerFn({ method: "POST" })
     const { project } = await projectAccess(context.supabase, data.project_id, context.userId);
     const folder = sceneImageFolder(project.user_id, project.id);
     const paths = [...new Set(data.paths.filter((p) => inFolder(p, folder)))];
-    if (!paths.length) return { urls: {} as Record<string, string> };
+    if (!paths.length) {
+      return {
+        urls: {} as Record<string, string>,
+        previews: {} as Record<string, string>,
+        previewsPending: false,
+      };
+    }
     const { supabaseAdmin: admin } = await import("@/integrations/supabase/client.server");
+    // Each picture and its small preview copy (scene-preview.ts), if it has one.
+    const copies = paths.filter(hasPreview).map(previewPathOf);
     const { data: signed, error } = await admin.storage
       .from(SCENE_BUCKET)
-      .createSignedUrls(paths, LINK_SECONDS);
+      .createSignedUrls([...paths, ...copies], LINK_SECONDS);
     if (error) throw new Error(error.message);
+    const found: Record<string, string> = {};
+    for (const s of signed ?? [])
+      if (s.path && s.signedUrl && !s.error) found[s.path] = s.signedUrl;
     const urls: Record<string, string> = {};
-    for (const s of signed ?? []) if (s.path && s.signedUrl) urls[s.path] = s.signedUrl;
-    return { urls };
+    const previews: Record<string, string> = {};
+    let previewsPending = false;
+    const { makePreviewLater } = await import("@/lib/scene-preview.server");
+    for (const path of paths) {
+      if (found[path]) urls[path] = found[path];
+      if (!hasPreview(path) || !found[path]) continue;
+      const copy = found[previewPathOf(path)];
+      if (copy) previews[path] = copy;
+      else {
+        // An older picture without its copy yet: made now, in the background.
+        makePreviewLater(admin, path);
+        previewsPending = true;
+      }
+    }
+    return { urls, previews, previewsPending };
   });
 
 // ---------- capturing a web page for an app screen ----------
