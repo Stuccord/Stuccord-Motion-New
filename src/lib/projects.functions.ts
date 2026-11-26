@@ -12,6 +12,8 @@ import { SCENE_BUCKET, parseMotionPlan, sceneImageFolder } from "@/lib/motion-pl
 import { motionAccent, themeFromAccent } from "@/motion/theme";
 
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
+import { footagePreviewPath, wantsFootagePreview } from "@/lib/footage-preview";
+import { isCutoutPath } from "@/lib/cutout-preview";
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
 // so the next Render produces a fresh video instead of re-serving the old one.
@@ -772,11 +774,16 @@ export const deleteProject = createServerFn({ method: "POST" })
       const used = new Set((stillUsed ?? []).map((c) => c.storage_path));
       const unused = media.filter((m) => !used.has(m));
       for (let i = 0; i < unused.length; i += 500) {
+        const batch = unused.slice(i, i + 500);
         const { error: mErr } = await admin.storage
           .from("raw-clips")
-          .remove(unused.slice(i, i + 500));
+          // With their preview copies (a missing one is skipped).
+          .remove([...batch, ...batch.filter(wantsFootagePreview).map(footagePreviewPath)]);
         if (mErr) console.error("[deleteProject] Failed to delete files:", mErr.message);
       }
+      // And the preview's cut-outs of them.
+      const { removeCutouts } = await import("@/lib/cutout-preview.server");
+      await removeCutouts(unused);
     }
     const pictures = await listFolder(
       admin,
@@ -1006,6 +1013,14 @@ export const attachClip = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     await markProjectEdited(context.supabase, data.project_id);
+    // Its preview copy, made now so it's ready when the editor opens.
+    if (
+      wantsFootagePreview(data.storage_path) &&
+      !["music", "sfx", "voiceover"].includes(data.role)
+    ) {
+      const { requestFootagePreview } = await import("@/lib/footage-preview.server");
+      void requestFootagePreview(data.storage_path);
+    }
     return row;
   });
 
@@ -1048,8 +1063,10 @@ export const removeClip = createServerFn({ method: "POST" })
     } else if (count === 0) {
       const { error: rmErr } = await context.supabase.storage
         .from("raw-clips")
-        .remove([clip.storage_path]);
+        .remove([clip.storage_path, footagePreviewPath(clip.storage_path)]);
       if (rmErr) console.error("[removeClip] Failed to delete source file:", rmErr.message);
+      const { removeCutouts } = await import("@/lib/cutout-preview.server");
+      await removeCutouts([clip.storage_path]);
       // Its transcript goes with it.
       const { error: tErr } = await context.supabase
         .from("transcripts")
@@ -1524,15 +1541,67 @@ export const saveTranscriptWords = createServerFn({ method: "POST" })
     return row;
   });
 
+/**
+ * A link to a clip's file (`url`), and for a video its small preview copy's
+ * (`previewUrl`, see footage-preview.ts) once it's made: the editor's
+ * preview plays that, everything else the original. A video without a copy
+ * yet gets one started in the background.
+ */
 export const getClipSignedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => z.object({ path: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { data: signed, error } = await context.supabase.storage
-      .from("raw-clips")
-      .createSignedUrl(data.path, 3600);
+    const storage = context.supabase.storage.from("raw-clips");
+    const { data: signed, error } = await storage.createSignedUrl(data.path, 3600);
     if (error) throw new Error(error.message);
-    return { url: signed.signedUrl };
+    let previewUrl: string | null = null;
+    if (wantsFootagePreview(data.path)) {
+      const { data: copy } = await storage.createSignedUrl(footagePreviewPath(data.path), 3600);
+      previewUrl = copy?.signedUrl ?? null;
+      if (!previewUrl) {
+        const { requestFootagePreview } = await import("@/lib/footage-preview.server");
+        void requestFootagePreview(data.path);
+      }
+    }
+    return { url: signed.signedUrl, previewUrl };
+  });
+
+/**
+ * The editor preview's cut-outs of the speaker for the stretches with a
+ * graphic behind them (see cutout-preview.ts): links to the saved ones, and
+ * how many are still being made (asked for now if they weren't).
+ */
+export const getPreviewCutouts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) =>
+    z
+      .object({
+        project_id: z.string().uuid(),
+        stretches: z
+          .array(
+            z.object({
+              path: z.string().min(1).max(400),
+              fromMs: z.number().int().nonnegative(),
+              toMs: z.number().int().positive(),
+            }),
+          )
+          .max(40),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const stretches = data.stretches.filter((s) => s.toMs > s.fromMs && !isCutoutPath(s.path));
+    if (!stretches.length) return { cutouts: [], waiting: 0 };
+    // Only this project's own files, that the user can see.
+    const { data: rows, error } = await context.supabase
+      .from("clips")
+      .select("storage_path")
+      .eq("project_id", data.project_id)
+      .in("storage_path", [...new Set(stretches.map((s) => s.path))]);
+    if (error) throw new Error(error.message);
+    const ok = new Set((rows ?? []).map((r) => r.storage_path));
+    const { previewCutouts } = await import("@/lib/cutout-preview.server");
+    return previewCutouts(stretches.filter((s) => ok.has(s.path)));
   });
 
 export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
@@ -1813,6 +1882,15 @@ export async function startCloudRender(
       for (const t of transcripts ?? []) savedWords.set(t.storage_path, t.words);
     }
 
+    // The editor's saved cut-outs of the speaker, for graphics behind them:
+    // the worker reuses them instead of making them again (cutout-preview.ts).
+    const { savedCutoutLinks } = await import("@/lib/cutout-preview.server");
+    const cutouts = withGraphics
+      ? await savedCutoutLinks(
+          clips.map((c) => c.storage_path),
+          60 * 60 * 6,
+        )
+      : new Map();
     // Presign download URLs for each clip so the worker doesn't need service role.
     const clipUrls = await Promise.all(
       clips.map(async (c) => {
@@ -1836,6 +1914,7 @@ export async function startCloudRender(
           transform: parseTransform(c.transform),
           // Words in source-file time, or null when not transcribed yet.
           transcript_words: savedWords.get(c.storage_path) ?? null,
+          cutouts: cutouts.get(c.storage_path) ?? [],
         };
       }),
     );

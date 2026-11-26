@@ -63,6 +63,7 @@ import {
 import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 import { CaptureError, capturePage } from "./capture.js";
 import { limitThreads } from "./threads.js";
+import { CUTOUT_MAX_MS, pixelcutCutout, pixelcutReady } from "./pixelcut.js";
 import { analyzeColour, correctionFilter } from "./colour.js";
 import { lutFilter, packLutFilter } from "./luts.js";
 import {
@@ -551,6 +552,160 @@ app.post("/frame", (req, res) => {
     }
     res.type("image/jpeg").send(jpg);
   });
+});
+
+// ---------- footage preview copies ----------
+// A small copy of an uploaded video for the editor's preview (the export
+// keeps using the original): the short side at most PREVIEW_SHORT px, H.264
+// with a keyframe every second (so the preview jumps to a cut at once), AAC
+// sound, quick-start MP4. A phone's 29 MB clip comes out at ~3-4 MB, which a
+// slow connection loads in minutes instead of most of an hour. Made one at a
+// time, in the background, after the app asks (src/lib/footage-preview.server.ts).
+const PREVIEW_SHORT = 720;
+const previewQueue = [];
+const previewPaths = new Set();
+let previewBusy = false;
+
+async function makePreview(p) {
+  const workdir = await fsp.mkdtemp(path.join(os.tmpdir(), "preview-"));
+  const started = Date.now();
+  try {
+    const src = path.join(workdir, "source");
+    await download(p.source_url, src);
+    const out = path.join(workdir, "preview.mp4");
+    const s = PREVIEW_SHORT;
+    await run(ffmpegPath, [
+      "-y", "-hide_banner", "-loglevel", "error", "-i", src,
+      "-map", "0:v:0", "-map", "0:a:0?",
+      // Shrunk only, never enlarged; the phone's rotation is applied.
+      "-vf", `scale=w='if(gt(iw,ih),-2,min(${s},iw))':h='if(gt(iw,ih),min(${s},ih),-2)'`,
+      "-fps_mode", "passthrough",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+      "-maxrate", "2500k", "-bufsize", "5000k",
+      "-pix_fmt", "yuv420p", "-g", "30", "-keyint_min", "30",
+      "-c:a", "aac", "-b:a", "96k", "-ac", "2",
+      "-movflags", "+faststart",
+      out,
+    ]);
+    const buf = await fsp.readFile(out);
+    const up = await fetch(p.upload_url, {
+      method: "PUT",
+      headers: { "content-type": "video/mp4", "x-upsert": "true" },
+      body: buf,
+    });
+    if (!up.ok) throw new Error(`upload failed: ${up.status} ${(await up.text()).slice(0, 200)}`);
+    const inBytes = (await fsp.stat(src)).size;
+    console.log(
+      `[Worker] Preview copy of ${p.path}: ${(inBytes / 1e6).toFixed(1)} MB -> ${(buf.length / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(1)} s`,
+    );
+  } catch (e) {
+    console.warn(`[Worker] Preview copy of ${p.path} failed:`, e?.message || e);
+  } finally {
+    await fsp.rm(workdir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function nextPreview() {
+  if (previewBusy) return;
+  const p = previewQueue.shift();
+  if (!p) return;
+  previewBusy = true;
+  try {
+    await makePreview(p);
+  } finally {
+    previewPaths.delete(p.path);
+    previewBusy = false;
+    void nextPreview();
+  }
+}
+
+app.post("/preview", (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  if (
+    typeof p.path !== "string" || !p.path || p.path.length > 400 ||
+    !isAbsoluteHttpUrl(p.source_url) || !isAbsoluteHttpUrl(p.upload_url)
+  ) {
+    return res.status(400).json({ ok: false, error: "Invalid preview payload" });
+  }
+  // Asked already (another tab, a refresh): the copy on its way serves both.
+  if (!previewPaths.has(p.path)) {
+    previewPaths.add(p.path);
+    previewQueue.push(p);
+    void nextPreview();
+  }
+  res.status(202).json({ ok: true, queued: previewQueue.length });
+});
+
+// ---------- the editor preview's cut-out ----------
+// The speaker's cut-out for one stretch of an uploaded clip with a graphic
+// behind them (pixelcut.js pixelcutCutout: picture beside Pixelcut's matte),
+// so the editor's preview shows the export's clean edge instead of its own
+// rough browser cut-out. Made in the background after the app asks
+// (src/lib/cutout-preview.server.ts), two at a time, saved where it says.
+const cutoutQueue = [];
+const cutoutKeys = new Set();
+let cutoutsBusy = 0;
+const CUTOUTS_AT_ONCE = 2;
+
+async function makeCutout(p) {
+  const workdir = await fsp.mkdtemp(path.join(os.tmpdir(), "cutout-"));
+  const started = Date.now();
+  try {
+    const { file, frames } = await pixelcutCutout({
+      ffmpegPath, sourceUrl: p.source_url, fromMs: p.from_ms, toMs: p.to_ms, workdir,
+    });
+    const buf = await fsp.readFile(file);
+    const up = await fetch(p.upload_url, {
+      method: "PUT",
+      headers: { "content-type": "video/mp4", "x-upsert": "true" },
+      body: buf,
+    });
+    if (!up.ok) throw new Error(`upload failed: ${up.status} ${(await up.text()).slice(0, 200)}`);
+    console.log(
+      `[Worker] Preview cut-out of ${p.path} ${p.from_ms}-${p.to_ms} ms: ${frames} frames, ${(buf.length / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(1)} s`,
+    );
+  } catch (e) {
+    const why = [e?.message || e, e?.cause?.code || e?.cause?.message].filter(Boolean).join(": ");
+    console.warn(`[Worker] Preview cut-out of ${p.path} ${p.from_ms}-${p.to_ms} ms failed: ${why}`);
+  } finally {
+    await fsp.rm(workdir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function nextCutout() {
+  while (cutoutsBusy < CUTOUTS_AT_ONCE && cutoutQueue.length) {
+    const p = cutoutQueue.shift();
+    cutoutsBusy++;
+    void makeCutout(p).finally(() => {
+      cutoutKeys.delete(p.key);
+      cutoutsBusy--;
+      nextCutout();
+    });
+  }
+}
+
+app.post("/cutout", (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  const from = Math.round(Number(p.from_ms));
+  const to = Math.round(Number(p.to_ms));
+  if (
+    typeof p.path !== "string" || !p.path || p.path.length > 400 ||
+    !isAbsoluteHttpUrl(p.source_url) || !isAbsoluteHttpUrl(p.upload_url) ||
+    !(from >= 0 && to > from && to - from <= CUTOUT_MAX_MS)
+  ) {
+    return res.status(400).json({ ok: false, error: "Invalid cut-out payload" });
+  }
+  // Without Pixelcut the preview keeps its own cut-out.
+  if (!pixelcutReady()) return res.status(503).json({ ok: false, error: "Cut-out not set up" });
+  const key = `${p.path}@${from}-${to}`;
+  if (!cutoutKeys.has(key)) {
+    cutoutKeys.add(key);
+    cutoutQueue.push({ ...p, from_ms: from, to_ms: to, key });
+    nextCutout();
+  }
+  res.status(202).json({ ok: true, queued: cutoutQueue.length });
 });
 
 // The colour choices on this footage, for the automatic edit's LUT pick: a
@@ -1991,6 +2146,35 @@ async function runRender(job) {
       : null;
     const grade = [correction, lookGrade].filter(Boolean).join(",") || null;
     const filmFinish = motionJob ? finishFilters(finish, w, h) : [];
+    // A saved preview cut-out (the editor asked for it: pixelcut.js
+    // pixelcutCutout) holding stretch [a, b) of the picture: when it lies in
+    // one main video clip shown as filmed (not moved or resized, the frame's
+    // own shape) with no B-roll over it. {url, skip, cover} or null.
+    const savedCutoutFor = ([a, b]) => {
+      const fromMs = (a / MOTION_FPS) * 1000;
+      const toMs = (b / MOTION_FPS) * 1000;
+      const i = mainClips.findIndex(
+        (c, k) => mainDurationsMs[k] != null && mainStartsMs[k] <= fromMs + 1 && toMs <= mainStartsMs[k] + mainDurationsMs[k] + 1,
+      );
+      const clip = mainClips[i];
+      if (!clip || !Array.isArray(clip.cutouts) || !clip.cutouts.length) return null;
+      if (isImageClip(clip) || clipTransform(clip)) return null;
+      const probe = probes[i];
+      if (!probe?.width || !probe?.height || Math.abs(Math.log(probe.width / probe.height / (w / h))) >= 0.03) return null;
+      if (brollStartsMs.some((s0, k) => s0 < toMs && s0 + brollLengthsMs[k] > fromMs)) return null;
+      const trimIn = Math.max(0, Number(clip.trim_in_ms ?? 0));
+      const srcFrom = trimIn + fromMs - mainStartsMs[i];
+      const srcTo = trimIn + toMs - mainStartsMs[i];
+      const c = clip.cutouts.find(
+        (x) => isAbsoluteHttpUrl(x?.url) && Number(x.from_ms) <= srcFrom + 1 && Number(x.to_ms) >= srcTo - 34,
+      );
+      if (!c) return null;
+      return {
+        url: c.url,
+        skip: Math.max(0, Math.round(((srcFrom - Number(c.from_ms)) / 1000) * 30)),
+        cover: coverFilter(w, h),
+      };
+    };
     // Notes pages: when the speaker moves aside for them.
     let split = null;
     // Graphics behind the speaker: their clips and the speaker's masks
@@ -2068,6 +2252,7 @@ async function runRender(job) {
                 zoom,
                 ranges: behindRanges(back),
                 workdir,
+                saved: savedCutoutFor,
                 // The frame's shape, for the mask's squares (cutout.js maskTiles).
                 w,
                 h,

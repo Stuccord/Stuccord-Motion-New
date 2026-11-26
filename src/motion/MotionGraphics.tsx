@@ -1223,15 +1223,28 @@ function Glass({
   style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
+  // Frosted glass: see-through, so the video shows through, with a light
+  // sheen, a bright thin edge, a highlight along the top and a soft shadow
+  // under it. A light dark tint and a text shadow keep white words readable
+  // over a bright wall. No backdrop blur: the export draws the graphics on
+  // their own (render-worker/motion.js lays them over the video after), so
+  // there's nothing under them to blur, and the preview matches the export.
   return (
     <div
       style={{
-        background: `linear-gradient(160deg, ${theme.secondary} 0%, ${theme.main} 70%)`,
-        border: `${Math.max(1, unit * 0.18)}px solid ${theme.glow}`,
+        background:
+          "linear-gradient(160deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 42%, rgba(255,255,255,0.05) 100%), " +
+          "linear-gradient(rgba(12,12,16,0.3), rgba(12,12,16,0.3))",
+        border: `${Math.max(1, unit * 0.16)}px solid rgba(255,255,255,0.34)`,
         borderRadius: unit * 3.2,
-        boxShadow: `0 0 ${unit * 4}px ${theme.glow}, inset 0 0 ${unit * 2}px rgba(255,255,255,0.04)`,
+        boxShadow: [
+          `inset 0 ${Math.max(1, unit * 0.22)}px 0 rgba(255,255,255,0.4)`,
+          `inset 0 0 ${unit * 2.4}px rgba(255,255,255,0.06)`,
+          `0 ${unit * 1.2}px ${unit * 4}px rgba(0,0,0,0.3)`,
+        ].join(", "),
         padding: `${unit * 3}px ${unit * 3.6}px`,
         color: theme.text,
+        textShadow: `0 ${unit * 0.15}px ${unit * 0.9}px rgba(0,0,0,0.45)`,
         fontFamily: SANS,
         ...style,
       }}

@@ -56,7 +56,8 @@ import { MOTION_FPS, placeGraphics, splitShift, zoomAt } from "@/motion/timing";
 import { DEFAULT_ANGLE_CENTER, angleAt, closeShots } from "@/motion/angles";
 import { defaultLook, gradeCss, lookFinish, withLut } from "@/motion/looks";
 import { motionAccent, themeFromAccent } from "@/motion/theme";
-import { behindStrength } from "@/motion/cutout";
+import { behindRanges, behindStrength } from "@/motion/cutout";
+import { cutoutStretches } from "@/lib/cutout-preview";
 import { readFootageColours } from "@/lib/footage-colours";
 import {
   clipPointInFrame,
@@ -550,6 +551,13 @@ function EditorPage() {
   // Signed links to every clip's file (they last an hour; renewed after 50
   // minutes), for the live timeline player and its music.
   const [clipUrls, setClipUrls] = useState<Record<string, string>>({});
+  // Videos' small preview copies (footage-preview.ts), for the player only:
+  // far quicker to load; thumbnails, sound and exports keep the originals.
+  const [clipPreviewUrls, setClipPreviewUrls] = useState<Record<string, string>>({});
+  const playerUrls = useMemo(
+    () => ({ ...clipUrls, ...clipPreviewUrls }),
+    [clipUrls, clipPreviewUrls],
+  );
   const clipUrlsSignedAt = useRef(new Map<string, number>());
   // Bumped every 10 minutes so links are renewed even without other changes.
   const [renewTick, setRenewTick] = useState(0);
@@ -596,8 +604,8 @@ function EditorPage() {
     void Promise.all(
       paths.map(async (path) => {
         try {
-          const { url } = await signClip({ data: { path } });
-          return [path, url] as const;
+          const { url, previewUrl } = await signClip({ data: { path } });
+          return [path, url, previewUrl] as const;
         } catch (e) {
           console.warn("[editor] Couldn't get a link to a clip's file:", e);
           clipUrlsSignedAt.current.delete(path);
@@ -605,8 +613,15 @@ function EditorPage() {
         }
       }),
     ).then((pairs) => {
-      const fresh = Object.fromEntries(pairs.filter((x) => x != null));
+      const got = pairs.filter((x) => x != null);
+      const fresh = Object.fromEntries(got.map(([path, url]) => [path, url]));
       if (Object.keys(fresh).length > 0) setClipUrls((old) => ({ ...old, ...fresh }));
+      const previews = Object.fromEntries(
+        got.flatMap(([path, , preview]) => (preview ? [[path, preview]] : [])),
+      );
+      if (Object.keys(previews).length > 0) {
+        setClipPreviewUrls((old) => ({ ...old, ...previews }));
+      }
       if (pairs.some((x) => x == null) && !retrySigning.current) {
         retrySigning.current = setTimeout(() => {
           retrySigning.current = null;
@@ -673,8 +688,9 @@ function EditorPage() {
       const c = data.clips.find((x) => x.id === selectedClipId);
       if (!c) return;
       try {
-        const { url } = await signClip({ data: { path: c.storage_path } });
-        if (!cancelled) setSelectedClipUrl(url);
+        const { url, previewUrl } = await signClip({ data: { path: c.storage_path } });
+        // The small preview copy when there is one (quicker to load).
+        if (!cancelled) setSelectedClipUrl(previewUrl ?? url);
       } catch {
         /* silent */
       }
@@ -2651,7 +2667,7 @@ function EditorPage() {
             timeline={{
               aRoll,
               bRoll,
-              urls: clipUrls,
+              urls: playerUrls,
               lengthMs: clipVisibleMs,
               onTick: previewAudioTick,
               // Captions (when on) and the last render's AI hook, like the export.
@@ -2674,6 +2690,23 @@ function EditorPage() {
               behindAt: graphicsOn
                 ? (timeMs) => behindStrength(placedMotion.graphics, frameAtMs(timeMs))
                 : undefined,
+              // The speaker's cut-out for the behind stretches, made by the
+              // worker when a stretch first appears (cutout-preview.ts).
+              cutouts:
+                graphicsOn && !readOnly
+                  ? {
+                      projectId: project.id,
+                      stretches: cutoutStretches(
+                        aRoll,
+                        bRoll,
+                        clipVisibleMs,
+                        behindRanges(placedMotion.graphics).map(([a, b]): [number, number] => [
+                          (a / MOTION_FPS) * 1000,
+                          (b / MOTION_FPS) * 1000,
+                        ]),
+                      ),
+                    }
+                  : undefined,
               renderOverlay: (timeMs) => (
                 <>
                   {graphicsOn && (

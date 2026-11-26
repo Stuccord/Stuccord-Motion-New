@@ -281,6 +281,9 @@ function ensure(path: string, size: number | null, priority: number) {
   }
 }
 
+/** A link's file (its address without the signature, which changes when renewed). */
+const fileOf = (url: string) => url.split("?")[0];
+
 export type LocalClip = { url?: string; progress: number; state: Entry["state"] };
 
 /**
@@ -305,6 +308,15 @@ export function useLocalClips(
     for (const path of key ? key.split("\n") : []) {
       const link = signedLinks[path];
       if (!link) continue;
+      // Another file for this clip (its preview copy, or back to the
+      // original): what's held or half-downloaded is the old one, so start over.
+      const before = links.get(path);
+      if (before && fileOf(before) !== fileOf(link)) {
+        const old = entries.get(path);
+        if (old?.objectUrl) URL.revokeObjectURL(old.objectUrl);
+        entries.delete(path);
+        changed();
+      }
       links.set(path, link);
       askFresh.set(path, () => freshRef.current?.(path));
       ensure(path, sizesRef.current.get(path) ?? null, priority);

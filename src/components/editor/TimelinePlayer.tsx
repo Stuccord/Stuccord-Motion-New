@@ -26,6 +26,8 @@ import { loadPersonSegmenter, type PersonSegmenter } from "@/lib/person-segmente
 import { BEHIND_BLUR, BEHIND_DARKEN } from "@/motion/cutout";
 import { useLocalClips } from "@/lib/clip-download";
 import type { ClipRow } from "./types";
+import { isFootagePreviewUrl } from "@/lib/footage-preview";
+import type { PreviewCutout } from "@/lib/cutout-preview";
 
 /** What the editor can do with the player (a subset of HTMLVideoElement). */
 export type TimelinePlayerHandle = {
@@ -78,6 +80,11 @@ type Props = {
   behindAt?: (timeMs: number) => number;
   renderBehind?: (timeMs: number) => React.ReactNode;
   /**
+   * The worker's cut-outs of the speaker (cutout-preview.ts), by storage
+   * path: shown instead of the browser's own where there's one.
+   */
+  cutouts?: Record<string, PreviewCutout[]>;
+  /**
    * A clip's file stopped downloading: get a fresh link for it (by storage
    * path). True: a fresh link is on its way.
    */
@@ -114,6 +121,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     pictureFilter,
     behindAt,
     renderBehind,
+    cutouts,
     onStall,
     selectedClipId = null,
     onSelectClip,
@@ -166,6 +174,45 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   const endedRef = useRef(false);
   const rateRef = useRef(1);
   const videos = useRef(new Map<string, HTMLVideoElement>());
+  // The saved cut-outs' videos, by link: kept loaded between stretches so
+  // one is ready the moment its stretch starts.
+  const cutoutVideos = useRef(new Map<string, HTMLVideoElement>());
+  const cutoutLinks = Object.values(cutouts ?? {})
+    .flat()
+    .map((c) => c.url)
+    .sort()
+    .join(" ");
+  useEffect(() => {
+    const want = new Set(cutoutLinks ? cutoutLinks.split(" ") : []);
+    const have = cutoutVideos.current;
+    for (const [url, el] of have) {
+      if (want.has(url)) continue;
+      el.pause();
+      el.removeAttribute("src");
+      el.load();
+      have.delete(url);
+    }
+    for (const url of want) {
+      if (have.has(url)) continue;
+      const el = document.createElement("video");
+      el.muted = true;
+      el.playsInline = true;
+      el.crossOrigin = "anonymous";
+      el.preload = "auto";
+      el.src = url;
+      have.set(url, el);
+    }
+  }, [cutoutLinks]);
+  useEffect(
+    () => () => {
+      for (const el of cutoutVideos.current.values()) {
+        el.pause();
+        el.removeAttribute("src");
+      }
+      cutoutVideos.current.clear();
+    },
+    [],
+  );
 
   // Latest values for the stable handle and the clock.
   const latest = useRef({
@@ -367,7 +414,11 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   // once it's in (no more internet for cuts and replays), from the link
   // meanwhile.
   const local = useLocalClips(
-    [...placed.main, ...placed.over].map((p) => p.clip).filter((c) => !isImage(c)),
+    [...placed.main, ...placed.over]
+      .map((p) => p.clip)
+      .filter((c) => !isImage(c))
+      // A preview copy isn't the size saved with the clip (the original's).
+      .map((c) => (isFootagePreviewUrl(urls[c.storage_path]) ? { ...c, size_bytes: null } : c)),
     urls,
     (path) => onStall?.(path),
     1,
@@ -524,6 +575,14 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
                 <CutoutLayer
                   key={`${p.track}:${p.clip.id}`}
                   getVideo={() => videos.current.get(p.clip.id) ?? null}
+                  getCutout={(sec) => {
+                    const ms = sec * 1000;
+                    const c = cutouts?.[p.clip.storage_path]?.find(
+                      (x) => ms >= x.fromMs && ms < x.toMs,
+                    );
+                    const el = c ? cutoutVideos.current.get(c.url) : undefined;
+                    return c && el ? { el, fromSec: c.fromMs / 1000 } : null;
+                  }}
                   style={look.style}
                   box={look.box}
                   fit={look.fit}
@@ -607,18 +666,256 @@ function layerLook(
 
 // The cut-out is drawn at most this wide (px); the mask itself is smaller.
 const CUTOUT_MAX_WIDTH = 960;
+/**
+ * The mask's edge once scaled up to the cut-out's size (0-255): below
+ * EDGE_LO is room, above EDGE_HI the speaker. The segmenter works at 256 px,
+ * so scaled up its soft edge is a band ~15-20 px wide at 1080 that takes in
+ * a strip of the bright, undarkened wall beside the speaker: a glowing halo
+ * over the darkened room. Keeping only its surest part pulls the edge in
+ * onto the speaker (the export's own matte is far finer; see cutout.js).
+ */
+const EDGE_LO = 200;
+const EDGE_HI = 250;
+/**
+ * The speaker's outermost pixels are darkened like the room behind them
+ * (by BEHIND_DARKEN, fading out over this share of the cut-out's height
+ * inward): what's left of the wall in the edge then sinks into the dark
+ * room instead of showing as a thin light line, as the export does.
+ */
+const EDGE_DARKEN_REACH = 0.003;
+
+/** Darkens the cut-out's edge (`cut`, already masked) from its mask `m`; `blur` is scratch. */
+function darkenEdge(cut: HTMLCanvasElement, m: HTMLCanvasElement, blur: HTMLCanvasElement) {
+  const w = cut.width;
+  const h = cut.height;
+  if (blur.width !== w || blur.height !== h) {
+    blur.width = w;
+    blur.height = h;
+  }
+  const bg = blur.getContext("2d", { willReadFrequently: true });
+  const cg = cut.getContext("2d", { willReadFrequently: true });
+  if (!bg || !cg) return;
+  bg.globalCompositeOperation = "copy";
+  bg.filter = `blur(${Math.max(1, h * EDGE_DARKEN_REACH).toFixed(1)}px)`;
+  bg.drawImage(m, 0, 0, w, h);
+  bg.filter = "none";
+  const inside = bg.getImageData(0, 0, w, h).data;
+  const img = cg.getImageData(0, 0, w, h);
+  const px = img.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (!px[i + 3]) continue;
+    const f = 1 - BEHIND_DARKEN * (1 - inside[i + 3] / 255);
+    if (f >= 0.999) continue;
+    px[i] *= f;
+    px[i + 1] *= f;
+    px[i + 2] *= f;
+  }
+  cg.putImageData(img, 0, 0);
+}
+
+/** The mask scaled to w x h with its edge tightened (EDGE_LO/EDGE_HI), into `out`. */
+function tightMask(mask: HTMLCanvasElement, out: HTMLCanvasElement, w: number, h: number) {
+  if (out.width !== w || out.height !== h) {
+    out.width = w;
+    out.height = h;
+  }
+  const g = out.getContext("2d", { willReadFrequently: true });
+  if (!g) return false;
+  g.globalCompositeOperation = "copy";
+  g.imageSmoothingQuality = "high";
+  g.drawImage(mask, 0, 0, w, h);
+  const img = g.getImageData(0, 0, w, h);
+  const px = img.data;
+  const span = EDGE_HI - EDGE_LO;
+  for (let i = 3; i < px.length; i += 4) {
+    const a = px[i];
+    if (a <= EDGE_LO) px[i] = 0;
+    else if (a >= EDGE_HI) px[i] = 255;
+    else {
+      const t = (a - EDGE_LO) / span;
+      px[i] = Math.round(t * t * (3 - 2 * t) * 255);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return true;
+}
+
+/** A saved cut-out's video playing stretch from `fromSec` of its clip's file. */
+type CutoutSource = { el: HTMLVideoElement; fromSec: number };
 
 /**
- * A video's speaker, cut out of its current frame by the person segmenter,
- * in the same place as the video. Redrawn whenever the video's frame changes.
+ * Keeps a saved cut-out's video on the clip's frame: the same frame while
+ * paused, playing along (re-seeking when it drifts) while playing. True
+ * when it shows that frame now (to be drawn).
+ */
+function followVideo(cut: CutoutSource, video: HTMLVideoElement): boolean {
+  const { el } = cut;
+  const target = video.currentTime - cut.fromSec;
+  if (target < 0 || el.readyState < 2 || !el.videoWidth) {
+    if (el.readyState < 1 && el.preload !== "auto") el.preload = "auto";
+    return false;
+  }
+  if (el.seeking) return false;
+  const drift = el.currentTime - target;
+  if (!video.paused) {
+    // A frame or so out: a touch slower or faster until it's back on it.
+    const nudge = drift > 1 / 60 ? 0.96 : drift < -1 / 60 ? 1.04 : 1;
+    const rate = video.playbackRate * nudge;
+    if (el.playbackRate !== rate) el.playbackRate = rate;
+    if (Math.abs(drift) > 0.12) {
+      el.currentTime = target;
+      return false;
+    }
+    if (el.paused) el.play().catch(() => {});
+    return true;
+  }
+  if (!el.paused) el.pause();
+  // Within half a frame (30 fps) is the same frame.
+  if (Math.abs(drift) > 1 / 60) {
+    el.currentTime = target;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The saved cut-out's edge work, in pixels of a 1920-high picture, as the
+ * export's (cutout.js) but with a deeper sure core: the preview works on a
+ * smaller picture and a half-size core, and the export's 2 px left a thin
+ * light line here (measured and seen at the cheek, 2026-11-26).
+ */
+const EDGE_CORE_PX = 8;
+const EDGE_INNER_REACH_PX = 8;
+const EDGE_SOFT_PX = 2;
+/** The matte's wobble smoothed over this much, then made crisp (cutout.js MATTE_SMOOTH_PX / MATTE_CRISP). */
+const MATTE_SMOOTH_PX = 1.5;
+const MATTE_LO = 110;
+const MATTE_HI = 210;
+/** An edge pixel may be this much brighter than the speaker just inside (cutout.js EDGE_ALLOW). */
+const EDGE_ALLOW = 4;
+
+/** A canvas at w x h, cleared, for drawing with `filter`. */
+function sized(c: HTMLCanvasElement, w: number, h: number) {
+  if (c.width !== w || c.height !== h) {
+    c.width = w;
+    c.height = h;
+  }
+  const g = c.getContext("2d", { willReadFrequently: true })!;
+  g.globalCompositeOperation = "copy";
+  g.filter = "none";
+  return g;
+}
+
+/**
+ * Draws a saved cut-out's frame into `out` (w x h) with the export's edge
+ * (cutout.js behindFilters): the matte (`el`'s right half) smoothed and made
+ * crisp, and near the edge each pixel at most a touch brighter than the
+ * speaker just inside it (the inside colour: the picture blurred over the
+ * sure core), so no wall caught in the edge shows as a ring. `work`: 5
+ * scratch canvases. The video's frame is read once (the costly part).
+ */
+function drawSavedCutout(
+  el: HTMLVideoElement,
+  out: HTMLCanvasElement,
+  w: number,
+  h: number,
+  work: HTMLCanvasElement[],
+) {
+  const sw = Math.max(2, Math.round(w / 2));
+  const sh = Math.max(2, Math.round(h / 2));
+  const unit = sh / 1920; // px of the small canvases per px at 1920 high
+  const [core, inner, soft, frame, smooth] = work;
+  // The frame once: picture (left) and matte (right), w x h each.
+  const fg = sized(frame, w * 2, h);
+  fg.drawImage(el, 0, 0, el.videoWidth, el.videoHeight, 0, 0, w * 2, h);
+  const f = fg.getImageData(0, 0, w * 2, h).data;
+  // The matte's wobble smoothed out (made crisp in the loop below).
+  const mg = sized(smooth, w, h);
+  mg.filter = `blur(${Math.max(0.3, (MATTE_SMOOTH_PX * h) / 1920).toFixed(2)}px)`;
+  mg.drawImage(frame, w, 0, w, h, 0, 0, w, h);
+  mg.filter = "none";
+  const ma = mg.getImageData(0, 0, w, h).data;
+  const span = MATTE_HI - MATTE_LO;
+  // The sure core: the matte blurred, kept where it stays at 84% or more
+  // (in by about EDGE_CORE_PX, as the export's erosion).
+  const cg = sized(core, sw, sh);
+  cg.filter = `blur(${Math.max(0.5, EDGE_CORE_PX * unit).toFixed(2)}px)`;
+  cg.drawImage(frame, w, 0, w, h, 0, 0, sw, sh);
+  cg.filter = "none";
+  const ci = cg.getImageData(0, 0, sw, sh);
+  const cd = ci.data;
+  for (let i = 0; i < cd.length; i += 4) {
+    cd[i + 3] = cd[i] > 214 ? 255 : 0;
+    cd[i] = cd[i + 1] = cd[i + 2] = 255;
+  }
+  cg.putImageData(ci, 0, 0);
+  // The colour just inside: the picture over the core, blurred (the canvas
+  // keeps it premultiplied, so reading it back divides by the blurred core).
+  const ig = sized(inner, sw, sh);
+  ig.drawImage(frame, 0, 0, w, h, 0, 0, sw, sh);
+  ig.globalCompositeOperation = "destination-in";
+  ig.drawImage(core, 0, 0);
+  ig.globalCompositeOperation = "copy";
+  ig.filter = `blur(${Math.max(0.5, EDGE_INNER_REACH_PX * unit).toFixed(2)}px)`;
+  ig.drawImage(inner, 0, 0);
+  ig.filter = "none";
+  const inn = ig.getImageData(0, 0, sw, sh).data;
+  // Off the core (a soft step): where the inside colour is used.
+  const sg = sized(soft, sw, sh);
+  sg.filter = `blur(${Math.max(0.5, EDGE_SOFT_PX * unit).toFixed(2)}px)`;
+  sg.drawImage(core, 0, 0);
+  sg.filter = "none";
+  const sc = sg.getImageData(0, 0, sw, sh).data;
+  const og = out.getContext("2d", { willReadFrequently: true });
+  if (!og) return;
+  const img = og.createImageData(w, h);
+  const px = img.data;
+  const kx = sw / w;
+  const ky = sh / h;
+  const frow = w * 8; // a row of the frame (both halves)
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(sh - 1, (y * ky) | 0) * sw;
+    const fy = y * frow;
+    for (let x = 0, o = y * w * 4; x < w; x++, o += 4) {
+      const pi = fy + x * 4; // picture
+      // The smoothed matte (grey: its R) made crisp: its soft outer part,
+      // mostly wall, dropped.
+      const sm = ma[o];
+      if (sm <= MATTE_LO) continue;
+      const al = sm >= MATTE_HI ? 255 : (((sm - MATTE_LO) * 255) / span) | 0;
+      px[o + 3] = al;
+      px[o] = f[pi];
+      px[o + 1] = f[pi + 1];
+      px[o + 2] = f[pi + 2];
+      const s4 = (sy + Math.min(sw - 1, (x * kx) | 0)) * 4;
+      const wt = 1 - sc[s4 + 3] / 255;
+      if (wt <= 0.004 || !inn[s4 + 3]) continue;
+      for (let c = 0; c < 3; c++) {
+        const v = px[o + c];
+        const m = inn[s4 + c] + EDGE_ALLOW;
+        if (m < v) px[o + c] = v + (m - v) * wt;
+      }
+    }
+  }
+  og.putImageData(img, 0, 0);
+}
+
+/**
+ * A video's speaker, cut out of its current frame, in the same place as the
+ * video: from the worker's saved cut-out (getCutout: the export's matte)
+ * where there is one ready, else by the browser's person segmenter.
+ * Redrawn whenever the frame changes.
  */
 function CutoutLayer({
   getVideo,
+  getCutout,
   style,
   box,
   fit,
 }: {
   getVideo: () => HTMLVideoElement | null;
+  /** The saved cut-out holding this time of the clip's file (seconds), if any. */
+  getCutout?: (sourceSec: number) => CutoutSource | null;
   style: React.CSSProperties;
   box: React.CSSProperties;
   fit: string;
@@ -634,46 +931,88 @@ function CutoutLayer({
   }, []);
   const getVideoRef = useRef(getVideo);
   getVideoRef.current = getVideo;
+  const getCutoutRef = useRef(getCutout);
+  getCutoutRef.current = getCutout;
   useEffect(() => {
     const out = canvas.current;
-    if (!segmenter || !out) return;
+    if (!out) return;
     const mask = document.createElement("canvas");
-    let shown: { video: HTMLVideoElement; time: number } | null = null;
+    const tight = document.createElement("canvas");
+    const edgeBlur = document.createElement("canvas");
+    const edgeWork = [0, 1, 2, 3, 4].map(() => document.createElement("canvas"));
+    let shown: { video: HTMLVideoElement; time: number; saved: boolean } | null = null;
+    let segmenterBroke = false;
     let raf = 0;
-    const draw = () => {
-      raf = requestAnimationFrame(draw);
-      const video = getVideoRef.current();
-      if (!video || video.readyState < 2 || !video.videoWidth) return;
-      // Only when the frame changed (playing, or a seek).
-      if (shown && shown.video === video && shown.time === video.currentTime) return;
-      const g = out.getContext("2d");
-      try {
-        if (!g || !segmenter.maskInto(video, mask)) return;
-      } catch (e) {
-        // A frame that can't be read (or a failing segmenter): stop trying;
-        // the graphics stay behind the room, without the cut-out.
-        console.warn("[preview] The speaker cut-out stopped:", e);
-        cancelAnimationFrame(raf);
-        return;
-      }
-      shown = { video, time: video.currentTime };
-      const k = Math.min(1, CUTOUT_MAX_WIDTH / video.videoWidth);
-      const w = Math.round(video.videoWidth * k);
-      const h = Math.round(video.videoHeight * k);
+    const size = (vw: number, vh: number, most = CUTOUT_MAX_WIDTH) => {
+      const k = Math.min(1, Math.min(CUTOUT_MAX_WIDTH, Math.max(240, most)) / vw);
+      const w = Math.round(vw * k);
+      const h = Math.round(vh * k);
       if (out.width !== w || out.height !== h) {
         out.width = w;
         out.height = h;
       }
+      return { w, h };
+    };
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const video = getVideoRef.current();
+      if (!video || video.readyState < 2 || !video.videoWidth) return;
+      // Read back every frame (darkenEdge): kept in memory, not on the GPU.
+      const g = out.getContext("2d", { willReadFrequently: true });
+      if (!g) return;
+      // The saved cut-out, when it has this frame.
+      const cut = getCutoutRef.current?.(video.currentTime) ?? null;
+      if (cut && followVideo(cut, video)) {
+        const time = cut.el.currentTime;
+        if (shown?.saved && shown.video === cut.el && shown.time === time) return;
+        try {
+          // At the size it's shown (sharp on this screen), at most the file's.
+          const shownW = out.getBoundingClientRect().width * (window.devicePixelRatio || 1);
+          const { w, h } = size(cut.el.videoWidth / 2, cut.el.videoHeight, shownW);
+          drawSavedCutout(cut.el, out, w, h, edgeWork);
+          shown = { video: cut.el, time, saved: true };
+        } catch (e) {
+          // A frame that can't be read: the browser's cut-out instead.
+          console.warn("[preview] The saved cut-out couldn't be drawn:", e);
+        }
+        return;
+      }
+      // A saved cut-out on its way to this frame: keep the last one a moment.
+      if (cut && shown?.saved) return;
+      if (!segmenter || segmenterBroke) return;
+      // Only when the frame changed (playing, or a seek).
+      if (shown && !shown.saved && shown.video === video && shown.time === video.currentTime)
+        return;
+      try {
+        if (!segmenter.maskInto(video, mask)) return;
+      } catch (e) {
+        // A frame that can't be read (or a failing segmenter): stop trying;
+        // the graphics stay behind the room, without the cut-out.
+        console.warn("[preview] The speaker cut-out stopped:", e);
+        segmenterBroke = true;
+        return;
+      }
+      shown = { video, time: video.currentTime, saved: false };
+      const { w, h } = size(video.videoWidth, video.videoHeight);
       g.globalCompositeOperation = "copy";
       g.drawImage(video, 0, 0, w, h);
-      // Keep only the person (the mask is smaller; scaled up, its edge stays soft).
+      // Keep only the person: the mask scaled up with its edge tightened
+      // (tightMask), else as it is.
       g.globalCompositeOperation = "destination-in";
       g.imageSmoothingQuality = "high";
-      g.drawImage(mask, 0, 0, w, h);
+      const tightened = tightMask(mask, tight, w, h);
+      g.drawImage(tightened ? tight : mask, 0, 0, w, h);
       g.globalCompositeOperation = "source-over";
+      if (tightened) darkenEdge(out, tight, edgeBlur);
     };
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      // Its saved cut-out stops with it (paused, kept loaded).
+      const v = getVideoRef.current();
+      const cut = v ? getCutoutRef.current?.(v.currentTime) : null;
+      cut?.el.pause();
+    };
   }, [segmenter]);
   return (
     <div className="absolute inset-0" style={style}>

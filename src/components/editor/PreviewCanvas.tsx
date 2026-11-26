@@ -1,3 +1,5 @@
+import type { CutoutStretch } from "@/lib/cutout-preview";
+import { usePreviewCutouts } from "@/lib/use-preview-cutouts";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MonitorPlay, Loader2, Film, X, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,11 @@ interface PreviewCanvasProps {
     /** Graphics behind the speaker: how far in a time is (0-1), and what's drawn there. */
     behindAt?: (timeMs: number) => number;
     renderBehind?: (timeMs: number) => React.ReactNode;
+    /**
+     * The stretches of the clips' files with a graphic behind the speaker:
+     * their cut-outs are asked from the worker and shown when saved.
+     */
+    cutouts?: { projectId: string; stretches: CutoutStretch[] };
     /** A clip's download stalled: re-sign its link. True: a fresh link is on its way. */
     onStall?: (storagePath: string) => boolean;
     /** Whether the clips' own sound is lowered at a time (under a voiceover). */
@@ -169,6 +176,11 @@ export function PreviewCanvas({
   onLoadedMetadata,
 }: PreviewCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const cutouts = usePreviewCutouts(
+    timeline?.cutouts?.projectId,
+    timeline?.cutouts?.stretches ?? [],
+    !!timeline?.cutouts,
+  );
 
   // The frame is the largest box with the project's shape that fits the
   // stage. (CSS aspect-ratio with width: 100% and max-height stretches it
@@ -476,6 +488,7 @@ export function PreviewCanvas({
               pictureFilter={timeline!.pictureFilter}
               behindAt={timeline!.behindAt}
               renderBehind={timeline!.renderBehind}
+              cutouts={cutouts}
               onStall={timeline!.onStall}
               duckAt={timeline!.duckAt}
               selectedClipId={timeline!.selectedClipId}

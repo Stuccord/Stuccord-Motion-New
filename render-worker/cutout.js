@@ -13,6 +13,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { limitThreads } from "./threads.js";
 import { samReady, samOutline, trimMatte } from "./sam.js";
+import { grayFrames, pixelcutMattes, pixelcutReady, savedMatte } from "./pixelcut.js";
 import { MatteDoubt, describeDoubt, doubtReason } from "./doubt.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -60,6 +61,29 @@ const MIN_PERSON_SHARE = 0.06;
 // is pulled in, in pixels at 1920 (one: the edge's room colour is taken out
 // instead, see behindFilters); reach is how far past the speaker the clean
 // room is read from.
+// The speaker's edge (tuned 2026-11-26 on a test clip, measured and by
+// eye at the cheek: no light ring, no dark line, a crisp smooth curve, the
+// skin's texture kept right up to the edge). In px of a 1920-high frame.
+/** The matte's wobble smoothed out over this much before it's made crisp. */
+const MATTE_SMOOTH_PX = 1.5;
+/** The matte's edge curve: below lo is room, above hi the speaker (0-255). */
+const MATTE_CRISP = [110, 210];
+/** The sure speaker starts this far in from the edge. */
+const CORE_PX = 2;
+/** The step from the sure speaker to the edge colour, this soft. */
+const CORE_SOFT_PX = 1;
+/** An edge pixel may be this much brighter (0-255) than the speaker just inside. */
+const EDGE_ALLOW = 4;
+/** How far in the speaker's own edge colour is read from (px at 1920 high). */
+const INNER_REACH_PX = 8;
+/**
+ * How much the speaker's edge is darkened with the room. 0: not at all, as
+ * its colour is already their own (edge extend below). Measured on a test
+ * clip (2026-11-26): light ring 4.0% of the outline -> 0.2%, dark line 0.4%
+ * -> 0.2%; darkening it as well (0.45) left a dark line on 3.6%.
+ */
+const EDGE_DARKEN = 0;
+
 export const EDGE = {
   radius: 0.004,
   eps: 0.04,
@@ -132,10 +156,17 @@ async function runMatte(ort, session, rgb, mw, mh, state) {
  * at MATTE_LONG (white: the speaker, soft at hair and edges). The model
  * starts fresh before each stretch and runs MATTE_PREROLL frames first.
  */
-async function personMattes(ort, session, { ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
+/** The matte's size for a w x h frame: the long side at MATTE_LONG. */
+function matteSize(w, h) {
   const s = Math.min(1, MATTE_LONG / Math.max(w, h));
-  const mw = Math.max(2, Math.round((w * s) / 2) * 2);
-  const mh = Math.max(2, Math.round((h * s) / 2) * 2);
+  return {
+    mw: Math.max(2, Math.round((w * s) / 2) * 2),
+    mh: Math.max(2, Math.round((h * s) / 2) * 2),
+  };
+}
+
+async function personMattes(ort, session, { ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
+  const { mw, mh } = matteSize(w, h);
   const ratio = Math.min(1, MATTE_BASE / Math.max(mw, mh));
   const zero = () => new ort.Tensor("float32", new Float32Array([0]), [1, 1, 1, 1]);
   // Each stretch with its run-in (never reaching back into the stretch before).
@@ -334,8 +365,77 @@ export function maskTiles(w, h) {
  * the picture as it will be shown (after the zooms). Returns
  * [{ file, from, to }] in frames.
  */
-export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w = 1080, h = 1920 }) {
+export async function personMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w = 1080, h = 1920, saved = null }) {
   if (!ranges.length) return [];
+  // The editor's saved cut-outs first (Pixelcut's matte, already paid for:
+  // see pixelcut.js savedMatte), judged like a fresh one.
+  let reused = [];
+  if (saved) {
+    const { mw, mh } = matteSize(w, h);
+    const left = [];
+    for (const [i, [a, b]] of ranges.entries()) {
+      const src = saved([a, b]);
+      const file = src && (await savedMatte({ ffmpegPath, ...src, zoom, a, b, mw, mh, workdir, index: i }));
+      if (file) reused.push({ file, from: a, to: b, matte: true, run: 1000 + i });
+      else left.push([a, b]);
+    }
+    if (reused.length) {
+      const total = reused.length;
+      reused = await judgePixelcut({ ffmpegPath, mattes: reused, mw, mh });
+      console.log(`[cutout] ${reused.length} of ${total} stretch(es) from saved cut-outs`);
+    }
+    // An unsure one isn't asked for again: its graphics go in front, as a fresh one's would.
+    ranges = left;
+    if (!ranges.length) return reused;
+  }
+  const fresh = await freshMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h });
+  return [...reused, ...fresh].sort((x, y) => x.from - y.from);
+}
+
+/** Masks made now: Pixelcut's, then RVM's for the rest. */
+async function freshMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
+  // Pixelcut's matte first (pixelcut.js, on fal): the cleanest edges. Each
+  // one is judged like RVM's; stretches it couldn't do go on to RVM below.
+  let made = [];
+  if (pixelcutReady()) {
+    const { mw, mh } = matteSize(w, h);
+    const { mattes, failed } = await pixelcutMattes({ ffmpegPath, input, zoom, ranges, workdir, mw, mh });
+    made = await judgePixelcut({ ffmpegPath, mattes, mw, mh });
+    ranges = failed;
+    onProgress?.(ranges.length ? 0.5 : 1);
+    if (!ranges.length) return made;
+  }
+  const rest = await rvmMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h });
+  return [...made, ...rest].sort((x, y) => x.from - y.from);
+}
+
+/**
+ * Pixelcut's mattes judged like RVM's (doubt.js, read back frame by frame):
+ * a sure one is cut out; an unsure one isn't (its graphics go in front).
+ */
+async function judgePixelcut({ ffmpegPath, mattes, mw, mh }) {
+  const kept = [];
+  for (const m of mattes) {
+    const doubt = new MatteDoubt(mw, mh);
+    const frames = grayFrames(ffmpegPath, m.file, mw, mh);
+    try {
+      for (let f = await frames.next(); f; f = await frames.next()) doubt.add(f, 1 / 255);
+    } finally {
+      frames.close();
+    }
+    const s = doubt.summary();
+    const reason = doubtReason(s);
+    console.log(
+      `[doubt] Pixelcut stretch ${m.run} (${m.from}-${m.to}): ${describeDoubt(s)} -> ` +
+        (reason ? `unsure (${reason}): graphics go in front` : "sure: cut out"),
+    );
+    if (!reason) kept.push(m);
+  }
+  return kept;
+}
+
+/** The RVM matte (or, without its model, the selfie mask) for the stretches. */
+async function rvmMasks({ ffmpegPath, input, zoom, ranges, workdir, onProgress, w, h }) {
   // The real video matte when its model is in the image (see MATTING_MODEL),
   // else the selfie mask.
   const matting = mattingModelReady();
@@ -523,24 +623,67 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   // How far past the speaker's edge the room is read from (the clean room):
   // enough that none of the speaker is in it.
   const reach = Math.max(0.5, qh * edge.reach).toFixed(2);
+  // The edge work (see below), in pixels of a 1920-high frame.
+  const px = (n) => Math.max(1, Math.round((n * h) / 1920));
+  const num = (v) => Math.max(0.3, v).toFixed(2);
+  // The matte's edge made smooth and crisp: its wobble (from the video's
+  // compression) smoothed out, then its soft outer part (mostly wall)
+  // dropped by a steeper curve, then softened by half a pixel.
+  const [lo, hi] = MATTE_CRISP;
+  const choke =
+    `gblur=sigma=${num((MATTE_SMOOTH_PX * h) / 1920)},` +
+    `lut=y='clip((val-${lo})*255/${hi - lo},0,255)',gblur=sigma=${num((0.5 * h) / 1920)},`;
+  const coreErode = `${Array(px(CORE_PX)).fill("erosion").join(",")},`;
+  const hw = Math.max(2, Math.round(w / 4) * 2);
+  const hh = Math.max(2, Math.round(h / 4) * 2);
+  const innerBlur = Math.max(1, (INNER_REACH_PX * h) / 1920 / 2).toFixed(2);
+  const coreSoft = Math.max(0.5, (CORE_SOFT_PX * h) / 1920).toFixed(2);
   masks.forEach((m, i) => {
     const input = firstInput + pieces.length + i;
     if (m.matte) {
       // A real video matte (RVM): already soft and exact at hair, beard and
       // fingers, and steady over time, so it's only scaled to the frame; the
       // fixes below for a coarse mask would only blur or shrink it.
-      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=2[pb${i}][pd${i}]`);
-      graph.push(`[${input}:v]format=gray,scale=${w}:${h}:flags=bicubic,split=3[ad${i}][an${i}][am${i}]`);
+      // Pulled in by about a pixel (CHOKE): its outermost pixels are mostly
+      // wall, which showed as a thin light line round the speaker.
+      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=3[pb${i}][pr0${i}][pi${i}]`);
+      graph.push(
+        `[${input}:v]format=gray,scale=${w}:${h}:flags=bicubic,${choke}split=4[ad${i}][an${i}][am${i}][ac${i}]`,
+      );
     } else {
       graph.push(`[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`);
-      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=3[pg${i}][pb${i}][pd${i}]`);
+      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=4[pg${i}][pb${i}][pr0${i}][pi${i}]`);
       graph.push(`[pg${i}]format=gray[gd${i}]`);
       graph.push(
         `[gd${i}][mu${i}]guided=radius=${radius}:eps=${edge.eps}:mode=fast:sub=${edge.sub}:guidance=on,` +
           // (median: no lone specks where the fit wavered on texture)
-          `${tighten},median=radius=1,${erode}gblur=sigma=${edgeBlur},split=3[ad${i}][an${i}][am${i}]`,
+          `${tighten},median=radius=1,${erode}gblur=sigma=${edgeBlur},split=4[ad${i}][an${i}][am${i}][ac${i}]`,
       );
     }
+    // The speaker's edge in their own colour (edge extend): near the edge
+    // each pixel is at most as bright as the speaker just inside it, so no
+    // wall colour caught in the edge (or in hair) can show as a light ring.
+    // The core: the sure speaker, a few pixels in from the edge.
+    graph.push(`[ac${i}]lut=y='if(gt(val,200),255,0)',${coreErode}split=2[cc${i}g][cw${i}g]`);
+    graph.push(`[cc${i}g]scale=${hw}:${hh}:flags=area,split=2[cca${i}g][ccb${i}g]`);
+    rgb(`cca${i}g`, `cca${i}`);
+    rgb(`ccb${i}g`, `ccb${i}`);
+    // The colour just inside: the picture blurred over the core only (at half size).
+    graph.push(`[pi${i}]scale=${hw}:${hh}:flags=area,format=gbrp[pis${i}]`);
+    graph.push(`[pis${i}][cca${i}]premultiply=inplace=0,gblur=sigma=${innerBlur}[inum${i}]`);
+    graph.push(`[ccb${i}]gblur=sigma=${innerBlur}[iden${i}]`);
+    // A little brighter is allowed (EDGE_ALLOW): the skin's own highlights stay.
+    const allow = `min(255,val+${EDGE_ALLOW})`;
+    graph.push(
+      `[inum${i}][iden${i}]unpremultiply=inplace=0,scale=${w}:${h}:flags=bicubic,` +
+        `lutrgb=r='${allow}':g='${allow}':b='${allow}'[inner${i}]`,
+    );
+    graph.push(`[pr0${i}]format=gbrp,split=2[pra${i}][prb${i}]`);
+    graph.push(`[pra${i}][inner${i}]blend=all_mode=darken[pmin${i}]`);
+    // Only off the core (a soft step), the picture itself inside it.
+    graph.push(`[cw${i}g]gblur=sigma=${coreSoft},negate[wm${i}g]`);
+    rgb(`wm${i}g`, `wm${i}`);
+    graph.push(`[prb${i}][pmin${i}][wm${i}]maskedmerge,split=1[pd${i}]`);
     // Where the room is: everything but the speaker and a margin round them.
     graph.push(`[ad${i}]scale=${qw}:${qh}:flags=area,gblur=sigma=${reach},lut=y='if(gt(val,4),0,255)'[wr${i}g]`);
     rgb(`wr${i}g`, `wr${i}`);
@@ -569,12 +712,18 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
     // what removes the ring of the old, brighter room round them. (Taking
     // the room colour out exactly, (I - (1-a)B)/a, turned edge pixels black
     // wherever the matte was a little short, so this robust form is used.)
-    graph.push(`[am${i}]split=2[am1${i}][am2${i}]`);
-    graph.push(`[am1${i}]lut=y='255-(255-val)*${BEHIND_DARKEN}'[ef${i}g]`);
-    rgb(`ef${i}g`, `ef${i}`);
-    rgb(`am2${i}`, `ma${i}`);
-    graph.push(`[pd${i}]format=gbrp[pdg${i}]`);
-    graph.push(`[pdg${i}][ef${i}]premultiply=inplace=0[pe${i}]`);
+    const edgeDark = EDGE_DARKEN;
+    if (edgeDark > 0) {
+      graph.push(`[am${i}]split=2[am1${i}][am2${i}]`);
+      graph.push(`[am1${i}]lut=y='255-(255-val)*${edgeDark}'[ef${i}g]`);
+      rgb(`ef${i}g`, `ef${i}`);
+      rgb(`am2${i}`, `ma${i}`);
+      graph.push(`[pd${i}]format=gbrp[pdg${i}]`);
+      graph.push(`[pdg${i}][ef${i}]premultiply=inplace=0[pe${i}]`);
+    } else {
+      rgb(`am${i}`, `ma${i}`);
+      graph.push(`[pd${i}]format=gbrp[pe${i}]`);
+    }
     graph.push(`[pe${i}][ma${i}]premultiply=inplace=0[fp${i}]`);
     // The room behind the graphics: the clean room, darkened like the
     // preview's CSS brightness(), fading in and out.
