@@ -2701,6 +2701,29 @@ function EditorPage() {
               behindAt: graphicsOn
                 ? (timeMs) => behindStrength(placedMotion.graphics, frameAtMs(timeMs))
                 : undefined,
+              // The export's grade, measured on the main track's videos and
+              // baked by the worker (lib/grade-gl.ts): the look and LUT only
+              // with graphics on, as the export does; the correction always.
+              grade: readOnly
+                ? null
+                : (() => {
+                    const main = (aRoll.length ? aRoll : bRoll).filter(
+                      (c) => !isImageFilename(c.filename),
+                    );
+                    if (!main.length) return null;
+                    return {
+                      project_id: project.id,
+                      aspect: project.aspect_ratio,
+                      look: graphicsOn ? (motionPlan?.look ?? "glass") : null,
+                      lut: graphicsOn ? (motionPlan?.lut ?? null) : null,
+                      center: motionPlan?.angles?.center ?? null,
+                      clips: main.slice(0, 8).map((c) => ({
+                        path: c.storage_path,
+                        in_ms: Math.max(0, Math.round(c.trim_in_ms ?? 0)),
+                        out_ms: c.trim_out_ms != null ? Math.round(c.trim_out_ms) : null,
+                      })),
+                    };
+                  })(),
               // The speaker's cut-out for the behind stretches, made by the
               // worker when a stretch first appears (cutout-preview.ts).
               cutouts:

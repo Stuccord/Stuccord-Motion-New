@@ -1,5 +1,6 @@
 import type { CutoutStretch } from "@/lib/cutout-preview";
 import { usePreviewCutouts } from "@/lib/use-preview-cutouts";
+import { usePreviewGrade, type PreviewGradeRequest } from "@/lib/use-preview-grade";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MonitorPlay, Loader2, Film, X, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,8 @@ interface PreviewCanvasProps {
      * their cut-outs are asked from the worker and shown when saved.
      */
     cutouts?: { projectId: string; stretches: CutoutStretch[] };
+    /** What the export's grade is made from: the preview draws the picture through it. */
+    grade?: PreviewGradeRequest | null;
     /** A clip's download stalled: re-sign its link. True: a fresh link is on its way. */
     onStall?: (storagePath: string) => boolean;
     /** Whether the clips' own sound is lowered at a time (under a voiceover). */
@@ -176,6 +179,7 @@ export function PreviewCanvas({
   onLoadedMetadata,
 }: PreviewCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const gradeTable = usePreviewGrade(timeline?.grade ?? null);
   const { byPath: cutouts, fallback: cutoutFallback } = usePreviewCutouts(
     timeline?.cutouts?.projectId,
     timeline?.cutouts?.stretches ?? [],
@@ -489,6 +493,7 @@ export function PreviewCanvas({
               behindAt={timeline!.behindAt}
               renderBehind={timeline!.renderBehind}
               cutouts={cutouts}
+              gradeTable={gradeTable}
               // The browser's own cut-out only when the worker's can't come
               // (or isn't asked for, e.g. view-only).
               browserCutout={!timeline!.cutouts || cutoutFallback}

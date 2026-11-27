@@ -28,6 +28,8 @@ import { useLocalClips } from "@/lib/clip-download";
 import type { ClipRow } from "./types";
 import { isFootagePreviewUrl } from "@/lib/footage-preview";
 import type { PreviewCutout } from "@/lib/cutout-preview";
+import { gradeGlSupported, type GradeTable } from "@/lib/grade-gl";
+import { GradedImage, GradedVideo, useGradeRenderer } from "./GradedSurface";
 
 /** What the editor can do with the player (a subset of HTMLVideoElement). */
 export type TimelinePlayerHandle = {
@@ -85,6 +87,12 @@ type Props = {
    */
   cutouts?: Record<string, PreviewCutout[]>;
   /**
+   * The export's grade as one table (lib/grade-gl.ts): the picture (videos,
+   * images, the speaker's cut-out) is drawn through it, in place of the
+   * rough CSS look (pictureFilter), when this browser can (WebGL2).
+   */
+  gradeTable?: GradeTable | null;
+  /**
    * Whether to cut the speaker out in the browser where there's no saved
    * cut-out (its model is a 13 MB download). Default: yes.
    */
@@ -127,6 +135,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     behindAt,
     renderBehind,
     cutouts,
+    gradeTable = null,
     browserCutout = true,
     onStall,
     selectedClipId = null,
@@ -533,6 +542,10 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
       };
     });
 
+  // Drawn through the export's grade: the rough CSS look isn't used.
+  const graded = !!gradeTable && gradeGlSupported();
+  const lookFilter = graded ? undefined : pictureFilter;
+
   return (
     // The picture is clipped to the frame (with its rounded corners); the
     // handles aren't.
@@ -547,7 +560,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
             ...zoomStyle,
             filter:
               [
-                pictureFilter,
+                lookFilter,
                 behind > 0
                   ? `blur(${(behind * BEHIND_BLUR * frameH).toFixed(2)}px) brightness(${(1 - behind * BEHIND_DARKEN).toFixed(3)})`
                   : null,
@@ -571,6 +584,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
                 timeMs={t}
                 frameRatio={frameRatio}
                 transform={transformOf(p.clip)}
+                gradeTable={graded ? gradeTable : null}
                 videoRef={(el) => {
                   if (el) videos.current.set(p.clip.id, el);
                   else videos.current.delete(p.clip.id);
@@ -601,7 +615,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
         {behind > 0 && (
           <div
             className="absolute inset-0 z-[8] pointer-events-none"
-            style={{ ...zoomStyle, filter: pictureFilter }}
+            style={{ ...zoomStyle, filter: lookFilter }}
           >
             {layers.map((p) => {
               if (isImage(p.clip) || t < p.start || t >= p.end) return null;
@@ -627,6 +641,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
                   style={look.style}
                   box={look.box}
                   fit={look.fit}
+                  gradeTable={graded ? gradeTable : null}
                 />
               );
             })}
@@ -954,12 +969,15 @@ function CutoutLayer({
   style,
   box,
   fit,
+  gradeTable,
 }: {
   getVideo: () => HTMLVideoElement | null;
   /** The saved cut-out holding this time of the clip's file (seconds), if any. */
   getCutout?: (sourceSec: number) => CutoutSource | null;
   /** Use the browser's own cut-out where there's no saved one. */
   browserCutout: boolean;
+  /** Drawn through the export's grade (lib/grade-gl.ts), when there's one. */
+  gradeTable: GradeTable | null;
   style: React.CSSProperties;
   box: React.CSSProperties;
   fit: string;
@@ -979,6 +997,22 @@ function CutoutLayer({
   getVideoRef.current = getVideo;
   const getCutoutRef = useRef(getCutout);
   getCutoutRef.current = getCutout;
+  // The cut-out drawn through the grade into a second canvas (shown in
+  // place of the plain one) each time it's drawn.
+  const gradedCanvas = useRef<HTMLCanvasElement>(null);
+  const getRenderer = useGradeRenderer(gradedCanvas);
+  const gradeRef = useRef(gradeTable);
+  gradeRef.current = gradeTable;
+  const regrade = () => {
+    const out = canvas.current;
+    const t = gradeRef.current;
+    const r = t ? getRenderer() : null;
+    const ok = !!(out && t && r && (r.setTable(t), r.draw(out, out.width, out.height)));
+    if (out) out.style.opacity = ok ? "0" : "1";
+    if (gradedCanvas.current) gradedCanvas.current.style.opacity = ok ? "1" : "0";
+  };
+  const regradeRef = useRef(regrade);
+  regradeRef.current = regrade;
   useEffect(() => {
     const out = canvas.current;
     if (!out) return;
@@ -1016,6 +1050,7 @@ function CutoutLayer({
           const shownW = out.getBoundingClientRect().width * (window.devicePixelRatio || 1);
           const { w, h } = size(cut.el.videoWidth / 2, cut.el.videoHeight, shownW);
           drawSavedCutout(cut.el, out, w, h, edgeWork);
+          regradeRef.current();
           shown = { video: cut.el, time, saved: true };
         } catch (e) {
           // A frame that can't be read: the browser's cut-out instead.
@@ -1050,6 +1085,7 @@ function CutoutLayer({
       g.drawImage(tightened ? tight : mask, 0, 0, w, h);
       g.globalCompositeOperation = "source-over";
       if (tightened) darkenEdge(out, tight, edgeBlur);
+      regradeRef.current();
     };
     raf = requestAnimationFrame(draw);
     return () => {
@@ -1064,6 +1100,14 @@ function CutoutLayer({
     <div className="absolute inset-0" style={style}>
       <div className="absolute" style={box}>
         <canvas ref={canvas} className={cn("absolute inset-0 w-full h-full", fit)} />
+        {gradeTable && (
+          <canvas
+            ref={gradedCanvas}
+            aria-hidden
+            className={cn("absolute inset-0 w-full h-full", fit)}
+            style={{ opacity: 0 }}
+          />
+        )}
       </div>
     </div>
   );
@@ -1082,9 +1126,12 @@ function Layer({
   onReady,
   onStall,
   downloadProgress,
+  gradeTable,
 }: {
   placed: Placed;
   url: string;
+  /** Drawn through the export's grade (lib/grade-gl.ts), when there's one. */
+  gradeTable: GradeTable | null;
   /** How far the file's one-time download is (0-1), while it's on its way. */
   downloadProgress?: number;
   active: boolean;
@@ -1108,6 +1155,9 @@ function Layer({
     visibility: active ? "visible" : "hidden",
   };
   const { blurBehind, box, fit } = look;
+  // The image element, for drawing it through the grade, and whether that's on screen.
+  const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
+  const [imageGraded, setImageGraded] = useState(false);
 
   if (isImage(p.clip)) {
     // The slow push-in, by where the playhead is in the clip.
@@ -1125,14 +1175,30 @@ function Layer({
         )}
         <div className="absolute" style={box}>
           <img
+            ref={setImageEl}
             src={url}
             alt=""
-            className={cn("absolute inset-0 w-full h-full", fit)}
+            // Read with CORS (storage allows it), so it can be drawn through the grade.
+            crossOrigin={gradeTable ? "anonymous" : undefined}
+            className={cn(
+              "absolute inset-0 w-full h-full",
+              fit,
+              gradeTable && imageGraded && "opacity-0",
+            )}
             style={{ transform: `scale(${zoom})` }}
             onLoad={(e) =>
               setSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
             }
           />
+          {gradeTable && (
+            <GradedImage
+              image={imageEl}
+              table={gradeTable}
+              fit={fit}
+              style={{ transform: `scale(${zoom})` }}
+              onDrawn={setImageGraded}
+            />
+          )}
         </div>
       </div>
     );
@@ -1140,6 +1206,7 @@ function Layer({
   return (
     <VideoLayer
       url={url}
+      gradeTable={gradeTable}
       style={style}
       blurBehind={blurBehind}
       box={box}
@@ -1170,8 +1237,11 @@ function VideoLayer({
   onSize,
   onStall,
   downloadProgress,
+  gradeTable,
 }: {
   url: string;
+  /** Drawn through the export's grade (lib/grade-gl.ts), when there's one. */
+  gradeTable: GradeTable | null;
   /** How far the file's one-time download is (0-1), while it's on its way. */
   downloadProgress?: number;
   style: React.CSSProperties;
@@ -1189,6 +1259,13 @@ function VideoLayer({
   onStall: () => boolean;
 }) {
   const el = useRef<HTMLVideoElement | null>(null);
+  // The video (for drawing it through the grade), the graded canvas, and
+  // whether the graded picture is on screen (the video then hides).
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const gradedCanvas = useRef<HTMLCanvasElement | null>(null);
+  const [videoGraded, setVideoGraded] = useState(false);
+  const videoGradedRef = useRef(false);
+  videoGradedRef.current = !!gradeTable && videoGraded;
   const onStallRef = useRef(onStall);
   onStallRef.current = onStall;
   const activeRef = useRef(active);
@@ -1361,7 +1438,9 @@ function VideoLayer({
       const dw = video.videoWidth * s;
       const dh = video.videoHeight * s;
       try {
-        g.drawImage(video, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
+        // From the graded picture when it's on screen (the export blurs the graded video).
+        const from = videoGradedRef.current && gradedCanvas.current ? gradedCanvas.current : video;
+        g.drawImage(from, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
       } catch {
         /* frame not ready */
       }
@@ -1407,6 +1486,7 @@ function VideoLayer({
           ref={(v) => {
             el.current = v;
             videoRef(v);
+            setVideoEl(v);
           }}
           src={src}
           // Read with CORS (storage allows it), so the speaker cut-out can
@@ -1417,9 +1497,22 @@ function VideoLayer({
           preload={active ? "auto" : "metadata"}
           playsInline
           muted
-          className={cn("absolute inset-0 w-full h-full", fit)}
+          className={cn(
+            "absolute inset-0 w-full h-full",
+            fit,
+            gradeTable && videoGraded && "opacity-0",
+          )}
           onLoadedMetadata={(e) => onSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
         />
+        {gradeTable && (
+          <GradedVideo
+            video={videoEl}
+            table={gradeTable}
+            fit={fit}
+            onDrawn={setVideoGraded}
+            canvasRef={gradedCanvas}
+          />
+        )}
       </div>
       {status !== "ready" && (
         <div className="absolute inset-0 z-10 grid place-items-center p-4 text-center pointer-events-none">

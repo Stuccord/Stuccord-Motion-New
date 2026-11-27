@@ -70,16 +70,26 @@ function toRgb(y, cb, cr) {
 const hueOf = (cb, cr) => ((Math.atan2(cr, cb) * 180) / Math.PI + 360) % 360;
 const isSkinHue = (h) => h >= SKIN_HUE_LO && h <= SKIN_HUE_HI;
 
-/** Reads frames (a frame a second, at most 60; a still: itself) as SIDE x SIDE RGB. */
-async function readFrames(ffmpegPath, file) {
-  return (await readWith(ffmpegPath, file, "fps=1,")) ?? (await readWith(ffmpegPath, file, ""));
+/**
+ * Reads frames (a frame a second, at most 60; a still: itself) as SIDE x
+ * SIDE RGB. `item` is a file (or link), or { file, inMs, outMs, pre }: only
+ * that stretch of it, through filters `pre` first (HDR made normal, fitted
+ * to the video's frame), as the export sees it.
+ */
+async function readFrames(ffmpegPath, item) {
+  const it = typeof item === "string" ? { file: item } : item;
+  return (await readWith(ffmpegPath, it, "fps=1,")) ?? (await readWith(ffmpegPath, it, ""));
 }
 
-function readWith(ffmpegPath, file, rate) {
+function readWith(ffmpegPath, { file, inMs, outMs, pre }, rate) {
+  const start = Math.max(0, Number(inMs) || 0);
+  const from = start > 0 ? ["-ss", (start / 1000).toFixed(3)] : [];
+  const length =
+    Number(outMs) > start ? ["-t", ((Number(outMs) - start) / 1000).toFixed(3)] : [];
   const args = limitThreads([
     "-hide_banner", "-nostats", "-v", "error",
-    "-i", file, "-an",
-    "-vf", `${rate}scale=${SIDE}:${SIDE}:flags=area,format=rgb24`,
+    ...from, "-i", file, ...length, "-an",
+    "-vf", `${pre ? `${pre},` : ""}${rate}scale=${SIDE}:${SIDE}:flags=area,format=rgb24`,
     "-frames:v", "60", "-f", "rawvideo", "pipe:1",
   ]);
   return new Promise((resolve) => {

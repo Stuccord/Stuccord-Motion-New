@@ -501,6 +501,37 @@ export function packSkinSafeStrength(id, strength, skin) {
   return 0;
 }
 
+// ---------- the whole grade as one table (the editor's preview) ----------
+
+/**
+ * The export's grade as one SIZE^3 RGB table (8-bit, red fastest, as in a
+ * .cube): `correct` (the correction, colour.js correctColour), then a
+ * ready-made LUT at strength `pack.k`, or else the look's LUT. The editor
+ * draws the picture through it, so it shows what the export will.
+ */
+export function bakeGradeTable({ correct, look = null, pack = null }) {
+  const table = pack?.k > 0 ? packTable(pack.id) : null;
+  const out = Buffer.alloc(SIZE ** 3 * 3);
+  let o = 0;
+  for (let bi = 0; bi < SIZE; bi++)
+    for (let gi = 0; gi < SIZE; gi++)
+      for (let ri = 0; ri < SIZE; ri++) {
+        let [r, g, b] = correct(ri / (SIZE - 1), gi / (SIZE - 1), bi / (SIZE - 1));
+        if (table) {
+          const p = packColour(table, r, g, b);
+          r += (p[0] - r) * pack.k;
+          g += (p[1] - g) * pack.k;
+          b += (p[2] - b) * pack.k;
+        } else if (look && Object.hasOwn(LOOK_LUTS, look)) {
+          [r, g, b] = gradeColour(look, r, g, b);
+        }
+        out[o++] = Math.round(clamp01(r) * 255);
+        out[o++] = Math.round(clamp01(g) * 255);
+        out[o++] = Math.round(clamp01(b) * 255);
+      }
+  return { size: SIZE, data: out };
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const out = process.argv[2] || path.join(os.tmpdir(), "stuccord-luts");
   fs.mkdirSync(out, { recursive: true });

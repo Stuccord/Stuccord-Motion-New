@@ -64,9 +64,9 @@ import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 import { CaptureError, capturePage } from "./capture.js";
 import { limitThreads } from "./threads.js";
 import { CUTOUT_MAX_MS, pixelcutCutout, pixelcutReady } from "./pixelcut.js";
-import { analyzeColour, correctedSkin, correctionFilter } from "./colour.js";
+import { analyzeColour, correctColour, correctedSkin, correctionFilter, correctionParams } from "./colour.js";
 import { checkHdrSupport, colourTags, hdrToSdr, probeColour } from "./hdr.js";
-import { lutFilter, packLutFilter, packSkinSafeStrength } from "./luts.js";
+import { bakeGradeTable, lutFilter, packLutFilter, packSkinSafeStrength } from "./luts.js";
 import {
   buildAudioMixArgs,
   masterArgs,
@@ -711,6 +711,53 @@ app.post("/cutout", (req, res) => {
     nextCutout();
   }
   res.status(202).json({ ok: true, queued: cutoutQueue.length });
+});
+
+// The editor's preview grade: the export's whole grade on this footage (the
+// correction measured on the main track's videos as the export measures
+// them, then the ready-made LUT at the strength skin allows, or the look's
+// LUT) baked into one table the editor draws the picture through
+// (luts.js bakeGradeTable). Body: { sources: [{ url, in_ms, out_ms }],
+// aspect, center, look, lut: { id, strength } | null }.
+app.post("/grade-table", async (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  const sources = Array.isArray(p.sources) ? p.sources.filter((s) => isAbsoluteHttpUrl(s?.url)).slice(0, 8) : [];
+  if (!sources.length || (p.look != null && typeof p.look !== "string")) {
+    return res.status(400).json({ ok: false, error: "Invalid grade table payload" });
+  }
+  try {
+    const { w, h } = aspectDims(p.aspect);
+    // Each video as the export normalizes it: HDR made normal, fitted to
+    // the frame, only the part on the timeline.
+    const items = await Promise.all(
+      sources.map(async (s) => ({
+        file: s.url,
+        inMs: Number(s.in_ms) || 0,
+        outMs: Number(s.out_ms) || 0,
+        pre: [hdrToSdr(await probeColour(spawn, ffmpegPath, s.url)), coverFilter(w, h)].filter(Boolean).join(","),
+      })),
+    );
+    const stats = await analyzeColour(ffmpegPath, items, { center: p.center ?? null });
+    const params = correctionParams(stats);
+    const pick = p.lut && typeof p.lut.id === "string" ? p.lut : null;
+    const k = pick ? packSkinSafeStrength(pick.id, Number(pick.strength ?? 1), correctedSkin(stats)) : 0;
+    const table = bakeGradeTable({
+      correct: (r, g, b) => correctColour(params, r, g, b),
+      look: p.look ?? null,
+      pack: pick && k > 0 ? { id: pick.id, k } : null,
+    });
+    res.json({
+      ok: true,
+      size: table.size,
+      table: table.data.toString("base64"),
+      lut: pick ? { id: pick.id, strength: k } : null,
+      correction: params,
+    });
+  } catch (e) {
+    console.warn("[Worker] Grade table failed:", e?.message || e);
+    res.status(500).json({ ok: false, error: "Couldn't make the grade table" });
+  }
 });
 
 // The colour choices on this footage, for the automatic edit's LUT pick: a
@@ -2148,8 +2195,14 @@ async function runRender(job) {
     let correction = null;
     let colourStats = null;
     try {
-      // (exposed for the speaker's skin: their face's place, when the plan has it)
-      colourStats = await analyzeColour(ffmpegPath, composedOut, { center: motionJob?.angles?.center ?? null });
+      // (exposed for the speaker's skin: their face's place, when the plan has
+      // it). Measured on the main track's videos (trimmed, fitted, HDR made
+      // normal), as the editor's preview measures them (/grade-table), so
+      // both grade with the same numbers; the whole video when there are none.
+      const mainVideos = normalized.slice(0, mainClips.length).filter((_, k) => !isImageClip(mainClips[k]));
+      colourStats = await analyzeColour(ffmpegPath, mainVideos.length ? mainVideos : composedOut, {
+        center: motionJob?.angles?.center ?? null,
+      });
       correction = correctionFilter(colourStats);
     } catch (e) {
       console.warn(`[Worker] Colour analysis failed for job=${job.job_id}:`, e?.message || e);
