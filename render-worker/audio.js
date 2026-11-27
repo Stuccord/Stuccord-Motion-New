@@ -4,8 +4,10 @@
 // at.
 //
 //   voice (the video's own sound, and each voiceover)
-//     mono-centred -> 80 Hz low-cut -> light noise reduction -> EQ (less mud,
-//     more presence and air) -> gain to VOICE_LUFS (measured per render) ->
+//     mono-centred -> cleanup measured per recording (noise.js: clipped
+//     peaks rebuilt, 80 Hz low-cut, mains hum notched, clicks repaired,
+//     noise reduced as hard as the room needs) -> EQ (less mud, more
+//     presence and air) -> gain to VOICE_LUFS (measured per render) ->
 //     3:1 compressor -> de-esser
 //   music   measured, set MUSIC_UNDER_VOICE_LU under the voice at the slider's
 //           default, ducked a further ~10 dB while anyone speaks
@@ -19,6 +21,7 @@
 
 import { spawn } from "child_process";
 import { limitThreads } from "./threads.js";
+import { voiceCleanup } from "./noise.js";
 
 /** Where the voice is set before mixing (integrated loudness). */
 export const VOICE_LUFS = -20;
@@ -45,9 +48,9 @@ const FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
  * it, what the compressor took off (measured through the whole chain, see
  * voiceTrimDb), so the voice lands on VOICE_LUFS.
  */
-export function voiceChain(gainDb = 0, trimDb = 0) {
+export function voiceChain(gainDb = 0, trimDb = 0, cleanup = DEFAULT_CLEANUP) {
   return [
-    VOICE_PRE,
+    voicePre(cleanup),
     `volume=${gainDb.toFixed(2)}dB`,
     VOICE_DYNAMICS,
     `volume=${trimDb.toFixed(2)}dB`,
@@ -56,7 +59,8 @@ export function voiceChain(gainDb = 0, trimDb = 0) {
 }
 
 /** What the whole voice chain at `gainDb` is measured through (for voiceTrimDb). */
-export const voiceChainMeasure = (gainDb) => voiceChain(gainDb, 0);
+export const voiceChainMeasure = (gainDb, cleanup = DEFAULT_CLEANUP) =>
+  voiceChain(gainDb, 0, cleanup);
 
 /** The trim (dB) that brings a voice measured at `lufs` through the whole chain to VOICE_LUFS. */
 export function voiceTrimDb(lufs) {
@@ -64,27 +68,34 @@ export function voiceTrimDb(lufs) {
   return Math.min(6, Math.max(-6, VOICE_LUFS - lufs));
 }
 
-/** The voice chain up to the level correction: what the voice is measured through. */
-export const VOICE_PRE = [
-  // Phone and camera mics are a mono source; summing keeps it centred and
-  // avoids the phasey sound two slightly different channels make.
-  "pan=mono|c0=0.5*c0+0.5*c1",
-  // Rumble, handling and air-con below the voice.
-  "highpass=f=80:poles=2",
-  // Light, adaptive broadband noise reduction (a quiet room barely changes).
-  "afftdn=nr=6:nf=-60:tn=1",
-  // Less boxiness, more intelligibility on phone speakers, a little air.
-  "equalizer=f=250:t=q:w=1:g=-2.5",
-  "equalizer=f=3500:t=q:w=1:g=3",
-  "highshelf=f=10000:g=1.5",
-].join(",");
+/** The cleanup when the voice couldn't be measured: an 80 Hz low-cut and light noise reduction. */
+export const DEFAULT_CLEANUP = voiceCleanup(null).filters;
+
+/**
+ * The voice chain up to the level correction: what the voice is measured
+ * through. `cleanup` is the recording's own repair (noise.js voiceCleanup).
+ */
+export function voicePre(cleanup = DEFAULT_CLEANUP) {
+  return [
+    // Phone and camera mics are a mono source; summing keeps it centred and
+    // avoids the phasey sound two slightly different channels make.
+    "pan=mono|c0=0.5*c0+0.5*c1",
+    // Clipping, rumble, hum, clicks and noise: only what was measured.
+    cleanup,
+    // Less boxiness, more intelligibility on phone speakers, a little air.
+    "equalizer=f=250:t=q:w=1:g=-2.5",
+    "equalizer=f=3500:t=q:w=1:g=3",
+    "highshelf=f=10000:g=1.5",
+  ].join(",");
+}
 
 /**
  * What the voice is measured through: the chain up to the level correction,
  * in stereo as it plays (a mono signal reads 3 LU quieter than the same
  * voice on both channels, which would set it 3 dB too hot against music).
  */
-export const VOICE_MEASURE = `${VOICE_PRE},pan=stereo|c0=c0|c1=c0`;
+export const voiceMeasure = (cleanup = DEFAULT_CLEANUP) =>
+  `${voicePre(cleanup)},pan=stereo|c0=c0|c1=c0`;
 
 /**
  * The voice's dynamics, on a voice at VOICE_LUFS: a 3:1 compressor that
@@ -197,7 +208,8 @@ export function loudnessReader() {
 
 /**
  * ffmpeg arguments that mix the sound to `out` (a WAV the video's length):
- *  - the voice: the video's own audio through voiceChain(voiceGain, voiceTrim), or
+ *  - the voice: the video's own audio through voiceChain(voiceGain, voiceTrim,
+ *    voiceClean), or
  *    silence if it has none (quieter under a voiceover),
  *  - the music, each file at its own gain (musicGainDb), faded in and out
  *    and ducked under the voice: musicPlan { mode: "sequence", paths }
@@ -205,7 +217,7 @@ export function loudnessReader() {
  *    { mode: "segments", segments: [{ path, startMs, endMs }] } loops each
  *    file over its own span,
  *  - sfxEvents: [{ path, atMs, gain?, gainDb? }], each played once,
- *  - voiceovers: [{ path, atMs, inMs, outMs, gainDb, trimDb }], each through the
+ *  - voiceovers: [{ path, atMs, inMs, outMs, gainDb, trimDb, cleanup }], each through the
  *    voice chain at its own gain; the video's sound and the music duck
  *    under them.
  * `musicGains` maps a music path to its gain in dB (null mutes it).
@@ -219,6 +231,7 @@ export function buildAudioMixArgs({
   voiceovers = [],
   voiceGain = 0,
   voiceTrim = 0,
+  voiceClean = DEFAULT_CLEANUP,
   musicGains = new Map(),
   out,
 }) {
@@ -244,7 +257,7 @@ export function buildAudioMixArgs({
       const at = Math.max(0, Math.round(vo.atMs));
       graph.push(
         `[${firstVo + k}:a]${FMT},atrim=start=${from}${to},asetpts=PTS-STARTPTS,` +
-          `${voiceChain(vo.gainDb ?? 0, vo.trimDb ?? 0)},adelay=${at}:all=1[vo${k}]`,
+          `${voiceChain(vo.gainDb ?? 0, vo.trimDb ?? 0, vo.cleanup ?? DEFAULT_CLEANUP)},adelay=${at}:all=1[vo${k}]`,
       );
     });
     // Mixed onto silence the length of the video, which places each one by
@@ -260,7 +273,7 @@ export function buildAudioMixArgs({
   // Voice: the video's audio, cleaned and levelled (quieter under a voiceover).
   if (hasVoice) {
     graph.push(
-      `[0:a]${FMT},${voiceChain(voiceGain, voiceTrim)}` +
+      `[0:a]${FMT},${voiceChain(voiceGain, voiceTrim, voiceClean)}` +
         (hasMusic ? ",asplit=2[voiceraw][voicekey]" : "[voiceraw]"),
     );
     graph.push(

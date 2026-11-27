@@ -75,11 +75,12 @@ import {
   sfxGainDb,
   limitFor,
   limiterArgs,
-  VOICE_MEASURE,
+  voiceMeasure,
   voiceChainMeasure,
   voiceGainDb,
   voiceTrimDb,
 } from "./audio.js";
+import { analyzeVoice, voiceCleanup } from "./noise.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -1352,6 +1353,24 @@ function probeMedia(file) {
   });
 }
 
+/** How long a clip's sound runs once trimmed (ms), or null when it can't be told. */
+function clipSoundMs(durationMs, trimInMs, trimOutMs) {
+  const out = trimOutMs != null && Number(trimOutMs) > 0 ? Number(trimOutMs) : null;
+  // A trim past the end of the file stops where the file does.
+  const end = out != null && Number.isFinite(durationMs) ? Math.min(out, durationMs) : (out ?? durationMs);
+  if (!Number.isFinite(end)) return null;
+  const len = end - trimInMs;
+  return len > 0 ? len : null;
+}
+
+/** Fades at a clip's cut points (CUT_FADE_MS in and out). */
+const CUT_FADE_MS = 10;
+function cutFades(lengthMs) {
+  const d = (CUT_FADE_MS / 1000).toFixed(3);
+  const outAt = Math.max(0, (lengthMs - CUT_FADE_MS) / 1000).toFixed(3);
+  return `afade=t=in:st=0:d=${d},afade=t=out:st=${outAt}:d=${d}`;
+}
+
 async function probeDurationMs(file) {
   return (await probeMedia(file)).durationMs;
 }
@@ -1721,6 +1740,11 @@ async function runRender(job) {
           "-map", "0:v:0", "-map", "1:a:0", "-shortest",
         );
       }
+      // A tiny fade at each end of a clip's sound, so a cut (a filler or a
+      // retake taken out, the join to the next clip) never clicks: a cut
+      // mid-waveform jumps, and a jump is a click. 10 ms is too short to hear.
+      const soundMs = !image && probe.hasAudio ? clipSoundMs(probe.durationMs, trimInMs, trimOutMs) : null;
+      if (soundMs) args.push("-af", cutFades(soundMs));
       args.push(
         "-vf", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
@@ -2092,13 +2116,23 @@ async function runRender(job) {
             console.warn(`[Worker] Measuring ${path.basename(file)} failed:`, e?.message || e);
             return null;
           });
-        // A voice is set in two measurements: its level into the compressor,
-        // then a trim for what the compressor took off.
+        // A voice is listened to first (noise, hum, clicks, clipping: its
+        // cleanup, noise.js), then set in two measurements through that
+        // cleanup: its level into the compressor, then a trim for what the
+        // compressor took off. One cleanup for the whole track, so the
+        // background stays the same across every cut.
         const levelVoice = async (file) => {
-          const before = await measure(file, { filters: VOICE_MEASURE });
+          const heard = await analyzeVoice(ffmpegPath, file).catch((e) => {
+            console.warn(`[Worker] Listening to ${path.basename(file)} failed:`, e?.message || e);
+            return null;
+          });
+          const { filters: cleanup, report } = voiceCleanup(heard);
+          const before = await measure(file, { filters: voiceMeasure(cleanup) });
           const gainDb = voiceGainDb(before?.i);
-          const after = before ? await measure(file, { filters: voiceChainMeasure(gainDb) }) : null;
-          return { lufs: before?.i ?? null, gainDb, trimDb: voiceTrimDb(after?.i) };
+          const after = before
+            ? await measure(file, { filters: voiceChainMeasure(gainDb, cleanup) })
+            : null;
+          return { lufs: before?.i ?? null, gainDb, trimDb: voiceTrimDb(after?.i), cleanup, report };
         };
         const voiceLevel = video.hasAudio ? await levelVoice(composedOut) : null;
         const musicGains = new Map();
@@ -2125,6 +2159,7 @@ async function runRender(job) {
             outMs: c.trim_out_ms != null ? Number(c.trim_out_ms) : null,
             gainDb: level.gainDb,
             trimDb: level.trimDb,
+            cleanup: level.cleanup,
           });
         }
 
@@ -2142,6 +2177,7 @@ async function runRender(job) {
             voiceovers,
             voiceGain: voiceLevel?.gainDb ?? 0,
             voiceTrim: voiceLevel?.trimDb ?? 0,
+            voiceClean: voiceLevel?.cleanup,
             musicGains,
             out: mixPath,
           }),
@@ -2174,6 +2210,8 @@ async function runRender(job) {
           sound: {
             voice_lufs: voiceLevel?.lufs ?? null,
             mix_lufs: mixLevel?.i ?? null,
+            // What the voice's cleanup found and did (noise.js voiceCleanup).
+            cleanup: voiceLevel?.report ?? null,
           },
         };
       } catch (e) {
