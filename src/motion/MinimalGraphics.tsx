@@ -1017,7 +1017,7 @@ const MinimalCard: Draw = ({ g, theme }) => {
   const fade = useFade();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
-  const size = unit * (portrait ? 5.4 : 4.2);
+  const size = unit * (portrait ? 6.2 : 4.4);
   const lines = 1 + g.items.length;
   const card = useCard(unit);
   return (
@@ -1075,7 +1075,7 @@ const MinimalCompare: Draw = ({ g, theme }) => {
   const length = g.to - g.from;
   const [a, b] = [g.items[0] ?? "", g.items[1] ?? ""];
   const second = Math.max(10, Math.round(length * 0.4));
-  const size = unit * (portrait ? 5 : 4);
+  const size = unit * (portrait ? 6 : 4.4);
   const card = useCard(unit);
   const side = (text: string, delay: number, on: boolean) => (
     <div
@@ -1171,11 +1171,11 @@ const MinimalLabel: Draw = ({ g, theme }) => {
         style={{
           position: "absolute",
           left: unit * 5,
-          bottom: portrait ? "9%" : unit * 5,
+          ...(portrait ? { top: "11%" } : { bottom: unit * 5 }),
           display: "flex",
           alignItems: "center",
           gap: unit * 1.4,
-          fontSize: unit * (portrait ? 3.2 : 2.6),
+          fontSize: unit * (portrait ? 4.4 : 3),
           fontWeight: 500,
           letterSpacing: "0.04em",
           color: INK,
@@ -1215,9 +1215,13 @@ const MinimalCta: Draw = ({ g, theme }) => {
       <div
         style={{
           position: "absolute",
-          left: "50%",
+          // Centred by layout (its entrance animation sets its own transform).
+          left: 0,
+          right: 0,
+          marginLeft: "auto",
+          marginRight: "auto",
+          width: "fit-content",
           bottom: portrait ? "32%" : "31%",
-          transform: `translateX(-50%) scale(${click ? 0.96 : 1})`,
           display: "flex",
           alignItems: "center",
           gap: unit * 1.4,
@@ -1227,7 +1231,9 @@ const MinimalCta: Draw = ({ g, theme }) => {
           background: done ? INK : "var(--cg-button)",
           color: done ? PAGE : INK,
           fontWeight: 500,
-          fontSize: unit * 3.2,
+          fontSize: unit * (portrait ? 5.8 : 3.6),
+          maxWidth: portrait ? "64%" : "50%",
+          textAlign: "center",
           ...fade(frame, 0, unit),
         }}
       >
@@ -1508,7 +1514,8 @@ const MinimalSteps: Draw = ({ g, theme }) => {
   // A track with a node per step, filling to each as it's reached:
   // down the left (tall videos) or across (wide ones).
   const a = portrait ? height * 0.3 : width * 0.12;
-  const b = portrait ? height * 0.86 : width * 0.88;
+  // The last step stays above the platforms' caption strip (bottom 14%).
+  const b = portrait ? height * 0.78 : width * 0.88;
   const pos = (i: number) => (n === 1 ? (a + b) / 2 : a + ((b - a) * i) / (n - 1));
   // The last step reached; the fill runs on to it as it's reached.
   const reached = starts.reduce((r, s, i) => (frame >= s ? i : r), 0);
@@ -1615,7 +1622,7 @@ const MinimalSteps: Draw = ({ g, theme }) => {
                 <div
                   style={{
                     marginTop: unit * 0.8,
-                    fontSize: unit * (portrait ? 4.4 : 3.4),
+                    fontSize: unit * (portrait ? 6 : 3.8),
                     fontWeight: on && i === reached ? 500 : 400,
                     color: on ? INK : SOFT,
                     lineHeight: 1.2,
@@ -1643,7 +1650,8 @@ const MinimalLoop: Draw = ({ g, theme }) => {
   const R = Math.min(width, height) * 0.13;
   const cx = width / 2;
   const cy = height * (portrait ? 0.54 : 0.56);
-  const rx = R * (portrait ? 1.75 : 2.6);
+  // Narrower on tall videos: the right-hand stop stays clear of the platforms' buttons.
+  const rx = R * (portrait ? 1.35 : 2.6);
   const ry = R * (portrait ? 2.2 : 1.45);
   const at = (k: number) => {
     const ang = -Math.PI / 2 + k * Math.PI * 2;
@@ -1688,7 +1696,7 @@ const MinimalLoop: Draw = ({ g, theme }) => {
         const ly = q.y + (dy / len) * unit * 4.5;
         const align = Math.abs(dx) < rx * 0.2 ? "center" : dx > 0 ? "left" : "right";
         const swapped = g.swap?.item === i;
-        const size = unit * (portrait ? 3.8 : 3);
+        const size = unit * (portrait ? 5.8 : 3.6);
         return (
           <React.Fragment key={i}>
             <div
@@ -1709,7 +1717,10 @@ const MinimalLoop: Draw = ({ g, theme }) => {
                 top: ly,
                 transform: `translate(${align === "center" ? "-50%" : "0"}, -50%)`,
                 ...(align === "left"
-                  ? { left: lx, width: Math.max(unit * 12, width - lx - unit * 3) }
+                  ? {
+                      left: lx,
+                      width: Math.max(unit * 12, (portrait ? width * 0.84 : width - unit * 3) - lx),
+                    }
                   : align === "right"
                     ? { left: unit * 3, width: Math.max(unit * 12, lx - unit * 3) }
                     : { left: lx, width: width * 0.6 }),
@@ -2112,17 +2123,19 @@ const MINIMAL_DRAW: Record<PlacedGraphic["type"], Draw> = {
 };
 
 /**
- * Lively skins: the whole graphic is a camera that never stops - a slow
- * micro-push while it holds (1 → 1.02, easy ease), then a quick ease-in
- * push through as it fades out (exits are faster than arrivals).
+ * Every skin: the whole graphic is a camera that never stops (a motion
+ * rule: nothing sits frozen on screen) - a slow micro-push while it holds,
+ * then a quick ease-in push through as it fades out (exits are faster than
+ * arrivals). Lively skins push more (1 -> 1.02, out 1.03); calm ones
+ * (cinematic, minimal, documentary...) barely (1 -> 1.012, out 1.02), so
+ * the motion is felt, not seen.
  */
 function useCamera(g: PlacedGraphic): React.CSSProperties | undefined {
   const { lively } = useSkin();
   const frame = useStepFrame();
-  if (!lively) return undefined;
   const length = Math.max(1, g.to - g.from);
-  const hold = 1 + 0.02 * easeInOut(frame / length);
-  const out = 1 + 0.03 * easeIn((frame - (length - 8)) / 8);
+  const hold = 1 + (lively ? 0.02 : 0.012) * easeInOut(frame / length);
+  const out = 1 + (lively ? 0.03 : 0.02) * easeIn((frame - (length - 8)) / 8);
   return { transform: `scale(${hold * out})`, transformOrigin: "50% 50%" };
 }
 
@@ -2151,6 +2164,23 @@ function Skinned({ skin, g, theme }: { skin: Skin; g: PlacedGraphic; theme: Moti
   );
 }
 
+/**
+ * A look's own full scenes (MinimalScene, DocuScene, ...) under the same calm
+ * camera as its other graphics: a micro-push while it holds, a quick push
+ * through as it leaves, so nothing sits frozen.
+ */
+function SceneCamera({ g, children }: { g: PlacedGraphic; children: React.ReactNode }) {
+  const frame = useStepFrame();
+  const length = Math.max(1, g.to - g.from);
+  const hold = 1 + 0.012 * easeInOut(frame / length);
+  const out = 1 + 0.02 * easeIn((frame - (length - 8)) / 8);
+  return (
+    <AbsoluteFill style={{ transform: `scale(${hold * out})`, transformOrigin: "50% 50%" }}>
+      {children}
+    </AbsoluteFill>
+  );
+}
+
 /** White, the Minimal look's only colour (no accent: the key word goes italic). */
 const MONO = { accent: "#F4F4F2", glow: "rgba(244, 244, 242, 0.25)" };
 
@@ -2159,7 +2189,12 @@ const MONO = { accent: "#F4F4F2", glow: "rgba(244, 244, 242, 0.25)" };
  * (MinimalScene), everything else in white on black with serif titles.
  */
 export function MinimalGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isMinimalScene(g)) return <MinimalScene g={g} />;
+  if (isMinimalScene(g))
+    return (
+      <SceneCamera g={g}>
+        <MinimalScene g={g} />
+      </SceneCamera>
+    );
   return <Skinned skin={MINIMAL_SKIN} g={g} theme={{ ...theme, ...MONO }} />;
 }
 
@@ -2170,7 +2205,12 @@ export function FilmGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme
 
 /** One graphic in the Documentary look: its key moments as drawn scenes, the rest in its light skin. */
 export function DocuGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isDocuScene(g)) return <DocuScene g={g} />;
+  if (isDocuScene(g))
+    return (
+      <SceneCamera g={g}>
+        <DocuScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={DOCU_SKIN}
@@ -2182,7 +2222,12 @@ export function DocuGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme
 
 /** One graphic in the 3D Cinematic look: its key moments as glowing scenes, the rest dark and red-lit. */
 export function Cine3dGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isCineScene(g)) return <Cine3dScene g={g} />;
+  if (isCineScene(g))
+    return (
+      <SceneCamera g={g}>
+        <Cine3dScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={CINE3D_SKIN}
@@ -2199,7 +2244,12 @@ export function SaasGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme
 
 /** One graphic in the Bulletin look: newsroom graphics for its key moments, the rest in its light skin. */
 export function BulletinGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isBulletinScene(g)) return <BulletinScene g={g} />;
+  if (isBulletinScene(g))
+    return (
+      <SceneCamera g={g}>
+        <BulletinScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={BULLETIN_SKIN}
@@ -2211,7 +2261,12 @@ export function BulletinGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionT
 
 /** One graphic in the Impact look: stamped graphics for its key moments, the rest in its black skin. */
 export function ImpactGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isImpactScene(g)) return <ImpactScene g={g} />;
+  if (isImpactScene(g))
+    return (
+      <SceneCamera g={g}>
+        <ImpactScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={IMPACT_SKIN}
@@ -2223,7 +2278,12 @@ export function ImpactGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionThe
 
 /** One graphic in the Noir look: typed scenes for its key moments, the rest in its black skin. */
 export function NoirGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isNoirScene(g)) return <NoirScene g={g} />;
+  if (isNoirScene(g))
+    return (
+      <SceneCamera g={g}>
+        <NoirScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={NOIR_SKIN}
@@ -2235,7 +2295,12 @@ export function NoirGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme
 
 /** One graphic in the Monument look: inscription scenes for its key moments, the rest in its dark skin. */
 export function MonumentGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isMonumentScene(g)) return <MonumentScene g={g} />;
+  if (isMonumentScene(g))
+    return (
+      <SceneCamera g={g}>
+        <MonumentScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={MONUMENT_SKIN}
@@ -2247,7 +2312,12 @@ export function MonumentGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionT
 
 /** One graphic in the Studio Talk look: studio graphics for its key moments, the rest in its warm skin. */
 export function TalkGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isTalkScene(g)) return <TalkScene g={g} />;
+  if (isTalkScene(g))
+    return (
+      <SceneCamera g={g}>
+        <TalkScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={TALK_SKIN}
@@ -2259,7 +2329,12 @@ export function TalkGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme
 
 /** One graphic in the Notebook look: notebook scenes for its key moments, the rest in its paper skin. */
 export function NotebookGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isNotebookScene(g)) return <NotebookScene g={g} />;
+  if (isNotebookScene(g))
+    return (
+      <SceneCamera g={g}>
+        <NotebookScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={NOTEBOOK_SKIN}
@@ -2271,7 +2346,12 @@ export function NotebookGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionT
 
 /** One graphic in the Spec HUD look: readout scenes for its key moments, the rest in its black skin. */
 export function HudGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isHudScene(g)) return <HudScene g={g} />;
+  if (isHudScene(g))
+    return (
+      <SceneCamera g={g}>
+        <HudScene g={g} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={HUD_SKIN}
@@ -2283,7 +2363,12 @@ export function HudGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme 
 
 /** One graphic in the Studio 3D look: 3D studio scenes for its key moments, the rest in its light skin. */
 export function StudioGraphic({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
-  if (isStudioScene(g)) return <StudioScene g={g} theme={theme} />;
+  if (isStudioScene(g))
+    return (
+      <SceneCamera g={g}>
+        <StudioScene g={g} theme={theme} />
+      </SceneCamera>
+    );
   return (
     <Skinned
       skin={STUDIO_SKIN}

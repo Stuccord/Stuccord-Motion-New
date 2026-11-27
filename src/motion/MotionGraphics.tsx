@@ -49,6 +49,8 @@ import {
   LogoContext,
   behindBand,
   clamp01,
+  easeIn,
+  easeInOut,
   easeOut,
   exitOpacity,
   pop,
@@ -209,7 +211,8 @@ function SceneWords({
       style={{
         position: "absolute",
         left: unit * 8,
-        right: unit * 8,
+        // Clear of the buttons down the right edge (tall videos).
+        right: portrait ? unit * 15 : unit * 8,
         bottom: portrait ? "18%" : "12%",
         textAlign: "center",
         fontWeight: 700,
@@ -613,7 +616,8 @@ function Loop({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   const cx = width / 2;
   const cy = height * (portrait ? 0.52 : 0.55);
   // Portrait has little room either side, plenty above and below.
-  const rx = R * (portrait ? 1.75 : 2.6);
+  // Narrower on tall videos: the right-hand stop stays clear of the platforms' buttons.
+  const rx = R * (portrait ? 1.15 : 2.6);
   const ry = R * (portrait ? 2.4 : 1.45);
   const rise = easeOut(frame / 14);
   const at = (k: number) => {
@@ -680,7 +684,7 @@ function Loop({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
           const ly = q.y + (dy / len) * unit * 5;
           const align = Math.abs(dx) < rx * 0.2 ? "center" : dx > 0 ? "left" : "right";
           const swapped = g.swap?.item === i;
-          const size = unit * (portrait ? 4 : 3.2);
+          const size = unit * (portrait ? 5.8 : 3.6);
           return (
             <React.Fragment key={i}>
               <div
@@ -704,7 +708,13 @@ function Loop({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
                   top: ly,
                   transform: `translate(${align === "center" ? "-50%" : "0"}, -50%)`,
                   ...(align === "left"
-                    ? { left: lx, width: Math.max(unit * 12, width - lx - unit * 3) }
+                    ? {
+                        left: lx,
+                        width: Math.max(
+                          unit * 12,
+                          (portrait ? width * 0.84 : width - unit * 3) - lx,
+                        ),
+                      }
                     : align === "right"
                       ? { left: unit * 3, width: Math.max(unit * 12, lx - unit * 3) }
                       : { left: lx, width: width * 0.6 }),
@@ -1492,7 +1502,7 @@ function List({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
               maxWidth: "100%",
               padding: `${unit * 1.8}px ${unit * 2.8}px`,
               marginBottom: unit * 1.4,
-              fontSize: unit * (portrait ? 4.6 : 3.8),
+              fontSize: unit * (portrait ? 6.2 : 4.2),
               fontWeight: 600,
               ...pop(frame, listAt[i], unit),
             }}
@@ -1524,7 +1534,7 @@ function Card({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
       <div style={cardPlace(portrait, unit)}>
         <Glass theme={theme} unit={unit} style={pop(frame, 0, unit, 16)}>
           <div
-            style={{ fontSize: unit * (portrait ? 5.6 : 4.6), fontWeight: 700, lineHeight: 1.15 }}
+            style={{ fontSize: unit * (portrait ? 6.2 : 4.8), fontWeight: 700, lineHeight: 1.15 }}
           >
             {titleWords.map(({ w, special }, i) => (
               <span
@@ -1578,7 +1588,7 @@ function Compare({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
       style={{
         flex: 1,
         textAlign: "center",
-        fontSize: unit * (portrait ? 5 : 4.2),
+        fontSize: unit * (portrait ? 6 : 4.4),
         fontWeight: 700,
         ...(accent ? { borderColor: theme.accent } : {}),
         ...pop(frame, delay, unit, 16),
@@ -1606,7 +1616,7 @@ function Compare({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
           style={{
             fontFamily: SERIF,
             fontStyle: "italic",
-            fontSize: unit * 5,
+            fontSize: unit * (portrait ? 6 : 5),
             color: theme.accent,
             textShadow: `0 0 ${unit * 2}px ${theme.glow}`,
             ...pop(frame, second - 4, unit),
@@ -1732,7 +1742,8 @@ function Label({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
         style={{
           position: "absolute",
           left: unit * 4,
-          bottom: portrait ? "9%" : unit * 4,
+          // Out of the platforms' caption strip at the bottom (tall videos).
+          ...(portrait ? { top: "11%" } : { bottom: unit * 4 }),
           display: "flex",
           alignItems: "center",
           gap: unit * 1.2,
@@ -1742,7 +1753,7 @@ function Label({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
           border: `1px solid ${theme.glow}`,
           fontFamily: SANS,
           fontWeight: 600,
-          fontSize: unit * 2.6,
+          fontSize: unit * (portrait ? 4.2 : 2.8),
           color: theme.text,
           ...pop(frame, 0, unit),
         }}
@@ -1778,10 +1789,14 @@ function Cta({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
       <div
         style={{
           position: "absolute",
-          left: "50%",
+          // Centred by layout (its entrance animation sets its own transform).
+          left: 0,
+          right: 0,
+          marginLeft: "auto",
+          marginRight: "auto",
+          width: "fit-content",
           // Above the captions (which sit about 20% up from the bottom).
           bottom: portrait ? "32%" : "31%",
-          transform: `translateX(-50%) scale(${click ? 0.94 : 1})`,
           display: "flex",
           alignItems: "center",
           gap: unit * 1.6,
@@ -1792,7 +1807,10 @@ function Cta({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
           boxShadow: done ? `0 0 ${unit * 3}px ${theme.glow}` : "0 6px 24px rgba(0,0,0,0.5)",
           fontFamily: SANS,
           fontWeight: 700,
-          fontSize: unit * 3.6,
+          fontSize: unit * (portrait ? 5.8 : 3.8),
+          // Wraps rather than reaching the buttons down the right edge.
+          maxWidth: portrait ? "64%" : "50%",
+          textAlign: "center",
           color: done ? theme.main : theme.text,
           ...pop(frame, 0, unit),
         }}
@@ -1849,6 +1867,24 @@ const DRAW: Record<
   ),
 };
 
+/**
+ * The Glass and Paper looks' graphics never sit frozen (a motion rule): a
+ * slow micro-push while one holds (1 -> 1.015), then a quick ease-in push
+ * as it leaves (exits faster than arrivals), as the other looks' camera
+ * (MinimalGraphics useCamera).
+ */
+function HoldCamera({ g, children }: { g: PlacedGraphic; children: React.ReactNode }) {
+  const frame = useStepFrame();
+  const length = Math.max(1, g.to - g.from);
+  const hold = 1 + 0.015 * easeInOut(frame / length);
+  const out = 1 + 0.025 * easeIn((frame - (length - 8)) / 8);
+  return (
+    <AbsoluteFill style={{ transform: `scale(${hold * out})`, transformOrigin: "50% 50%" }}>
+      {children}
+    </AbsoluteFill>
+  );
+}
+
 /** Every graphic, each in its own stretch of the timeline. */
 export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGraphicsProps) {
   // Graphics are placed in 30 fps frames; at a lower rate, scale them.
@@ -1904,7 +1940,13 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
                 )}
                 layout="none"
               >
-                <Draw g={g} theme={theme} />
+                {look === "paper" || !look || look === "glass" ? (
+                  <HoldCamera g={g}>
+                    <Draw g={g} theme={theme} />
+                  </HoldCamera>
+                ) : (
+                  <Draw g={g} theme={theme} />
+                )}
               </Sequence>
             );
           })}

@@ -182,7 +182,8 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
   // A quick cut to black in and out; the contents take their time.
   const opacity = clamp01(frame / 4) * exitOpacity(frame, length, 6);
   const textTop = portrait ? "70%" : "66%";
-  const size = unit * (portrait ? 4.4 : 3.6);
+  // Readable on a phone (key lines ~3.3% of a tall frame's height).
+  const size = unit * (portrait ? 5.6 : 3.8);
 
   let lines = 4;
   let drop = portrait ? 0.38 : 0.34;
@@ -288,7 +289,7 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
           </div>
         )}
         {g.items.map((item, i) => (
-          <div key={i} style={{ fontSize: size * 0.9, lineHeight: 1.5 }}>
+          <div key={i} style={{ fontSize: size, lineHeight: 1.5 }}>
             <span
               style={{
                 ...label(unit),
@@ -298,7 +299,7 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
             >
               {String(i + 1).padStart(2, "0")}
             </span>
-            <Line text={item} emphasis={null} frame={frame} delay={lineAt[i]} size={size * 0.9} />
+            <Line text={item} emphasis={null} frame={frame} delay={lineAt[i]} size={size} />
           </div>
         ))}
       </div>

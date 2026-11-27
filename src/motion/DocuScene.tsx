@@ -12,7 +12,15 @@ import { AbsoluteFill } from "remotion";
 import { SANS } from "@/motion/theme";
 import type { PlacedGraphic } from "@/motion/timing";
 import type { Motif } from "@/lib/motion-plan";
-import { clamp01, easeInOut, easeOut, exitOpacity, splitWords, useStepFrame, useUnit } from "@/motion/kit";
+import {
+  clamp01,
+  easeInOut,
+  easeOut,
+  exitOpacity,
+  splitWords,
+  useStepFrame,
+  useUnit,
+} from "@/motion/kit";
 
 export const DOCU_STAGE = "#E4E3DF";
 export const DOCU_INK = "#1D1D1F";
@@ -68,7 +76,21 @@ function Stroke({
 const part = (p: number, a: number, b: number) => clamp01((p - a) / (b - a));
 
 /** A small flag: the pole draws up, then the red cloth pops out and waves. */
-function Flag({ x, y, size, p, frame, stroke }: { x: number; y: number; size: number; p: number; frame: number; stroke: number }) {
+function Flag({
+  x,
+  y,
+  size,
+  p,
+  frame,
+  stroke,
+}: {
+  x: number;
+  y: number;
+  size: number;
+  p: number;
+  frame: number;
+  stroke: number;
+}) {
   if (p <= 0) return null;
   const pole = easeOut(part(p, 0, 0.5));
   const cloth = easeOut(part(p, 0.4, 1));
@@ -76,7 +98,15 @@ function Flag({ x, y, size, p, frame, stroke }: { x: number; y: number; size: nu
   const top = y - size * pole;
   return (
     <g>
-      <line x1={x} y1={y} x2={x} y2={top} stroke={DOCU_INK} strokeWidth={stroke * 0.5} strokeLinecap="round" />
+      <line
+        x1={x}
+        y1={y}
+        x2={x}
+        y2={top}
+        stroke={DOCU_INK}
+        strokeWidth={stroke * 0.5}
+        strokeLinecap="round"
+      />
       {cloth > 0 && (
         <path
           d={`M${x} ${top} Q ${x + size * 0.35 * cloth} ${top + size * 0.08 + wave}, ${x + size * 0.62 * cloth} ${top + size * 0.17} Q ${x + size * 0.35 * cloth} ${top + size * 0.26 - wave}, ${x} ${top + size * 0.34}Z`}
@@ -88,7 +118,17 @@ function Flag({ x, y, size, p, frame, stroke }: { x: number; y: number; size: nu
 }
 
 /** A road narrowing into the distance: segments drawn one after another, thinner as they go. */
-function Road({ points, p, stroke, widest = 3.2 }: { points: [number, number][]; p: number; stroke: number; widest?: number }) {
+function Road({
+  points,
+  p,
+  stroke,
+  widest = 3.2,
+}: {
+  points: [number, number][];
+  p: number;
+  stroke: number;
+  widest?: number;
+}) {
   const n = points.length - 1;
   return (
     <g>
@@ -178,8 +218,14 @@ export const MOTIF_DRAWINGS: Record<Motif, Drawing> = {
           {sign > 0 && (
             <g opacity={sign}>
               <line x1={72} y1={84} x2={72} y2={58} stroke={DOCU_INK} strokeWidth={s * 0.5} />
-              <path d={`M72 60 L${72 - 10 * sign} 60 L${72 - 14 * sign} 63 L${72 - 10 * sign} 66 L72 66Z`} fill={DOCU_INK} />
-              <path d={`M72 68 L${72 + 10 * sign} 68 L${72 + 14 * sign} 71 L${72 + 10 * sign} 74 L72 74Z`} fill={DOCU_RED} />
+              <path
+                d={`M72 60 L${72 - 10 * sign} 60 L${72 - 14 * sign} 63 L${72 - 10 * sign} 66 L72 66Z`}
+                fill={DOCU_INK}
+              />
+              <path
+                d={`M72 68 L${72 + 10 * sign} 68 L${72 + 14 * sign} 71 L${72 + 10 * sign} 74 L72 74Z`}
+                fill={DOCU_RED}
+              />
             </g>
           )}
         </>
@@ -194,14 +240,19 @@ export const MOTIF_DRAWINGS: Record<Motif, Drawing> = {
       const tilt = t > 0 ? 9 * Math.sin(t * Math.PI * 2.2) * (1 - t) + 2 * t : 0;
       const arm = 32;
       const r = (tilt * Math.PI) / 180;
-      const lx = 50 - arm * Math.cos(r), ly = 36 - arm * Math.sin(r);
-      const rx = 50 + arm * Math.cos(r), ry = 36 + arm * Math.sin(r);
+      const lx = 50 - arm * Math.cos(r),
+        ly = 36 - arm * Math.sin(r);
+      const rx = 50 + arm * Math.cos(r),
+        ry = 36 + arm * Math.sin(r);
       const pan = (x: number, y: number, colour: string, a: number) =>
         a > 0 && (
           <g opacity={a}>
             <line x1={x} y1={y} x2={x - 9} y2={y + 18} stroke={DOCU_INK} strokeWidth={s * 0.3} />
             <line x1={x} y1={y} x2={x + 9} y2={y + 18} stroke={DOCU_INK} strokeWidth={s * 0.3} />
-            <path d={`M${x - 11} ${y + 18} Q ${x} ${y + 26} ${x + 11} ${y + 18}Z`} fill={DOCU_INK} />
+            <path
+              d={`M${x - 11} ${y + 18} Q ${x} ${y + 26} ${x + 11} ${y + 18}Z`}
+              fill={DOCU_INK}
+            />
             <circle cx={x} cy={y + 15} r={3.4} fill={colour} />
           </g>
         );
@@ -225,9 +276,19 @@ export const MOTIF_DRAWINGS: Record<Motif, Drawing> = {
         <>
           <Stroke d="M10 12 L10 88 L94 88" p={part(p, 0, 0.3)} width={s * 0.5} />
           {[30, 50, 70].map((y, i) => (
-            <Stroke key={y} d={`M10 ${y} L94 ${y}`} p={part(p, 0.1 + i * 0.05, 0.4 + i * 0.05)} width={s * 0.15} colour={SOFT} />
+            <Stroke
+              key={y}
+              d={`M10 ${y} L94 ${y}`}
+              p={part(p, 0.1 + i * 0.05, 0.4 + i * 0.05)}
+              width={s * 0.15}
+              colour={SOFT}
+            />
           ))}
-          <Stroke d="M12 80 L28 70 L40 74 L54 54 L66 58 L84 22" p={part(p, 0.3, 0.88)} width={s * 1.3} />
+          <Stroke
+            d="M12 80 L28 70 L40 74 L54 54 L66 58 L84 22"
+            p={part(p, 0.3, 0.88)}
+            width={s * 1.3}
+          />
           {end > 0 && <circle cx={84} cy={22} r={3.6 * end} fill={DOCU_RED} />}
         </>
       );
@@ -261,9 +322,33 @@ export const MOTIF_DRAWINGS: Record<Motif, Drawing> = {
           })}
           {hands > 0 && (
             <g>
-              <line x1={50} y1={50} x2={50 + Math.cos(hour) * 17} y2={50 + Math.sin(hour) * 17} stroke={DOCU_INK} strokeWidth={s * 1.1} strokeLinecap="round" />
-              <line x1={50} y1={50} x2={50 + Math.cos(minute) * 26} y2={50 + Math.sin(minute) * 26} stroke={DOCU_INK} strokeWidth={s * 0.7} strokeLinecap="round" />
-              <line x1={50} y1={50} x2={50 + Math.sin(second) * 29} y2={50 - Math.cos(second) * 29} stroke={DOCU_RED} strokeWidth={s * 0.3} strokeLinecap="round" />
+              <line
+                x1={50}
+                y1={50}
+                x2={50 + Math.cos(hour) * 17}
+                y2={50 + Math.sin(hour) * 17}
+                stroke={DOCU_INK}
+                strokeWidth={s * 1.1}
+                strokeLinecap="round"
+              />
+              <line
+                x1={50}
+                y1={50}
+                x2={50 + Math.cos(minute) * 26}
+                y2={50 + Math.sin(minute) * 26}
+                stroke={DOCU_INK}
+                strokeWidth={s * 0.7}
+                strokeLinecap="round"
+              />
+              <line
+                x1={50}
+                y1={50}
+                x2={50 + Math.sin(second) * 29}
+                y2={50 - Math.cos(second) * 29}
+                stroke={DOCU_RED}
+                strokeWidth={s * 0.3}
+                strokeLinecap="round"
+              />
               <circle cx={50} cy={50} r={1.8} fill={DOCU_RED} />
             </g>
           )}
@@ -290,8 +375,18 @@ export const MOTIF_DRAWINGS: Record<Motif, Drawing> = {
           ))}
           <circle cx={50} cy={50} r={6 * easeOut(part(p, 0.5, 0.65))} fill={DOCU_RED} />
           {fly > 0 && (
-            <g transform={`translate(${ax} ${ay}) rotate(${-38 + Math.sin(hit * Math.PI * 4) * 4 * (1 - hit)})`}>
-              <line x1={0} y1={0} x2={26} y2={0} stroke={DOCU_INK} strokeWidth={s * 0.6} strokeLinecap="round" />
+            <g
+              transform={`translate(${ax} ${ay}) rotate(${-38 + Math.sin(hit * Math.PI * 4) * 4 * (1 - hit)})`}
+            >
+              <line
+                x1={0}
+                y1={0}
+                x2={26}
+                y2={0}
+                stroke={DOCU_INK}
+                strokeWidth={s * 0.6}
+                strokeLinecap="round"
+              />
               <path d="M26 0 L33 -4 L31 0 L33 4Z" fill={DOCU_INK} />
             </g>
           )}
@@ -317,7 +412,10 @@ const HORIZON: Drawing = {
 function chapterDrawing(index: number, count: number): Drawing {
   const n = Math.max(1, Math.min(6, count));
   const at = Math.min(n, Math.max(1, index));
-  const xs = Array.from({ length: n }, (_, i) => 12 + (76 * (i + (n === 1 ? 0.5 : 0))) / Math.max(1, n === 1 ? 1 : n - 1));
+  const xs = Array.from(
+    { length: n },
+    (_, i) => 12 + (76 * (i + (n === 1 ? 0.5 : 0))) / Math.max(1, n === 1 ? 1 : n - 1),
+  );
   const here = xs[at - 1];
   return {
     travel: { from: [xs[0], 70], to: [here, 66] },
@@ -330,7 +428,12 @@ function chapterDrawing(index: number, count: number): Drawing {
           ) : (
             <g key={i} opacity={part(p, 0.3 + i * 0.05, 0.4 + i * 0.05)}>
               <line x1={x} y1={74} x2={x} y2={64} stroke={DOCU_INK} strokeWidth={s * 0.4} />
-              <path d={`M${x} 64 L${x + 6} 66 L${x} 68Z`} fill={i + 1 < at ? DOCU_INK : "none"} stroke={DOCU_INK} strokeWidth={s * 0.25} />
+              <path
+                d={`M${x} 64 L${x + 6} 66 L${x} 68Z`}
+                fill={i + 1 < at ? DOCU_INK : "none"}
+                stroke={DOCU_INK}
+                strokeWidth={s * 0.25}
+              />
             </g>
           ),
         )}
@@ -340,21 +443,48 @@ function chapterDrawing(index: number, count: number): Drawing {
 }
 
 /** The words: the line small, the key word big and red underneath (as in "time is / money"). */
-function Words({ text, emphasis, frame, delay, size }: { text: string; emphasis: string | null; frame: number; delay: number; size: number }) {
+function Words({
+  text,
+  emphasis,
+  frame,
+  delay,
+  size,
+}: {
+  text: string;
+  emphasis: string | null;
+  frame: number;
+  delay: number;
+  size: number;
+}) {
   const words = splitWords(text, emphasis);
   const hasKey = words.some((w) => w.special);
   // The key word goes big on its own line when it ends the line ("time is /
   // money"); in the middle of a line it stays in place, big and red.
   const keyLast = hasKey && words[words.length - 1].special;
   const plain = words.filter((w) => !w.special).map((w) => w.w);
-  const key = words.filter((w) => w.special).map((w) => w.w).join(" ");
+  const key = words
+    .filter((w) => w.special)
+    .map((w) => w.w)
+    .join(" ");
   const arrive = (d: number): React.CSSProperties => {
     const p = easeOut((frame - d) / 14);
-    return { opacity: p, transform: `translateY(${(1 - p) * size * 0.25}px)`, display: "inline-block" };
+    return {
+      opacity: p,
+      transform: `translateY(${(1 - p) * size * 0.25}px)`,
+      display: "inline-block",
+    };
   };
   if (!keyLast) {
     return (
-      <div style={{ fontSize: size, fontWeight: 700, lineHeight: 1.2, color: DOCU_INK, letterSpacing: "-0.01em" }}>
+      <div
+        style={{
+          fontSize: size,
+          fontWeight: 700,
+          lineHeight: 1.2,
+          color: DOCU_INK,
+          letterSpacing: "-0.01em",
+        }}
+      >
         {words.map((w, i) => (
           <span
             key={i}
@@ -374,7 +504,14 @@ function Words({ text, emphasis, frame, delay, size }: { text: string; emphasis:
   return (
     <div style={{ lineHeight: 1.05 }}>
       {plain.length > 0 && (
-        <div style={{ fontSize: size * 0.72, fontWeight: 600, color: DOCU_INK, marginBottom: size * 0.15 }}>
+        <div
+          style={{
+            fontSize: size * 0.72,
+            fontWeight: 600,
+            color: DOCU_INK,
+            marginBottom: size * 0.15,
+          }}
+        >
           {plain.map((w, i) => (
             <span key={i} style={{ ...arrive(delay + i * 3), marginRight: size * 0.18 }}>
               {w}
@@ -382,7 +519,15 @@ function Words({ text, emphasis, frame, delay, size }: { text: string; emphasis:
           ))}
         </div>
       )}
-      <div style={{ ...arrive(delay + plain.length * 3 + 6), fontSize: size * 1.7, fontWeight: 800, color: DOCU_RED, letterSpacing: "-0.02em" }}>
+      <div
+        style={{
+          ...arrive(delay + plain.length * 3 + 6),
+          fontSize: size * 1.7,
+          fontWeight: 800,
+          color: DOCU_RED,
+          letterSpacing: "-0.02em",
+        }}
+      >
         {key}
       </div>
     </div>
@@ -412,16 +557,27 @@ export function DocuScene({ g }: { g: PlacedGraphic }) {
   const travel = easeInOut((frame - 2) / (drawFrames * 1.05));
   const ox = drawing.travel.from[0] + (drawing.travel.to[0] - drawing.travel.from[0]) * travel;
   const oy = drawing.travel.from[1] + (drawing.travel.to[1] - drawing.travel.from[1]) * travel;
-  const zoom = 1.45 - 0.45 * travel + 0.04 * clamp01((frame - drawFrames) / Math.max(1, length - drawFrames));
+  const zoom =
+    1.45 - 0.45 * travel + 0.04 * clamp01((frame - drawFrames) / Math.max(1, length - drawFrames));
 
   // The drawing's square box: the upper part of the frame, the words below.
-  const box = portrait ? Math.min(width * 0.86, height * 0.42) : Math.min(width * 0.5, height * 0.56);
+  const box = portrait
+    ? Math.min(width * 0.86, height * 0.42)
+    : Math.min(width * 0.5, height * 0.56);
   const boxTop = portrait ? height * 0.2 : height * 0.08;
   const stroke = 1.6;
   const size = unit * (portrait ? 6.4 : 4.8);
 
   return (
-    <AbsoluteFill style={{ background: DOCU_STAGE, opacity, overflow: "hidden", fontFamily: SANS, fontSynthesis: "none" }}>
+    <AbsoluteFill
+      style={{
+        background: DOCU_STAGE,
+        opacity,
+        overflow: "hidden",
+        fontFamily: SANS,
+        fontSynthesis: "none",
+      }}
+    >
       {/* The camera's window: the drawing never runs into the words below. */}
       <div
         style={{
@@ -450,7 +606,9 @@ export function DocuScene({ g }: { g: PlacedGraphic }) {
         </div>
       </div>
       {/* The stage's soft vignette, over the drawing. */}
-      <AbsoluteFill style={{ boxShadow: `inset 0 0 ${unit * 22}px rgba(0, 0, 0, 0.28)`, pointerEvents: "none" }} />
+      <AbsoluteFill
+        style={{ boxShadow: `inset 0 0 ${unit * 22}px rgba(0, 0, 0, 0.28)`, pointerEvents: "none" }}
+      />
       {g.type === "chapter" && g.chapter && (
         <div
           style={{
@@ -473,12 +631,19 @@ export function DocuScene({ g }: { g: PlacedGraphic }) {
         style={{
           position: "absolute",
           left: "8%",
-          right: "8%",
+          // Clear of the platforms' buttons down the right edge (tall videos).
+          right: portrait ? "15%" : "8%",
           top: boxTop + box + unit * (g.type === "chapter" ? (portrait ? 9 : 6) : portrait ? 6 : 3),
           textAlign: "center",
         }}
       >
-        <Words text={g.text} emphasis={g.emphasis} frame={frame} delay={g.type === "chapter" ? 14 : 18} size={size} />
+        <Words
+          text={g.text}
+          emphasis={g.emphasis}
+          frame={frame}
+          delay={g.type === "chapter" ? 14 : 18}
+          size={size}
+        />
       </div>
     </AbsoluteFill>
   );
