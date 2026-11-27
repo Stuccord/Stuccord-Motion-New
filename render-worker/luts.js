@@ -181,9 +181,62 @@ const toRgb = (y, cb, cr) => {
 const SKIN_HUE = 123;
 const SKIN_WIDTH = 28;
 
+/**
+ * Skin keeps its own hue through every look, and its depth: the look's
+ * curves, tints and teal shadows go on everything else. Darker skin sits in
+ * the shadows, where the looks' tints are strongest: Cinematic's teal
+ * shadows turned the owner's skin blue (hue 117° -> 5°, 2026-11-27).
+ */
+const SKIN_KEEP = 1;
+/** Skin is a strong colour for its brightness (as colour.js): a pale warm wall isn't skin. */
+const SKIN_SAT_LO = 0.08;
+const SKIN_SAT_HI = 0.15;
+/** A look may darken skin to no less than this share of its brightness. */
+const SKIN_FLOOR = 0.9;
+/** How far either side of skin's hue is kept (wider than the looks' own skin handling). */
+const SKIN_KEEP_WIDTH = 40;
+
+const smooth = (lo, hi, v) => {
+  const t = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+  return t * t * (3 - 2 * t);
+};
+
+/** How much a colour (0-1 RGB) is skin (0-1). */
+function skinWeight(r, g, b) {
+  const [y, cb, cr] = toYcc(r, g, b);
+  const chroma = Math.hypot(cb, cr);
+  // Deep skin in shadow is a faint colour: down to a little chroma counts.
+  if (chroma < 0.004 || y < 0.01) return 0;
+  const hue = ((Math.atan2(cr, cb) * 180) / Math.PI + 360) % 360;
+  return (
+    nearHue(hue, SKIN_HUE, SKIN_KEEP_WIDTH) *
+    smooth(0.004, 0.012, chroma) *
+    smooth(SKIN_SAT_LO, SKIN_SAT_HI, chroma / Math.max(y, 0.05))
+  );
+}
+
 /** One colour (0-1 RGB) through a look's LUT grade. */
 export function gradeColour(look, r, g, b) {
   const spec = LOOK_LUTS[look];
+  const graded = gradeLook(spec, look, r, g, b);
+  if (spec.mono) return graded;
+  const w = skinWeight(r, g, b) * SKIN_KEEP;
+  if (w <= 0) return graded;
+  // The graded colour turned back to the skin's own hue (its strength as
+  // the look made it), and not darker than SKIN_FLOOR of what it was.
+  const [y0, cb0, cr0] = toYcc(r, g, b);
+  const [y1, cb1, cr1] = toYcc(...graded);
+  const m1 = Math.hypot(cb1, cr1);
+  const a0 = Math.atan2(cr0, cb0);
+  const cbT = m1 * Math.cos(a0);
+  const crT = m1 * Math.sin(a0);
+  const yT = Math.max(y1, y0 * SKIN_FLOOR);
+  const out = toRgb(y1 + (yT - y1) * w, cb1 + (cbT - cb1) * w, cr1 + (crT - cr1) * w);
+  return out.map(clamp01);
+}
+
+/** One colour through the look's grade as designed (before skin is kept). */
+function gradeLook(spec, look, r, g, b) {
   const base = lookFinish(look).grade ?? { saturation: 1, contrast: 1 };
   if (base.curves) {
     r = curveFn(base.curves.r)(r);
@@ -338,6 +391,114 @@ export function packLutFilter(id, strength = 1) {
     console.warn(`[Worker] The ${id} LUT couldn't be made:`, e?.message || e);
     return null;
   }
+}
+
+// ---------- the skin check for ready-made LUTs ----------
+// The packs were made for other footage: on the owner's (darker skin, bright
+// wall) 15 of the 24 crushed the face or turned it. Before one is used, it's
+// tried on the video's own skin (colour.js samples, after the correction)
+// and turned down until skin keeps its depth, colour and hue, or dropped.
+
+/** Skin may get no darker than this share of its brightness, */
+const PACK_SKIN_DEPTH = 0.85;
+/** keep this share of its colour, but no more than PACK_SKIN_COLOUR_MAX (orange skin), */
+const PACK_SKIN_COLOUR = 0.6;
+const PACK_SKIN_COLOUR_MAX = 1.4;
+/** A LUT that leaves skin with less than this share of its colour is black and white on purpose. */
+const PACK_MONO = 0.1;
+/** and turn by no more than this (degrees, on average). */
+const PACK_SKIN_TURN = 8;
+/** Lowest strength tried before the LUT is dropped. */
+const PACK_MIN_STRENGTH = 0.2;
+
+const packData = new Map();
+function packTable(id) {
+  if (packData.has(id)) return packData.get(id);
+  let table = null;
+  if (typeof id === "string" && /^[a-z0-9-]{1,80}$/.test(id)) {
+    const file = path.join(PACK_DIR, `${id}.lut`);
+    if (fs.existsSync(file)) {
+      const buf = fs.readFileSync(file);
+      if (buf.length === SIZE ** 3 * 6) {
+        table = new Float32Array(SIZE ** 3 * 3);
+        for (let i = 0; i < table.length; i++) table[i] = buf.readUInt16LE(i * 2) / 65535;
+      }
+    }
+  }
+  packData.set(id, table);
+  return table;
+}
+
+/** One colour through a pack LUT (trilinear), as the export's lut3d does (near enough). */
+function packColour(table, r, g, b) {
+  const n = SIZE - 1;
+  const at = (v) => {
+    const x = Math.min(n, Math.max(0, v * n));
+    const i = Math.min(n - 1, Math.floor(x));
+    return [i, x - i];
+  };
+  const [ri, rf] = at(r);
+  const [gi, gf] = at(g);
+  const [bi, bf] = at(b);
+  const out = [0, 0, 0];
+  for (let db = 0; db < 2; db++)
+    for (let dg = 0; dg < 2; dg++)
+      for (let dr = 0; dr < 2; dr++) {
+        const w = (dr ? rf : 1 - rf) * (dg ? gf : 1 - gf) * (db ? bf : 1 - bf);
+        if (!w) continue;
+        const o = (((bi + db) * SIZE + (gi + dg)) * SIZE + (ri + dr)) * 3;
+        out[0] += table[o] * w;
+        out[1] += table[o + 1] * w;
+        out[2] += table[o + 2] * w;
+      }
+  return out;
+}
+
+/**
+ * The strength a pack LUT can be used at on this video's skin (`skin`: 0-1
+ * RGB colours, after the correction): the asked strength, or lower, to the
+ * nearest 5%; 0 when even PACK_MIN_STRENGTH harms skin (or there's no such
+ * LUT). Without skin colours the asked strength stands.
+ */
+export function packSkinSafeStrength(id, strength, skin) {
+  const table = packTable(id);
+  if (!table) return 0;
+  const asked = Math.round(Math.min(1, Math.max(0, Number(strength) || 0)) * 20) / 20;
+  if (!Array.isArray(skin) || skin.length < 4) return asked;
+  const before = skin.map(([r, g, b]) => toYcc(r, g, b));
+  const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+  const y0 = median(before.map((c) => c[0]));
+  const c0 = median(before.map((c) => Math.hypot(c[1], c[2])));
+  const through = (k) =>
+    skin.map(([r, g, b]) => {
+      const o = packColour(table, r, g, b);
+      return toYcc(r + (o[0] - r) * k, g + (o[1] - g) * k, b + (o[2] - b) * k);
+    });
+  // Black and white on purpose: only skin's depth is checked.
+  const mono = median(through(1).map((c) => Math.hypot(c[1], c[2]))) < c0 * PACK_MONO;
+  // Black and white is all or nothing: turned down it's half-coloured.
+  if (mono) return median(through(asked).map((c) => c[0])) >= y0 * PACK_SKIN_DEPTH ? asked : 0;
+  for (let k = asked; k >= PACK_MIN_STRENGTH - 1e-9; k = Math.round((k - 0.05) * 20) / 20) {
+    const after = through(k);
+    const y1 = median(after.map((c) => c[0]));
+    const c1 = median(after.map((c) => Math.hypot(c[1], c[2])));
+    let turn = 0;
+    after.forEach((c, i) => {
+      let d = Math.abs(Math.atan2(c[2], c[1]) - Math.atan2(before[i][2], before[i][1])) * (180 / Math.PI);
+      if (d > 180) d = 360 - d;
+      turn += d;
+    });
+    turn /= after.length;
+    if (
+      y1 >= y0 * PACK_SKIN_DEPTH &&
+      c1 >= c0 * PACK_SKIN_COLOUR &&
+      c1 <= c0 * PACK_SKIN_COLOUR_MAX &&
+      turn <= PACK_SKIN_TURN
+    ) {
+      return k;
+    }
+  }
+  return 0;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

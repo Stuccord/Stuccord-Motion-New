@@ -64,8 +64,8 @@ import { behindRanges, personMasks, personModelReady } from "./cutout.js";
 import { CaptureError, capturePage } from "./capture.js";
 import { limitThreads } from "./threads.js";
 import { CUTOUT_MAX_MS, pixelcutCutout, pixelcutReady } from "./pixelcut.js";
-import { analyzeColour, correctionFilter } from "./colour.js";
-import { lutFilter, packLutFilter } from "./luts.js";
+import { analyzeColour, correctedSkin, correctionFilter } from "./colour.js";
+import { lutFilter, packLutFilter, packSkinSafeStrength } from "./luts.js";
 import {
   buildAudioMixArgs,
   masterArgs,
@@ -739,11 +739,9 @@ app.post("/grade-sheet", async (req, res) => {
       frames.push(out);
     }
     // The correction from these frames (the export measures the whole video).
-    const stats = (await Promise.all(frames.map((f) => analyzeColour(ffmpegPath, f)))).filter(Boolean);
-    const mean = (k) => stats.reduce((a, s) => a + s[k], 0) / stats.length;
-    const correction = stats.length
-      ? correctionFilter({ y: mean("y"), low: mean("low"), high: mean("high"), u: mean("u"), v: mean("v") })
-      : null;
+    const colourStats = await analyzeColour(ffmpegPath, frames, { center: p.center ?? null });
+    const correction = correctionFilter(colourStats);
+    const skin = correctedSkin(colourStats);
     const finish = lookFinish(p.look);
     const sheets = [];
     for (const c of choices) {
@@ -751,7 +749,11 @@ app.post("/grade-sheet", async (req, res) => {
       const grade =
         c?.id === "look"
           ? (lutFilter(p.look) ?? gradeFilter(finish))
-          : packLutFilter(c?.id, Number(c?.strength ?? 1));
+          : (() => {
+              // As the export will use it: no stronger than skin allows.
+              const k = packSkinSafeStrength(c?.id, Number(c?.strength ?? 1), skin);
+              return k > 0 ? packLutFilter(c?.id, k) : null;
+            })();
       if (!key || (c?.id !== "look" && !grade)) continue;
       const chain = [correction, grade, "format=yuv420p"].filter(Boolean).join(",");
       const inputs = frames.flatMap((f) => ["-i", f]);
@@ -2130,8 +2132,11 @@ async function runRender(job) {
     // contrast, colour cast; see colour.js), then the look's grade goes on
     // top. Best-effort: a failed measurement leaves the footage as filmed.
     let correction = null;
+    let colourStats = null;
     try {
-      correction = correctionFilter(await analyzeColour(ffmpegPath, composedOut));
+      // (exposed for the speaker's skin: their face's place, when the plan has it)
+      colourStats = await analyzeColour(ffmpegPath, composedOut, { center: motionJob?.angles?.center ?? null });
+      correction = correctionFilter(colourStats);
     } catch (e) {
       console.warn(`[Worker] Colour analysis failed for job=${job.job_id}:`, e?.message || e);
     }
@@ -2139,8 +2144,19 @@ async function runRender(job) {
     // hand, at its strength), else the look's own LUT (luts.js), else the
     // look's simple grade.
     const pick = motionJob?.lut;
+    // A ready-made LUT goes on only as strongly as the speaker's skin allows
+    // (tried on the video's own skin colours: luts.js packSkinSafeStrength).
+    let pickStrength = pick ? (pick.strength ?? 1) : 0;
+    if (pick) {
+      const safe = packSkinSafeStrength(pick.id, pickStrength, correctedSkin(colourStats));
+      if (safe < pickStrength) {
+        console.log(`[Worker] LUT ${pick.id} at ${safe} instead of ${pickStrength} for job=${job.job_id}: kinder to skin`);
+        editPlan = { ...(editPlan ?? {}), lut_note: safe ? `${pick.id} lowered to ${safe} to keep skin natural` : `${pick.id} left out: it harmed skin` };
+      }
+      pickStrength = safe;
+    }
     const lookGrade = motionJob
-      ? ((pick ? packLutFilter(pick.id, pick.strength ?? 1) : null) ??
+      ? ((pick && pickStrength > 0 ? packLutFilter(pick.id, pickStrength) : null) ??
         lutFilter(motionJob.look) ??
         gradeFilter(finish))
       : null;
