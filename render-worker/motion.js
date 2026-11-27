@@ -60,6 +60,8 @@ export function placeGraphics(elements, words) {
   const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
   const chapterCount = spans.filter((s) => s.el.type === "chapter").length;
   let chapterIndex = 0;
+  // Every word in time order, for timing items on the words that say them.
+  const sorted = words.filter((w) => w && Number.isFinite(w.start_ms)).sort((a, b) => a.start_ms - b.start_ms);
   const graphics = [];
   const zooms = [];
   for (const { el, startMs, endMs } of spans) {
@@ -99,9 +101,99 @@ export function placeGraphics(elements, words) {
       motif: el.type === "metaphor" && MOTIFS.includes(el.motif) ? el.motif : null,
       lines: el.type === "notes" ? placeLines(el.lines, from, to, byKey) : null,
       scenes: PICTURE_LIMIT[el.type] ? placeScenes(el.scenes, PICTURE_LIMIT[el.type], from, to, byKey) : null,
+      itemAt: ITEM_TYPES.has(el.type)
+        ? itemTimes(
+            (Array.isArray(el.items) ? el.items : []).map((i) => str(i, 80).trim()).filter(Boolean).slice(0, MAX_ITEMS[el.type] ?? 8),
+            sorted
+              .filter((w) => w.start_ms >= startMs && w.start_ms <= endMs)
+              .map((w) => ({ text: String(w.text ?? ""), frame: msToFrame(w.start_ms) })),
+            from,
+            to,
+          )
+        : null,
     });
   }
   return { graphics, zooms };
+}
+
+// ---------- items on their words (mirrors src/motion/item-times.ts) ----------
+
+/** Graphics whose items are said one by one (timed on their words). */
+const ITEM_TYPES = new Set(["list", "steps", "compare", "card", "loop"]);
+const ITEM_FILLER = new Set(
+  (
+    "a an the and or nor but of to in on at by for from with without into onto " +
+    "my your our their his her its me you we they it i is are was were be been " +
+    "even also just some more most very really so then that this these those " +
+    "all any every each no not too like as about up down out over"
+  ).split(" "),
+);
+
+/** A text's words, lower case, without punctuation. */
+function itemWords(text) {
+  return String(text)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+}
+
+/** The same word, allowing for endings ("lecture" / "lectures"). */
+function sameWord(a, b) {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4) return false;
+  const n = Math.min(a.length, b.length, 5);
+  return a.slice(0, n) === b.slice(0, n) && Math.abs(a.length - b.length) <= 4;
+}
+
+/**
+ * The frame each item comes on: the first spoken word (in order) that names
+ * it; missing ones between their neighbours; null when none is found.
+ */
+export function itemTimes(items, spoken, from, to, lead = 6) {
+  if (items.length < 2 || !spoken.length) return null;
+  const words = spoken.map((w) => ({ frame: w.frame, word: itemWords(w.text)[0] ?? "" }));
+  const found = [];
+  let next = 0;
+  for (const item of items) {
+    const all = itemWords(item);
+    const keys = all.filter((w) => !ITEM_FILLER.has(w));
+    const look = keys.length ? keys : all;
+    let at = null;
+    for (let i = next; i < words.length; i++) {
+      if (look.some((k) => sameWord(k, words[i].word))) {
+        at = words[i].frame;
+        next = i + 1;
+        break;
+      }
+    }
+    found.push(at);
+  }
+  if (found.every((f) => f == null)) return null;
+  const first = from + lead;
+  const last = to - 1;
+  const out = found.slice();
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] != null) continue;
+    let a = i - 1;
+    while (a >= 0 && found[a] == null) a--;
+    let b = i + 1;
+    while (b < out.length && found[b] == null) b++;
+    const fa = a >= 0 ? found[a] : first;
+    const fb = b < out.length ? found[b] : Math.max(fa + 1, Math.round(last - (last - fa) * 0.25));
+    const ia = a >= 0 ? a : -1;
+    const ib = b < out.length ? b : out.length;
+    out[i] = Math.round(fa + ((fb - fa) * (i - ia)) / (ib - ia));
+  }
+  let prev = first - 1;
+  return out.map((f) => {
+    const v = Math.min(last, Math.max(prev + 1, f, first));
+    prev = v;
+    return v;
+  });
 }
 
 /**

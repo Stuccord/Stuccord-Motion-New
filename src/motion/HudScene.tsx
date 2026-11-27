@@ -14,7 +14,7 @@ import React from "react";
 import { AbsoluteFill } from "remotion";
 import { MONO } from "@/motion/theme";
 import type { PlacedGraphic } from "@/motion/timing";
-import { stepStarts } from "@/motion/beats";
+import { itemStarts, stepStarts } from "@/motion/beats";
 import {
   clamp01,
   easeIn,
@@ -34,7 +34,13 @@ const DIM = "#8A8A8A";
 const PANEL = "rgba(5, 5, 5, 0.82)";
 
 /** The types the Spec HUD look draws itself. */
-const HUD_TYPES = new Set<PlacedGraphic["type"]>(["label", "keyline", "counter", "list", "chapter"]);
+const HUD_TYPES = new Set<PlacedGraphic["type"]>([
+  "label",
+  "keyline",
+  "counter",
+  "list",
+  "chapter",
+]);
 
 export const isHudScene = (g: PlacedGraphic) => HUD_TYPES.has(g.type) && !g.behind;
 
@@ -44,7 +50,19 @@ function typedText(text: string, frame: number, at: number, perChar = 1): string
 }
 
 /** A thin line drawing on (pathLength 1). */
-function Line({ d, t, viewBox, style, width = 1.6 }: { d: string; t: number; viewBox: string; style?: React.CSSProperties; width?: number }) {
+function Line({
+  d,
+  t,
+  viewBox,
+  style,
+  width = 1.6,
+}: {
+  d: string;
+  t: number;
+  viewBox: string;
+  style?: React.CSSProperties;
+  width?: number;
+}) {
   return (
     <svg viewBox={viewBox} preserveAspectRatio="none" style={{ overflow: "visible", ...style }}>
       <path
@@ -137,8 +155,26 @@ function Brackets({ t, unit }: { t: number; unit: number }) {
   const inset = unit * 4;
   const corner = (pos: React.CSSProperties, h: "left" | "right", v: "top" | "bottom") => (
     <div style={{ position: "absolute", ...pos }}>
-      <div style={{ position: "absolute", [h]: 0, [v]: 0, width: arm, height: w, background: HUD_LIME }} />
-      <div style={{ position: "absolute", [h]: 0, [v]: 0, width: w, height: arm, background: HUD_LIME }} />
+      <div
+        style={{
+          position: "absolute",
+          [h]: 0,
+          [v]: 0,
+          width: arm,
+          height: w,
+          background: HUD_LIME,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          [h]: 0,
+          [v]: 0,
+          width: w,
+          height: arm,
+          background: HUD_LIME,
+        }}
+      />
     </div>
   );
   return (
@@ -162,7 +198,8 @@ function Verdict({ g, frame, length }: { g: PlacedGraphic; frame: number; length
     <AbsoluteFill style={{ opacity: out, fontFamily: MONO }}>
       <AbsoluteFill
         style={{
-          background: "linear-gradient(to top, rgba(5, 5, 5, 0.65) 0%, rgba(5, 5, 5, 0.2) 35%, transparent 55%)",
+          background:
+            "linear-gradient(to top, rgba(5, 5, 5, 0.65) 0%, rgba(5, 5, 5, 0.2) 35%, transparent 55%)",
           opacity: easeOut(frame / 8),
         }}
       />
@@ -257,7 +294,14 @@ function Readout({ g, frame, length }: { g: PlacedGraphic; frame: number; length
           opacity: 1 - out,
         }}
       >
-        <div style={{ fontSize: unit * (portrait ? 2.4 : 1.9), color: DIM, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        <div
+          style={{
+            fontSize: unit * (portrait ? 2.4 : 1.9),
+            color: DIM,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}
+        >
           {`// SPEC${g.text ? ` · ${g.text}` : ""}`}
         </div>
         <div
@@ -281,7 +325,7 @@ function Readout({ g, frame, length }: { g: PlacedGraphic; frame: number; length
 function Inventory({ g, frame, length }: { g: PlacedGraphic; frame: number; length: number }) {
   const { unit, portrait } = useUnit();
   const items = g.items.length ? g.items : [g.text];
-  const starts = stepStarts(items.length, length);
+  const starts = itemStarts(g, stepStarts(items.length, length));
   const t = easeOut(frame / 8);
   const out = easeIn((frame - (length - 6)) / 6);
   const size = unit * (portrait ? 3.8 : 3.4);
@@ -303,7 +347,14 @@ function Inventory({ g, frame, length }: { g: PlacedGraphic; frame: number; leng
           opacity: 1 - out,
         }}
       >
-        <div style={{ color: DIM, fontSize: size * 0.75, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+        <div
+          style={{
+            color: DIM,
+            fontSize: size * 0.75,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+          }}
+        >
           {g.text && items[0] !== g.text ? g.text : "In the box"}
         </div>
         {items.map((item, i) => {
@@ -330,7 +381,9 @@ function System({ g, frame, length }: { g: PlacedGraphic; frame: number; length:
   const scan = easeInOut(frame / 12);
   const index = g.chapter ? String(g.chapter.index).padStart(2, "0") : null;
   return (
-    <AbsoluteFill style={{ overflow: "hidden", opacity: exitOpacity(frame, length, 6), fontFamily: MONO }}>
+    <AbsoluteFill
+      style={{ overflow: "hidden", opacity: exitOpacity(frame, length, 6), fontFamily: MONO }}
+    >
       <AbsoluteFill
         style={{
           background: HUD_BLACK,
@@ -349,7 +402,14 @@ function System({ g, frame, length }: { g: PlacedGraphic; frame: number; length:
           }}
         >
           {index && (
-            <div style={{ fontSize: unit * (portrait ? 22 : 17), fontWeight: 700, lineHeight: 1, color: HUD_LIME }}>
+            <div
+              style={{
+                fontSize: unit * (portrait ? 22 : 17),
+                fontWeight: 700,
+                lineHeight: 1,
+                color: HUD_LIME,
+              }}
+            >
               {frame >= 10 ? index : ""}
             </div>
           )}

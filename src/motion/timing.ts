@@ -16,6 +16,7 @@ import {
   type ScreenDetails,
 } from "@/lib/motion-plan";
 import type { SketchId } from "@/motion/sketches";
+import { itemTimes } from "@/motion/item-times";
 
 export const MOTION_FPS = 30;
 
@@ -54,6 +55,11 @@ export type PlacedGraphic = {
   lines: PlacedNoteLine[] | null;
   /** The pictures (a story's scenes, a cartoon's one, a card stream's or profile's); null for other graphics. */
   scenes: PlacedScene[] | null;
+  /**
+   * The frame each item comes on (a list's, steps', comparison's or card's):
+   * on the word the speaker says it (item-times.ts); null to spread them out.
+   */
+  itemAt: number[] | null;
 };
 
 /** A story scene as drawn: from which frame, its words, and its picture's storage path. */
@@ -139,6 +145,9 @@ export const SPLIT_TALL = 0.15;
 
 export type PlacedZoom = { id: string; from: number; to: number; zoom: "in" | "out" };
 
+/** Graphics whose items are said one by one (timed on their words). */
+const ITEM_TYPES = new Set<ElementType>(["list", "steps", "compare", "card", "loop"]);
+
 /** How long a graphic stays up at least, so it can be read (frames). */
 const MIN_FRAMES = Math.round(1.2 * MOTION_FPS);
 /** A little hold after the last word. */
@@ -162,6 +171,8 @@ export function placeGraphics(
     .sort((a, b) => a.span.startMs - b.span.startMs);
   const chapterCount = spans.filter((x) => x.el.type === "chapter").length;
   let chapterIndex = 0;
+  // Every word in time order, for timing items on the words that say them.
+  const allWords = [...wordsByKey.values()].sort((a, b) => a.startMs - b.startMs);
   for (const { el, span } of spans) {
     const from = msToFrame(span.startMs);
     const to = Math.max(from + MIN_FRAMES, msToFrame(span.endMs) + TAIL_FRAMES);
@@ -187,6 +198,16 @@ export function placeGraphics(
       motif: el.type === "metaphor" ? (el.motif ?? null) : null,
       lines: el.type === "notes" ? placeLines(el, from, to, wordsByKey) : null,
       scenes: PICTURE_TYPES.has(el.type) ? placeScenes(el, from, to, wordsByKey) : null,
+      itemAt: ITEM_TYPES.has(el.type)
+        ? itemTimes(
+            el.items.map((i) => i.trim()).filter(Boolean),
+            allWords
+              .filter((w) => w.startMs >= span.startMs && w.startMs <= span.endMs)
+              .map((w) => ({ text: w.text, frame: msToFrame(w.startMs) })),
+            from,
+            to,
+          )
+        : null,
     });
   }
   return { graphics, zooms };

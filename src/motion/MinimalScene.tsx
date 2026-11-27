@@ -5,11 +5,20 @@
 // key word in italic, white only, and a lot of empty space. The cut to black
 // is quick; everything inside it arrives slowly.
 
+import { itemStarts } from "@/motion/beats";
 import React from "react";
 import { AbsoluteFill } from "remotion";
 import { SANS, SERIF } from "@/motion/theme";
 import type { PlacedGraphic } from "@/motion/timing";
-import { clamp01, easeInOut, easeOut, exitOpacity, splitWords, useStepFrame, useUnit } from "@/motion/kit";
+import {
+  clamp01,
+  easeInOut,
+  easeOut,
+  exitOpacity,
+  splitWords,
+  useStepFrame,
+  useUnit,
+} from "@/motion/kit";
 
 const BLACK = "#000000";
 const WHITE = "#F4F4F2";
@@ -62,7 +71,9 @@ function HangingLines({
         // Newton's cradle: out for a second, then a moment at rest.
         const last = i === count - 1 && count > 1;
         const swing = last
-          ? 0.45 * Math.max(0, Math.sin(((frame - 18) / 56) * 2 * Math.PI)) * easeOut((frame - 18) / 8)
+          ? 0.45 *
+            Math.max(0, Math.sin(((frame - 18) / 56) * 2 * Math.PI)) *
+            easeOut((frame - 18) / 8)
           : 0;
         const bx = x + Math.sin(swing) * len;
         const by = Math.cos(swing) * len;
@@ -70,7 +81,13 @@ function HangingLines({
         return (
           <g key={i}>
             <line x1={x} y1={0} x2={bx} y2={by} stroke={HAIR} strokeWidth={stroke} />
-            <circle cx={bx} cy={by} r={r} fill={WHITE} opacity={clamp01((frame - 10 - i * 3) / 8)} />
+            <circle
+              cx={bx}
+              cy={by}
+              r={r}
+              fill={WHITE}
+              opacity={clamp01((frame - 10 - i * 3) / 8)}
+            />
           </g>
         );
       })}
@@ -87,7 +104,14 @@ function CornerMark({ frame, unit }: { frame: number; unit: number }) {
       height={unit * 8}
       style={{ position: "absolute", left: unit * 4, top: unit * 4, opacity: p }}
     >
-      <circle cx={unit * 1.2} cy={unit * 1.2} r={unit * 0.8} fill="none" stroke={HAIR} strokeWidth={Math.max(1, unit * 0.14)} />
+      <circle
+        cx={unit * 1.2}
+        cy={unit * 1.2}
+        r={unit * 0.8}
+        fill="none"
+        stroke={HAIR}
+        strokeWidth={Math.max(1, unit * 0.14)}
+      />
       <line
         x1={unit * 2}
         y1={unit * 1.8}
@@ -167,7 +191,17 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
   if (g.type === "keyline" || g.type === "cta") {
     const text = g.type === "cta" ? g.text || ctaText(g) : g.text;
     body = (
-      <div style={{ position: "absolute", left: "8%", right: "8%", top: textTop, textAlign: "center", fontSize: size, lineHeight: 1.25 }}>
+      <div
+        style={{
+          position: "absolute",
+          left: "8%",
+          right: "8%",
+          top: textTop,
+          textAlign: "center",
+          fontSize: size,
+          lineHeight: 1.25,
+        }}
+      >
         <Line text={text} emphasis={g.emphasis} frame={frame} delay={14} size={size} />
         {g.type === "cta" && (
           <div
@@ -192,15 +226,38 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
       : value.toLocaleString("en-US", { maximumFractionDigits: 1 });
     const big = unit * (portrait ? 15 : 12);
     body = (
-      <div style={{ position: "absolute", left: 0, right: 0, top: portrait ? "50%" : "44%", textAlign: "center" }}>
-        <div style={{ fontFamily: SERIF, fontSize: big, lineHeight: 1, color: WHITE, opacity: easeOut((frame - 8) / 12) }}>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: portrait ? "50%" : "44%",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            fontFamily: SERIF,
+            fontSize: big,
+            lineHeight: 1,
+            color: WHITE,
+            opacity: easeOut((frame - 8) / 12),
+          }}
+        >
           {n.prefix}
           {shown}
           {n.suffix}
         </div>
         {g.text && (
           <div style={{ marginTop: unit * 3, fontSize: size * 0.8 }}>
-            <Line text={g.text} emphasis={g.emphasis} frame={frame} delay={24} size={size * 0.8} colour={DIM} />
+            <Line
+              text={g.text}
+              emphasis={g.emphasis}
+              frame={frame}
+              delay={24}
+              size={size * 0.8}
+              colour={DIM}
+            />
           </div>
         )}
       </div>
@@ -208,15 +265,40 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
   } else if (g.type === "list") {
     lines = Math.max(1, Math.min(5, g.items.length));
     const step = Math.max(10, Math.min(24, (length * 0.6) / Math.max(1, g.items.length)));
+    // On the words that say them (each line a little before its word lands), else spread out.
+    const lineAt = itemStarts(
+      g,
+      g.items.map((_, i) => 14 + i * step),
+    );
     body = (
-      <div style={{ position: "absolute", left: "12%", right: "12%", top: portrait ? "58%" : "55%", textAlign: "center" }}>
-        {g.text && <div style={{ ...label(unit), marginBottom: unit * 3, opacity: easeOut((frame - 8) / 14) }}>{g.text}</div>}
+      <div
+        style={{
+          position: "absolute",
+          left: "12%",
+          right: "12%",
+          top: portrait ? "58%" : "55%",
+          textAlign: "center",
+        }}
+      >
+        {g.text && (
+          <div
+            style={{ ...label(unit), marginBottom: unit * 3, opacity: easeOut((frame - 8) / 14) }}
+          >
+            {g.text}
+          </div>
+        )}
         {g.items.map((item, i) => (
           <div key={i} style={{ fontSize: size * 0.9, lineHeight: 1.5 }}>
-            <span style={{ ...label(unit), marginRight: unit * 2, opacity: easeOut((frame - 14 - i * step) / 12) }}>
+            <span
+              style={{
+                ...label(unit),
+                marginRight: unit * 2,
+                opacity: easeOut((frame - lineAt[i]) / 12),
+              }}
+            >
               {String(i + 1).padStart(2, "0")}
             </span>
-            <Line text={item} emphasis={null} frame={frame} delay={14 + i * step} size={size * 0.9} />
+            <Line text={item} emphasis={null} frame={frame} delay={lineAt[i]} size={size * 0.9} />
           </div>
         ))}
       </div>
@@ -225,9 +307,19 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
     lines = 1;
     const c = g.chapter;
     body = (
-      <div style={{ position: "absolute", left: "10%", right: "10%", top: textTop, textAlign: "center" }}>
+      <div
+        style={{
+          position: "absolute",
+          left: "10%",
+          right: "10%",
+          top: textTop,
+          textAlign: "center",
+        }}
+      >
         {c && (
-          <div style={{ ...label(unit), marginBottom: unit * 2.5, opacity: easeOut((frame - 8) / 14) }}>
+          <div
+            style={{ ...label(unit), marginBottom: unit * 2.5, opacity: easeOut((frame - 8) / 14) }}
+          >
             {String(c.index).padStart(2, "0")} / {String(c.count).padStart(2, "0")}
           </div>
         )}
@@ -241,7 +333,14 @@ export function MinimalScene({ g }: { g: PlacedGraphic }) {
   return (
     <AbsoluteFill style={{ background: BLACK, opacity, overflow: "hidden", fontSynthesis: "none" }}>
       <CornerMark frame={frame} unit={unit} />
-      <HangingLines frame={frame} count={lines} unit={unit} width={width} height={height} drop={drop} />
+      <HangingLines
+        frame={frame}
+        count={lines}
+        unit={unit}
+        width={width}
+        height={height}
+        drop={drop}
+      />
       {body}
     </AbsoluteFill>
   );

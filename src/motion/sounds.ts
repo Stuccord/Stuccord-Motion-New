@@ -14,6 +14,7 @@ import {
   loopBeats,
   profileBeats,
   screenBeats,
+  itemStarts,
   stepStarts,
   streamBeats,
 } from "@/motion/beats";
@@ -168,7 +169,7 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
       case "steps":
         // A whoosh as the camera flies to each platform (a deeper one first),
         // and a click as its label lands.
-        stepStarts(g.items.length, len).forEach((f, i) => {
+        itemStarts(g, stepStarts(g.items.length, len)).forEach((f, i) => {
           add(
             g,
             `step${i}`,

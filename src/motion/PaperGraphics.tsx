@@ -16,6 +16,7 @@ import {
   coinCount,
   loopBeats,
   profileBeats,
+  itemStarts,
   stepStarts,
   streamBeats,
 } from "@/motion/beats";
@@ -620,7 +621,15 @@ const PaperList: Draw = ({ g, theme }) => {
   // The same rhythm as the glass list (and its click sounds).
   const step = g.items.length > 1 ? Math.max(6, (length * 0.66) / g.items.length) : 0;
   return (
-    <PaperLines g={g} theme={theme} ticks starts={g.items.map((_, i) => Math.round(i * step))} />
+    <PaperLines
+      g={g}
+      theme={theme}
+      ticks
+      starts={itemStarts(
+        g,
+        g.items.map((_, i) => Math.round(i * step)),
+      )}
+    />
   );
 };
 
@@ -809,7 +818,7 @@ const PaperSteps: Draw = ({ g, theme }) => {
   const length = g.to - g.from;
   const items = g.items.length ? g.items : [""];
   const n = items.length;
-  const starts = stepStarts(n, length);
+  const starts = itemStarts(g, stepStarts(n, length));
   const accent = inkAccent(theme);
   // A staircase drawn up the sheet, one tread per step as it's reached.
   const x0 = pad;

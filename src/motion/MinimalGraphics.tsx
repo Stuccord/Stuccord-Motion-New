@@ -14,12 +14,23 @@ import React from "react";
 import { AbsoluteFill } from "remotion";
 import { SceneImg as Img } from "./scene-media";
 import { Bell, Link2, MessageCircle, MousePointer2, ThumbsUp } from "lucide-react";
-import { DISPLAY, GROTESK, HAND, MONO as MONO_FONT, SANS, SERIF, TYPEWRITER, WARM_SERIF, type MotionTheme } from "@/motion/theme";
+import {
+  DISPLAY,
+  GROTESK,
+  HAND,
+  MONO as MONO_FONT,
+  SANS,
+  SERIF,
+  TYPEWRITER,
+  WARM_SERIF,
+  type MotionTheme,
+} from "@/motion/theme";
 import {
   coinBeats,
   coinCount,
   loopBeats,
   profileBeats,
+  itemStarts,
   stepStarts,
   streamBeats,
 } from "@/motion/beats";
@@ -29,9 +40,22 @@ import { MinimalScene, isMinimalScene } from "@/motion/MinimalScene";
 import { DocuScene, isDocuScene, DOCU_INK, DOCU_RED, DOCU_STAGE } from "@/motion/DocuScene";
 import { Cine3dScene, isCineScene, CINE_RED, CINE_STAGE } from "@/motion/Cine3dScene";
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
-import { StudioScene, isStudioScene, STUDIO_BLUE, STUDIO_INK, STUDIO_STAGE } from "@/motion/StudioScene";
+import {
+  StudioScene,
+  isStudioScene,
+  STUDIO_BLUE,
+  STUDIO_INK,
+  STUDIO_STAGE,
+} from "@/motion/StudioScene";
 import { HudScene, isHudScene, HUD_BLACK, HUD_LIME } from "@/motion/HudScene";
-import { NotebookScene, isNotebookScene, NOTE_INK, NOTE_MARKER, NOTE_PAPER, NOTE_RED } from "@/motion/NotebookScene";
+import {
+  NotebookScene,
+  isNotebookScene,
+  NOTE_INK,
+  NOTE_MARKER,
+  NOTE_PAPER,
+  NOTE_RED,
+} from "@/motion/NotebookScene";
 import { TalkScene, isTalkScene, TALK_AMBER, TALK_CHARCOAL, TALK_CREAM } from "@/motion/TalkScene";
 import {
   MonumentScene,
@@ -42,7 +66,13 @@ import {
 } from "@/motion/MonumentScene";
 import { NoirScene, isNoirScene, NOIR_BLACK, NOIR_INK, NOIR_RED } from "@/motion/NoirScene";
 import { ImpactScene, isImpactScene, IMPACT_BLACK, IMPACT_YELLOW } from "@/motion/ImpactScene";
-import { BulletinScene, isBulletinScene, NEWS_NAVY, NEWS_PAGE, NEWS_RED } from "@/motion/BulletinScene";
+import {
+  BulletinScene,
+  isBulletinScene,
+  NEWS_NAVY,
+  NEWS_PAGE,
+  NEWS_RED,
+} from "@/motion/BulletinScene";
 import {
   ImagesContext,
   LogoContext,
@@ -893,7 +923,13 @@ const MinimalList: Draw = ({ g, theme }) => {
   const length = g.to - g.from;
   // Items arrive one by one over the first two thirds (as the other looks).
   const step = g.items.length > 1 ? Math.max(6, (length * 0.66) / g.items.length) : 0;
-  const size = unit * (portrait ? 4.6 : 3.6);
+  // On the words that say them, else spread out.
+  const listAt = itemStarts(
+    g,
+    g.items.map((_, i) => Math.round(i * step)),
+  );
+  // Readable on a phone: items ~3.6% of a tall frame's height.
+  const size = unit * (portrait ? 6.4 : 4.4);
   const card = useCard(unit);
   return (
     <AbsoluteFill
@@ -917,7 +953,7 @@ const MinimalList: Draw = ({ g, theme }) => {
         {g.text && (
           <div
             style={{
-              fontSize: unit * (portrait ? 3 : 2.4),
+              fontSize: unit * (portrait ? 3.4 : 2.6),
               fontWeight: 500,
               letterSpacing: TRACK,
               textTransform: "uppercase",
@@ -930,9 +966,13 @@ const MinimalList: Draw = ({ g, theme }) => {
           </div>
         )}
         {g.items.map((item, i) => {
-          const at = Math.round(i * step);
+          const at = listAt[i];
+          // The item being said leads; once the next one comes, it steps
+          // back (still there, for context) so the eye goes to the new one.
+          const next = listAt[i + 1];
+          const back = next != null ? 0.45 * easeOut((frame - next) / 10) : 0;
           return (
-            <div key={i}>
+            <div key={i} style={{ opacity: 1 - back }}>
               <Rule
                 frame={frame}
                 delay={at}
@@ -1292,6 +1332,18 @@ const MinimalChapter: Draw = ({ g, theme }) => {
 };
 
 /** A picture in a thin frame with its words: shared by stories and cartoons. */
+/**
+ * A story scene, full frame (B-roll that shows what's being said): the
+ * picture fills the screen and never sits still (a slow push with a drift,
+ * its direction alternating scene to scene), darkened at the bottom so a
+ * large headline reads over it, built word by word as it's said. The text
+ * keeps clear of the platforms' buttons (bottom and right edge on tall
+ * videos). The motion rules: one focal point (the headline), eased
+ * entrances, nothing static, readable type (~5% of a tall frame's height).
+ */
+/** A gentle ease in and out (for slow camera drifts). */
+const easeInOutSine = (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * clamp01(t));
+
 function FramedPicture({
   url,
   text,
@@ -1301,6 +1353,7 @@ function FramedPicture({
   theme,
   unit,
   portrait,
+  index = 0,
 }: {
   url: string | undefined;
   text: string;
@@ -1312,50 +1365,65 @@ function FramedPicture({
   theme: MotionTheme;
   unit: number;
   portrait: boolean;
+  /** Which scene it is (its drift's direction alternates). */
+  index?: number;
 }) {
-  const size = unit * (portrait ? 5.2 : 4.2);
-  const push = 1 + 0.06 * clamp01(frame / Math.max(1, life));
+  const size = unit * (portrait ? 8.6 : 6.2);
+  const t = clamp01(frame / Math.max(1, life));
+  // Push in (1.06 -> 1.14) with a sideways drift: never a still picture.
+  const push = 1.06 + 0.08 * easeInOutSine(t);
+  const side = index % 2 ? -1 : 1;
+  const drift = side * unit * 2.4 * (easeInOutSine(t) - 0.5);
   return (
     <>
-      <div
-        style={{
-          position: "absolute",
-          ...(portrait
-            ? { left: unit * 7, right: unit * 7, top: "8%", height: "60%" }
-            : { left: unit * 7, top: unit * 7, bottom: unit * 7, width: "54%" }),
-          overflow: "hidden",
-          border: `${Math.max(1, unit * 0.15)}px solid ${LINE}`,
-        }}
-      >
-        <div style={{ width: "100%", height: "100%", transform: `scale(${push})` }}>
+      <AbsoluteFill style={{ overflow: "hidden" }}>
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            transform: `translateX(${drift}px) scale(${push})`,
+            transformOrigin: index % 2 ? "40% 40%" : "60% 40%",
+          }}
+        >
           <Picture url={url} />
         </div>
-      </div>
+      </AbsoluteFill>
+      {/* Dark at the bottom (or the side, on wide videos), where the words go. */}
+      <AbsoluteFill
+        style={{
+          background: portrait
+            ? "linear-gradient(to bottom, rgba(0,0,0,0) 38%, rgba(0,0,0,0.55) 62%, rgba(0,0,0,0.82) 100%)"
+            : "linear-gradient(to right, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.5) 42%, rgba(0,0,0,0) 70%)",
+          opacity: easeOut(frame / 10),
+        }}
+      />
       {text && (
         <div
           style={{
             position: "absolute",
             ...(portrait
-              ? { left: unit * 7, right: unit * 7, top: "73%" }
-              : { left: "66%", right: unit * 7, top: "50%", transform: "translateY(-50%)" }),
+              ? { left: unit * 7, right: unit * 14, bottom: "19%" }
+              : { left: unit * 7, width: "44%", top: "50%", transform: "translateY(-50%)" }),
             fontSize: size,
-            lineHeight: 1.18,
-            letterSpacing: "-0.02em",
+            lineHeight: 1.08,
+            letterSpacing: "-0.025em",
+            textShadow: "0 2px 18px rgba(0,0,0,0.45)",
           }}
         >
           <Rule
             frame={frame}
             delay={2}
-            length={unit * 8}
+            length={unit * 10}
             colour={theme.accent}
             unit={unit}
-            style={{ marginBottom: unit * 2.2 }}
+            style={{ marginBottom: unit * 2.6 }}
           />
           <Words
             text={text}
             emphasis={emphasis}
             frame={frame}
             delay={4}
+            step={3}
             size={size}
             theme={theme}
             unit={unit}
@@ -1395,6 +1463,7 @@ const MinimalStory: Draw = ({ g, theme }) => {
               theme={theme}
               unit={unit}
               portrait={portrait}
+              index={i}
             />
           </AbsoluteFill>
         );
@@ -1435,7 +1504,7 @@ const MinimalSteps: Draw = ({ g, theme }) => {
   const length = g.to - g.from;
   const items = g.items.length ? g.items : [""];
   const n = items.length;
-  const starts = stepStarts(n, length);
+  const starts = itemStarts(g, stepStarts(n, length));
   // A track with a node per step, filling to each as it's reached:
   // down the left (tall videos) or across (wide ones).
   const a = portrait ? height * 0.3 : width * 0.12;

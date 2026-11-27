@@ -4,6 +4,21 @@
 // imports: the worker bundles src/motion on its own.
 
 /** Steps: each step's platform is reached in turn over the first 80%. */
+/**
+ * When each item comes on (frames from the graphic's start): on the word the
+ * speaker says it (PlacedGraphic.itemAt, item-times.ts) when that's known for
+ * every one of them, else `fallback` (the look's own spread). The graphic
+ * then explains along with the speaker.
+ */
+export function itemStarts(
+  g: { from: number; itemAt?: number[] | null },
+  fallback: number[],
+): number[] {
+  const at = g.itemAt;
+  if (!at || at.length !== fallback.length) return fallback;
+  return at.map((f) => Math.max(0, f - g.from));
+}
+
 export function stepStarts(count: number, length: number): number[] {
   const n = Math.max(1, count);
   return Array.from({ length: n }, (_, i) => Math.round((i * length * 0.8) / n));

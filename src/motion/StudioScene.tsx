@@ -15,7 +15,7 @@ import React from "react";
 import { AbsoluteFill } from "remotion";
 import { GROTESK, SANS, type MotionTheme } from "@/motion/theme";
 import type { PlacedGraphic } from "@/motion/timing";
-import { stepStarts } from "@/motion/beats";
+import { itemStarts, stepStarts } from "@/motion/beats";
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import {
   clamp01,
@@ -34,7 +34,13 @@ export const STUDIO_BLUE = "#2B5CFF";
 const SOFT = "#6B6B66";
 
 /** The types the Studio 3D look draws itself. */
-const STUDIO_TYPES = new Set<PlacedGraphic["type"]>(["screen", "keyline", "chapter", "counter", "list"]);
+const STUDIO_TYPES = new Set<PlacedGraphic["type"]>([
+  "screen",
+  "keyline",
+  "chapter",
+  "counter",
+  "list",
+]);
 
 export const isStudioScene = (g: PlacedGraphic) => STUDIO_TYPES.has(g.type) && !g.behind;
 
@@ -59,7 +65,19 @@ const rise = (frame: number, at: number, size: number): React.CSSProperties => {
   };
 };
 
-function Words({ text, emphasis, frame, size, delay = 0 }: { text: string; emphasis: string | null; frame: number; size: number; delay?: number }) {
+function Words({
+  text,
+  emphasis,
+  frame,
+  size,
+  delay = 0,
+}: {
+  text: string;
+  emphasis: string | null;
+  frame: number;
+  size: number;
+  delay?: number;
+}) {
   return (
     <>
       {splitWords(text, emphasis).map((w, i) => (
@@ -83,11 +101,27 @@ const cardShadow = (unit: number) =>
   `0 ${unit * 4}px ${unit * 8}px -${unit * 3}px rgba(20, 22, 26, 0.35), 0 ${unit * 0.6}px ${unit * 1.4}px rgba(20, 22, 26, 0.08)`;
 
 /** 1 · App screen: the app's own screen graphic, on the studio stage. */
-function Screen({ g, theme, frame, length }: { g: PlacedGraphic; theme: MotionTheme; frame: number; length: number }) {
+function Screen({
+  g,
+  theme,
+  frame,
+  length,
+}: {
+  g: PlacedGraphic;
+  theme: MotionTheme;
+  frame: number;
+  length: number;
+}) {
   return (
     // One slow camera move over the whole shot (never reverses).
     <AbsoluteFill style={{ transform: `scale(${1 + 0.03 * easeInOut(frame / length)})` }}>
-      <ScreenGraphic g={g} theme={{ ...theme, accent: STUDIO_BLUE }} background={STAGE_BG} ink={STUDIO_INK} lively />
+      <ScreenGraphic
+        g={g}
+        theme={{ ...theme, accent: STUDIO_BLUE }}
+        background={STAGE_BG}
+        ink={STUDIO_INK}
+        lively
+      />
     </AbsoluteFill>
   );
 }
@@ -152,7 +186,9 @@ function Morph({ g, frame, length }: { g: PlacedGraphic; frame: number; length: 
   const radius = disc / 2 + (unit * 3 - disc / 2) * grow;
   const titleSize = unit * (portrait ? 6.2 : 5.2);
   return (
-    <AbsoluteFill style={{ background: STAGE_BG, opacity: Math.min(appear, exitOpacity(frame, length, 8)) }}>
+    <AbsoluteFill
+      style={{ background: STAGE_BG, opacity: Math.min(appear, exitOpacity(frame, length, 8)) }}
+    >
       <AbsoluteFill
         style={{
           alignItems: "center",
@@ -179,7 +215,15 @@ function Morph({ g, frame, length }: { g: PlacedGraphic; frame: number; length: 
             fontWeight: 700,
           }}
         >
-          <span style={{ fontSize: unit * (portrait ? 7 : 5.6), letterSpacing: "-0.02em", flex: "none" }}>{index}</span>
+          <span
+            style={{
+              fontSize: unit * (portrait ? 7 : 5.6),
+              letterSpacing: "-0.02em",
+              flex: "none",
+            }}
+          >
+            {index}
+          </span>
           <span
             style={{
               fontSize: titleSize,
@@ -252,7 +296,15 @@ function StatCard({ g, frame, length }: { g: PlacedGraphic; frame: number; lengt
           {shownNumber(n, easeOut((frame - 6) / 24))}
         </div>
         {g.text && (
-          <div style={{ fontFamily: SANS, fontWeight: 500, fontSize: unit * (portrait ? 3 : 2.4), color: SOFT, marginTop: unit * 1.2 }}>
+          <div
+            style={{
+              fontFamily: SANS,
+              fontWeight: 500,
+              fontSize: unit * (portrait ? 3 : 2.4),
+              color: SOFT,
+              marginTop: unit * 1.2,
+            }}
+          >
             {g.text}
           </div>
         )}
@@ -265,12 +317,17 @@ function StatCard({ g, frame, length }: { g: PlacedGraphic; frame: number; lengt
 function Stack({ g, frame, length }: { g: PlacedGraphic; frame: number; length: number }) {
   const { unit, portrait } = useUnit();
   const items = (g.items.length ? g.items : [g.text]).slice(0, 5);
-  const starts = stepStarts(items.length, length);
+  const starts = itemStarts(g, stepStarts(items.length, length));
   const reached = starts.reduce((r, s, i) => (frame >= s ? i : r), 0);
   const size = unit * (portrait ? 4.6 : 3.8);
   const gap = size * 2.6;
   return (
-    <AbsoluteFill style={{ background: STAGE_BG, opacity: Math.min(easeOut(frame / 8), exitOpacity(frame, length, 8)) }}>
+    <AbsoluteFill
+      style={{
+        background: STAGE_BG,
+        opacity: Math.min(easeOut(frame / 8), exitOpacity(frame, length, 8)),
+      }}
+    >
       {g.text && items[0] !== g.text && (
         <div
           style={{
@@ -289,7 +346,9 @@ function Stack({ g, frame, length }: { g: PlacedGraphic; frame: number; length: 
           <Words text={g.text} emphasis={g.emphasis} frame={frame} size={size * 1.3} />
         </div>
       )}
-      <AbsoluteFill style={{ perspective: unit * 140, alignItems: "center", justifyContent: "center" }}>
+      <AbsoluteFill
+        style={{ perspective: unit * 140, alignItems: "center", justifyContent: "center" }}
+      >
         <div
           style={{
             position: "relative",
@@ -316,7 +375,10 @@ function Stack({ g, frame, length }: { g: PlacedGraphic; frame: number; length: 
                   top: i * gap,
                   background: "#FFFFFF",
                   borderRadius: unit * 1.8,
-                  borderLeft: behind === 0 ? `${unit * 0.8}px solid ${STUDIO_BLUE}` : `${unit * 0.8}px solid transparent`,
+                  borderLeft:
+                    behind === 0
+                      ? `${unit * 0.8}px solid ${STUDIO_BLUE}`
+                      : `${unit * 0.8}px solid transparent`,
                   padding: `${size * 0.6}px ${size * 0.8}px`,
                   boxShadow: cardShadow(unit),
                   fontFamily: GROTESK,

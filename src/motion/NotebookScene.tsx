@@ -13,7 +13,7 @@ import React from "react";
 import { AbsoluteFill } from "remotion";
 import { HAND, SANS } from "@/motion/theme";
 import type { PlacedGraphic } from "@/motion/timing";
-import { stepStarts } from "@/motion/beats";
+import { itemStarts, stepStarts } from "@/motion/beats";
 import {
   clamp01,
   easeIn,
@@ -32,7 +32,13 @@ export const NOTE_RED = "#E5484D";
 const GRID = "#DDE6F0";
 
 /** The types the Notebook look draws itself. */
-const NOTEBOOK_TYPES = new Set<PlacedGraphic["type"]>(["chapter", "keyline", "list", "counter", "label"]);
+const NOTEBOOK_TYPES = new Set<PlacedGraphic["type"]>([
+  "chapter",
+  "keyline",
+  "list",
+  "counter",
+  "label",
+]);
 
 export const isNotebookScene = (g: PlacedGraphic) => NOTEBOOK_TYPES.has(g.type) && !g.behind;
 
@@ -54,7 +60,17 @@ const marker = (t: number): React.CSSProperties => ({
 });
 
 /** A line with the key word marked, the marker swiping from `at`. */
-function Marked({ text, emphasis, frame, at }: { text: string; emphasis: string | null; frame: number; at: number }) {
+function Marked({
+  text,
+  emphasis,
+  frame,
+  at,
+}: {
+  text: string;
+  emphasis: string | null;
+  frame: number;
+  at: number;
+}) {
   const t = easeInOut((frame - at) / 10);
   return (
     <>
@@ -74,7 +90,21 @@ const written = (t: number): React.CSSProperties => ({
 });
 
 /** A hand-drawn stroke drawing on (an SVG path with pathLength 1). */
-function Stroke({ d, t, colour, width, viewBox, style }: { d: string; t: number; colour: string; width: number; viewBox: string; style?: React.CSSProperties }) {
+function Stroke({
+  d,
+  t,
+  colour,
+  width,
+  viewBox,
+  style,
+}: {
+  d: string;
+  t: number;
+  colour: string;
+  width: number;
+  viewBox: string;
+  style?: React.CSSProperties;
+}) {
   return (
     <svg viewBox={viewBox} style={{ overflow: "visible", ...style }}>
       <path
@@ -198,7 +228,7 @@ function Strip({ g, frame, length }: { g: PlacedGraphic; frame: number; length: 
 function Checklist({ g, frame, length }: { g: PlacedGraphic; frame: number; length: number }) {
   const { unit, portrait } = useUnit();
   const items = g.items.length ? g.items : [g.text];
-  const starts = stepStarts(items.length, length);
+  const starts = itemStarts(g, stepStarts(items.length, length));
   const size = unit * (portrait ? 5.6 : 4.4);
   return (
     <AbsoluteFill style={{ overflow: "hidden" }}>
@@ -236,7 +266,14 @@ function Checklist({ g, frame, length }: { g: PlacedGraphic; frame: number; leng
                   opacity: on ? 1 : 0.28,
                 }}
               >
-                <div style={{ position: "relative", width: size * 1.1, height: size * 1.1, flex: "none" }}>
+                <div
+                  style={{
+                    position: "relative",
+                    width: size * 1.1,
+                    height: size * 1.1,
+                    flex: "none",
+                  }}
+                >
                   <div
                     style={{
                       position: "absolute",
@@ -251,7 +288,12 @@ function Checklist({ g, frame, length }: { g: PlacedGraphic; frame: number; leng
                     t={(frame - at) / 7}
                     colour={NOTE_RED}
                     width={3.4}
-                    style={{ position: "absolute", inset: -size * 0.1, width: size * 1.3, height: size * 1.3 }}
+                    style={{
+                      position: "absolute",
+                      inset: -size * 0.1,
+                      width: size * 1.3,
+                      height: size * 1.3,
+                    }}
                   />
                 </div>
                 {item}
@@ -318,7 +360,13 @@ function Circled({ g, frame, length }: { g: PlacedGraphic; frame: number; length
             t={(frame - 24) / 12}
             colour={NOTE_RED}
             width={2.6}
-            style={{ position: "absolute", left: "-14%", top: "-30%", width: "128%", height: "160%" }}
+            style={{
+              position: "absolute",
+              left: "-14%",
+              top: "-30%",
+              width: "128%",
+              height: "160%",
+            }}
           />
         </div>
         {g.text && (

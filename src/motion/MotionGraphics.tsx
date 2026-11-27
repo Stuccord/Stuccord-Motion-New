@@ -19,6 +19,7 @@ import {
   coinCount,
   loopBeats,
   profileBeats,
+  itemStarts,
   stepStarts,
   streamBeats,
 } from "@/motion/beats";
@@ -429,7 +430,7 @@ function Steps({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   const length = g.to - g.from;
   const items = g.items.length ? g.items : [""];
   const n = items.length;
-  const starts = stepStarts(n, length);
+  const starts = itemStarts(g, stepStarts(n, length));
   const cam = storyCamera(starts, frame);
 
   // Platforms climb up and away: across in landscape, zig-zagging in portrait.
@@ -1439,8 +1440,12 @@ function List({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
   const frame = useStepFrame();
   const { unit, portrait } = useUnit();
   const length = g.to - g.from;
-  // Items arrive one by one over the first two thirds of the graphic.
+  // Items arrive one by one: on the words that say them, else over the first two thirds.
   const step = g.items.length > 1 ? Math.max(6, (length * 0.66) / g.items.length) : 0;
+  const listAt = itemStarts(
+    g,
+    g.items.map((_, i) => Math.round(i * step)),
+  );
   return (
     <AbsoluteFill style={{ opacity: exitOpacity(frame, length) }}>
       <div
@@ -1489,7 +1494,7 @@ function List({ g, theme }: { g: PlacedGraphic; theme: MotionTheme }) {
               marginBottom: unit * 1.4,
               fontSize: unit * (portrait ? 4.6 : 3.8),
               fontWeight: 600,
-              ...pop(frame, Math.round(i * step), unit),
+              ...pop(frame, listAt[i], unit),
             }}
           >
             <span
