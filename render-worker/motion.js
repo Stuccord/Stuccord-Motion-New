@@ -850,32 +850,45 @@ export async function renderGraphics({
     const a = Math.floor(ranges[i][0] / 2);
     const b = Math.ceil(ranges[i][1] / 2);
     const file = path.join(workdir, `${name}_${i}.mov`);
-    await renderMedia({
-      composition,
-      serveUrl: GRAPHICS_BUNDLE,
-      inputProps,
-      codec: "prores",
-      proResProfile: "4444",
-      pixelFormat: "yuva444p10le",
-      imageFormat: "png",
-      frameRange: [a, b - 1],
-      outputLocation: file,
-      muted: true,
-      // Remotion's own choice (half its core count, 1 to 8). It counts cores
-      // with nproc, which sees a container's CPU limit; os.cpus() sees the
-      // whole host, so a number from it can be more than Remotion allows.
-      concurrency: null,
-      // The browser's PNG frames kept as they come (PNG in the .mov), not
-      // re-encoded to ProRes: the encoder held ~270 MB more at its peak (on
-      // top of the browser's ~750 MB with animated story clips), which put a
-      // 2 GB worker over its limit (2026-11-27), and drawing is faster.
-      ffmpegOverride: keepPngFrames,
-      logLevel: "warn",
-      cancelSignal,
-      // A story clip's frame may take a while to load on a slow worker.
-      timeoutInMilliseconds: 60_000,
-      onProgress: ({ renderedFrames }) => onProgress?.((drawn + renderedFrames) / totalToDraw),
-    });
+    const draw = (lean) =>
+      renderMedia({
+        composition,
+        serveUrl: GRAPHICS_BUNDLE,
+        inputProps,
+        codec: "prores",
+        proResProfile: "4444",
+        pixelFormat: "yuva444p10le",
+        imageFormat: "png",
+        frameRange: [a, b - 1],
+        outputLocation: file,
+        muted: true,
+        // Remotion's own choice (half its core count, 1 to 8). It counts cores
+        // with nproc, which sees a container's CPU limit; os.cpus() sees the
+        // whole host, so a number from it can be more than Remotion allows.
+        concurrency: null,
+        ...(lean ? LEAN_DRAWING : {}),
+        logLevel: "warn",
+        cancelSignal,
+        // A story clip's frame may take a while to load on a slow worker.
+        timeoutInMilliseconds: 60_000,
+        onProgress: ({ renderedFrames }) => onProgress?.((drawn + renderedFrames) / totalToDraw),
+      });
+    if (leanDrawingWorks) {
+      try {
+        await draw(true);
+      } catch (e) {
+        if (/cancel/i.test(String(e?.message))) throw e;
+        // The lean way failed here: drawn again the standard way (more
+        // memory, but the video keeps its graphics), and not tried again
+        // until the worker restarts.
+        leanDrawingWorks = false;
+        console.warn("[motion] Lean graphics drawing failed; drawing the standard way:", e?.message || e);
+        await fs.promises.rm(file, { force: true }).catch(() => {});
+        await draw(false);
+      }
+    } else {
+      await draw(false);
+    }
     drawn += b - a;
     pieces.push({ file, startS: a / DRAW_FPS });
   }
@@ -891,14 +904,38 @@ export async function renderGraphics({
 }
 
 /**
+ * The lean way to draw the graphics: the browser's PNG frames kept as they
+ * come (PNG in the .mov), not re-encoded to ProRes. The encoder held up to
+ * ~420 MB at its peak, on top of the browser's ~750 MB with animated story
+ * clips, which put a 2 GB worker over its limit (2026-11-27); drawing is
+ * also faster. It needs the frames as PNG screenshots: Remotion's Linux
+ * shared-memory capture hands ffmpeg raw frames instead (through a "copy"
+ * filter, which can't go with a stream copy: the first try, 2026-11-27,
+ * failed with "FFmpeg closed its Remotion shared-memory ACK pipe"), so
+ * that's switched off here.
+ */
+const LEAN_DRAWING = { disableSharedMemoryCapture: true, ffmpegOverride: keepPngFrames };
+/** Off once the lean way has failed on this worker (until it restarts). */
+let leanDrawingWorks = true;
+
+/**
  * Remotion's encoding step with the frames kept as the PNGs the browser
  * gave (`-c:v copy` in place of ProRes 4444): lossless, with their alpha,
- * and next to no memory. Its other step (a copy into the final file) and
- * anything unexpected pass through unchanged.
+ * and next to no memory. Only when the frames really come in as PNG
+ * images (streamed in, or saved first and read back): anything else (raw
+ * shared-memory frames, its copy into the final file) passes through unchanged.
  */
 export function keepPngFrames({ args }) {
   const at = args.indexOf("prores_ks");
   if (at < 0 || args[at - 1] !== "-c:v") return args;
+  const f = args.indexOf("-f");
+  const input = args[args.indexOf("-i") + 1] ?? "";
+  // Streamed in (parallel encoding) or saved first and read back (when
+  // Remotion thinks memory is short): PNG images either way.
+  const piped = args[f + 1] === "image2pipe" && args[args.indexOf("-vcodec") + 1] === "png";
+  const saved = args[f + 1] === "image2" && /\.png$/i.test(input);
+  if (f < 0 || !(piped || saved)) return args;
+  if (args.includes("-vf") || args.includes("-filter:v") || args.includes("-filter_complex")) return args;
   const out = [...args];
   out.splice(at, 1, "copy");
   for (const flag of ["-profile:v", "-pix_fmt"]) {

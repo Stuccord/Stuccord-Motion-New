@@ -24,7 +24,23 @@
 // ~3 seconds.
 
 // First, so error monitoring is ready before anything else loads.
-import { reportError } from "./sentry.js";
+import { flushErrors, reportError } from "./sentry.js";
+
+// A child program (ffmpeg) that quits while the worker is still writing to
+// it raises its "write EPIPE/EOF" outside the caller's own error handling,
+// and an error there would restart the whole worker (and lose the export in
+// progress). The call that started the program still fails on its own, so
+// that kind is logged and the worker carries on; anything else still stops
+// the worker as before.
+process.on("uncaughtException", (err) => {
+  if (err?.syscall === "write" && /^(EPIPE|EOF)$/.test(String(err?.code ?? ""))) {
+    console.warn(`[Worker] A child program closed its input early (${err.code}); carrying on.`);
+    return;
+  }
+  console.error("[Worker] Uncaught error:", err);
+  reportError(err, "uncaught");
+  void flushErrors().finally(() => process.exit(1));
+});
 import express from "express";
 import crypto from "crypto";
 import { spawn, spawnSync, execFile } from "child_process";
