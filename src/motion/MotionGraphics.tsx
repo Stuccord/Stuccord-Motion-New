@@ -43,6 +43,7 @@ import {
 import { ScreenGraphic } from "@/motion/ScreenGraphic";
 import { METAPHOR_LOOKS, type MotionLookId } from "@/motion/looks";
 import { NotesGraphic } from "@/motion/NotesGraphic";
+import { Transitioned, transitionEdges, type Edges } from "@/motion/transitions";
 import {
   BASE_FPS,
   ImagesContext,
@@ -69,6 +70,11 @@ export type MotionGraphicsProps = {
   logo?: string | null;
   /** The graphics' look: dark glass (the default), paper on a desk, minimal, cinematic or SaaS. */
   look?: MotionLookId;
+  /**
+   * Each graphic's transitions (transitions.tsx), worked out from the whole
+   * timeline; the editor passes them as it draws only what's on screen.
+   */
+  edges?: Record<string, Edges>;
 };
 
 // ---------- story: pictures in 3D space, one moving camera ----------
@@ -1886,10 +1892,22 @@ function HoldCamera({ g, children }: { g: PlacedGraphic; children: React.ReactNo
 }
 
 /** Every graphic, each in its own stretch of the timeline. */
-export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGraphicsProps) {
+export function MotionGraphics({
+  graphics,
+  theme,
+  images,
+  logo,
+  look,
+  edges,
+}: MotionGraphicsProps) {
   // Graphics are placed in 30 fps frames; at a lower rate, scale them.
   const { fps } = useVideoConfig();
   const scale = fps / BASE_FPS;
+  const lookId: MotionLookId = look ?? "glass";
+  const allEdges = React.useMemo(
+    () => edges ?? transitionEdges(graphics, lookId),
+    [edges, graphics, lookId],
+  );
   return (
     <ImagesContext.Provider value={images ?? {}}>
       <LogoContext.Provider value={logo ?? null}>
@@ -1930,6 +1948,22 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
                                         : look === "studio"
                                           ? StudioGraphic
                                           : DRAW[g.type];
+            const drawn =
+              look === "paper" || !look || look === "glass" ? (
+                <HoldCamera g={g}>
+                  <Draw g={g} theme={theme} />
+                </HoldCamera>
+              ) : (
+                <Draw g={g} theme={theme} />
+              );
+            const e = allEdges[g.id];
+            // Full-screen B-roll: in and out with the look's transition.
+            if (e && (e.enter || e.exit || e.until > g.to))
+              return (
+                <Transitioned key={g.id} g={g} edges={e} look={lookId} accent={theme.accent}>
+                  {drawn}
+                </Transitioned>
+              );
             return (
               <Sequence
                 key={g.id}
@@ -1940,13 +1974,7 @@ export function MotionGraphics({ graphics, theme, images, logo, look }: MotionGr
                 )}
                 layout="none"
               >
-                {look === "paper" || !look || look === "glass" ? (
-                  <HoldCamera g={g}>
-                    <Draw g={g} theme={theme} />
-                  </HoldCamera>
-                ) : (
-                  <Draw g={g} theme={theme} />
-                )}
+                {drawn}
               </Sequence>
             );
           })}

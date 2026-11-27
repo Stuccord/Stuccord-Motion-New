@@ -2069,7 +2069,7 @@ async function runRender(job) {
         // The graphics' sounds, mixed into one track first (best-effort).
         if (graphicsSounds) {
           try {
-            const events = soundEvents(placedMotion.graphics, placedMotion.zooms, motionJob.sound).map(
+            const events = soundEvents(placedMotion.graphics, placedMotion.zooms, motionJob.sound, motionJob.look).map(
               (e) => ({ ...e, gain: soundGain(e.kind, motionJob.sound) }),
             );
             const trackPath = path.join(workdir, "graphics-sounds.wav");

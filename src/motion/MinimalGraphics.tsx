@@ -36,6 +36,7 @@ import {
 } from "@/motion/beats";
 import type { PlacedGraphic } from "@/motion/timing";
 import { NotesGraphic } from "@/motion/NotesGraphic";
+import { SideBlur } from "@/motion/transitions";
 import { MinimalScene, isMinimalScene } from "@/motion/MinimalScene";
 import { DocuScene, isDocuScene, DOCU_INK, DOCU_RED, DOCU_STAGE } from "@/motion/DocuScene";
 import { Cine3dScene, isCineScene, CINE_RED, CINE_STAGE } from "@/motion/Cine3dScene";
@@ -1440,6 +1441,9 @@ function FramedPicture({
   );
 }
 
+/** Frames a story scene takes to push the one before it off. */
+const SCENE_PUSH = 9;
+
 const MinimalStory: Draw = ({ g, theme }) => {
   const frame = useStepFrame();
   const { unit, portrait } = useUnit();
@@ -1447,19 +1451,32 @@ const MinimalStory: Draw = ({ g, theme }) => {
   const length = g.to - g.from;
   const scenes = g.scenes ?? [];
   const starts = scenes.map((sc) => Math.max(0, sc.from - g.from));
-  // Each scene fades in over the one before it.
+  // Each scene pushes the one before it off to the left, on its word: the
+  // same direction every time (the story moving forward), blurred along
+  // its way as fast as it moves.
   return (
     <Page opacity={Math.min(easeOut(frame / 8), exitOpacity(frame, length))}>
       {scenes.map((sc, i) => {
         if (frame < starts[i]) return null;
         const end = starts[i + 1] ?? length;
         // Gone once the next one is fully in.
-        if (frame >= end + 10) return null;
+        if (frame >= end + SCENE_PUSH) return null;
+        const arrive = i === 0 ? 1 : clamp01((frame - starts[i]) / SCENE_PUSH);
+        const leave = i + 1 < starts.length ? clamp01((frame - end) / SCENE_PUSH) : 0;
+        const x = 1 - easeOut(arrive) - easeOut(leave);
+        const speed = Math.max((1 - arrive) ** 2, (1 - leave) ** 2 * (leave > 0 ? 1 : 0));
         return (
           <AbsoluteFill
             key={i}
-            style={{ opacity: easeOut((frame - starts[i]) / 10), background: PAGE }}
+            style={{
+              transform: x ? `translateX(${x * 100}%)` : undefined,
+              background: PAGE,
+              filter: speed > 0.05 ? `url(#scene-blur-${g.id}-${i})` : undefined,
+            }}
           >
+            {speed > 0.05 && (
+              <SideBlur id={`scene-blur-${g.id}-${i}`} amount={unit * 2.4 * speed} />
+            )}
             <FramedPicture
               url={sc.image ? images[sc.image] : undefined}
               text={sc.text}

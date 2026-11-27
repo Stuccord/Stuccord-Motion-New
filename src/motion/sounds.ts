@@ -18,6 +18,8 @@ import {
   stepStarts,
   streamBeats,
 } from "@/motion/beats";
+import type { MotionLookId } from "@/motion/looks";
+import { transitionEdges } from "@/motion/transitions";
 
 export const SOUND_KINDS = [
   "whoosh-light",
@@ -116,7 +118,11 @@ export const DEFAULT_SOUND_VOLUME = 70;
 const frameMs = (f: number) => (f / MOTION_FPS) * 1000;
 
 /** Where the sounds go, before any hand edits. */
-export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]): SoundEvent[] {
+export function baseSoundEvents(
+  graphics: PlacedGraphic[],
+  zooms: PlacedZoom[],
+  look?: MotionLookId,
+): SoundEvent[] {
   const out: SoundEvent[] = [];
   const add = (g: { id: string }, part: string, kind: SoundKind, atMs: number) =>
     out.push({ id: `${g.id}:${part}`, kind, atMs: Math.max(0, Math.round(atMs)), graphicId: g.id });
@@ -251,6 +257,15 @@ export function baseSoundEvents(graphics: PlacedGraphic[], zooms: PlacedZoom[]):
   for (const z of zooms) {
     if (z.zoom === "in") add(z, "enter", "whoosh-light", frameMs(z.from) - WHOOSH_LEAD_MS);
   }
+  // Full-screen B-roll leaving for the speaker: a whoosh on its transition
+  // out (none when it holds into the next B-roll, which has its own).
+  if (look) {
+    const edges = transitionEdges(graphics, look);
+    for (const g of graphics) {
+      const e = edges[g.id];
+      if (e?.exit) add(g, "out", "whoosh-light", frameMs(e.until) - WHOOSH_LEAD_MS);
+    }
+  }
   return out.sort((a, b) => a.atMs - b.atMs);
 }
 
@@ -259,11 +274,12 @@ export function soundEvents(
   graphics: PlacedGraphic[],
   zooms: PlacedZoom[],
   settings: SoundSettings | undefined,
+  look?: MotionLookId,
 ): SoundEvent[] {
   if (settings?.enabled === false) return [];
   const removed = new Set(settings?.removed ?? []);
   const moved = settings?.moved ?? {};
-  return baseSoundEvents(graphics, zooms)
+  return baseSoundEvents(graphics, zooms, look)
     .filter((e) => !removed.has(e.id))
     .map((e) => (moved[e.id] ? { ...e, atMs: Math.max(0, e.atMs + moved[e.id]) } : e))
     .sort((a, b) => a.atMs - b.atMs);

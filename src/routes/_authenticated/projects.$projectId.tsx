@@ -1936,7 +1936,12 @@ function EditorPage() {
   const soundSettings: SoundSettings | undefined = motionPlan?.sound;
   const soundsOn = graphicsOn && soundSettings?.enabled !== false;
   const placedSounds = graphicsOn
-    ? soundEvents(placedMotion.graphics, placedMotion.zooms, soundSettings)
+    ? soundEvents(
+        placedMotion.graphics,
+        placedMotion.zooms,
+        soundSettings,
+        motionPlan?.look ?? "glass",
+      )
     : [];
   const hasSongs = audioClips.some((c) => c.role === "music");
   autoAudio.current = {
@@ -1987,9 +1992,11 @@ function EditorPage() {
             ? () => changeSound((s) => ({ ...s, enabled: s.enabled === false }))
             : undefined,
           onMove: (id, atMs) => {
-            const base = baseSoundEvents(placedMotion.graphics, placedMotion.zooms).find(
-              (e) => e.id === id,
-            );
+            const base = baseSoundEvents(
+              placedMotion.graphics,
+              placedMotion.zooms,
+              motionPlan?.look ?? "glass",
+            ).find((e) => e.id === id);
             if (!base) return;
             const offset = Math.max(-20_000, Math.min(20_000, Math.round(atMs - base.atMs)));
             changeSound((s) => ({ ...s, moved: { ...(s.moved ?? {}), [id]: offset } }));

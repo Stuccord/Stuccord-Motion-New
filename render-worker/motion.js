@@ -29,6 +29,26 @@ const MOTIFS = ["road", "stairs", "mountain", "crossroads", "scale", "chart", "c
 const MAX_ITEMS = { compare: 2, card: 4, steps: 5, loop: 6, screen: 5 };
 // Graphics that fill the screen, so the captions make way (FULL_SCREEN_TYPES).
 const FULL_SCREEN = new Set(["keyline", "chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "notes", "screen", "metaphor"]);
+// Graphics that cover the whole frame (the speaker), and so come and go with
+// the look's transition (src/motion/transitions.tsx coversFrame): these in
+// every look, plus the ones a look draws as a full scene of its own.
+const COVER_TYPES = new Set(["chapter", "story", "cartoon", "steps", "loop", "coins", "stream", "profile", "screen"]);
+const LOOK_COVER_TYPES = {
+  paper: ["keyline", "counter", "list", "card", "compare", "metaphor"],
+  minimal: ["keyline", "counter", "list", "cta", "metaphor"],
+  docu: ["keyline", "metaphor"],
+  cine3d: ["keyline", "metaphor"],
+  monument: ["keyline", "metaphor"],
+  bulletin: ["compare"],
+  impact: ["counter"],
+  noir: ["counter"],
+  notebook: ["list"],
+};
+// B-roll this close (frames) to the next holds on until it (transitions.tsx).
+const JOIN_FRAMES = 12;
+// Frames a transition starts before its graphic and runs on after it (transitions.tsx EDGE_BEFORE, EDGE_AFTER).
+const EDGE_BEFORE = 6;
+const EDGE_AFTER = 10;
 // How far the picture shifts while a Notes page is up (src/motion/timing.ts).
 const SPLIT_WIDE = 0.25;
 const SPLIT_TALL = 0.15;
@@ -408,8 +428,10 @@ export async function prepareStoryClips(
 
 /** Frame stretches with graphics on screen, close ones joined (inclusive start, exclusive end). */
 export function graphicRanges(graphics, totalFrames, joinGap = 15) {
+  // Each with room for its transitions: a flash or dip builds before it and
+  // clears after it, and B-roll holds on into the next (transitions.tsx).
   const spans = graphics
-    .map((g) => [Math.max(0, g.from), Math.min(totalFrames, g.to)])
+    .map((g) => [Math.max(0, g.from - EDGE_BEFORE), Math.min(totalFrames, g.to + JOIN_FRAMES + EDGE_AFTER)])
     .filter(([a, b]) => b > a)
     .sort((x, y) => x[0] - y[0]);
   const out = [];
@@ -965,8 +987,32 @@ const DEFAULT_SOUND_VOLUME = 70;
 const MIN_MUSIC_MS = 4000;
 const frameMs = (f) => (f / MOTION_FPS) * 1000;
 
+/** Whether a graphic covers the whole frame in this look (transitions.tsx coversFrame). */
+export function coversFrame(look, g) {
+  if (g.behind) return false;
+  return COVER_TYPES.has(g.type) || (LOOK_COVER_TYPES[look] ?? []).includes(g.type);
+}
+
+/**
+ * The full-screen graphics that leave for the speaker with a transition, by
+ * id, and when (transitions.tsx transitionEdges): not the ones that hold on
+ * into the next B-roll.
+ */
+export function transitionExits(graphics, look) {
+  const covering = graphics
+    .filter((g) => coversFrame(look, g))
+    .sort((a, b) => a.from - b.from || a.to - b.to);
+  const out = new Map();
+  covering.forEach((g, i) => {
+    const next = covering[i + 1];
+    const joined = !!next && next.from - g.to <= JOIN_FRAMES && next.from > g.from;
+    if (!joined) out.set(g.id, g.to);
+  });
+  return out;
+}
+
 /** Where the sounds go, before hand edits. */
-export function baseSoundEvents(graphics, zooms) {
+export function baseSoundEvents(graphics, zooms, look = "glass") {
   const out = [];
   const add = (g, part, kind, atMs) =>
     out.push({ id: `${g.id}:${part}`, kind, atMs: Math.max(0, Math.round(atMs)), graphicId: g.id });
@@ -1085,16 +1131,21 @@ export function baseSoundEvents(graphics, zooms) {
   for (const z of zooms) {
     if (z.zoom === "in") add(z, "enter", "whoosh-light", frameMs(z.from) - WHOOSH_LEAD_MS);
   }
+  // Full-screen B-roll leaving for the speaker: a whoosh on its transition out.
+  const exits = transitionExits(graphics, look);
+  for (const g of graphics) {
+    if (exits.has(g.id)) add(g, "out", "whoosh-light", frameMs(exits.get(g.id)) - WHOOSH_LEAD_MS);
+  }
   return out.sort((a, b) => a.atMs - b.atMs);
 }
 
 /** The sounds after hand edits; none when off. Bad settings are ignored. */
-export function soundEvents(graphics, zooms, settings) {
+export function soundEvents(graphics, zooms, settings, look = "glass") {
   const s = settings && typeof settings === "object" ? settings : {};
   if (s.enabled === false) return [];
   const removed = new Set(Array.isArray(s.removed) ? s.removed.filter((x) => typeof x === "string") : []);
   const moved = s.moved && typeof s.moved === "object" ? s.moved : {};
-  return baseSoundEvents(graphics, zooms)
+  return baseSoundEvents(graphics, zooms, Object.hasOwn(LOOK_FINISH, look ?? "") ? look : "glass")
     .filter((e) => !removed.has(e.id))
     .map((e) => {
       const m = Number(moved[e.id]);

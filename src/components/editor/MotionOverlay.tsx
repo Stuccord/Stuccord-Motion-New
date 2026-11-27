@@ -10,6 +10,7 @@ import { MotionGraphics, type MotionGraphicsProps } from "@/motion/MotionGraphic
 import { MOTION_FONTS, type MotionTheme } from "@/motion/theme";
 import type { MotionLookId } from "@/motion/looks";
 import { MOTION_FPS, frameSize, type PlacedGraphic } from "@/motion/timing";
+import { onScreenAt, transitionEdges } from "@/motion/transitions";
 
 let fontsAdded = false;
 /**
@@ -55,19 +56,22 @@ export function MotionOverlay({
   useMotionFonts();
   const { width, height } = frameSize(aspect);
   const frame = Math.max(0, Math.round((timeMs / 1000) * MOTION_FPS));
+  // The transitions are worked out from the whole timeline (B-roll holds
+  // into the next), so each graphic shows through its transitions too.
+  const edges = useMemo(() => transitionEdges(graphics, look ?? "glass"), [graphics, look]);
   const active = graphics.filter(
-    (g) => frame >= g.from && frame < g.to && g.behind === (layer === "behind"),
+    (g) => onScreenAt(g, edges[g.id], frame) && g.behind === (layer === "behind"),
   );
   // Only what's on screen is drawn; the props stay the same object while
   // the same graphics are showing.
   const activeKey = active.map((g) => g.id).join(",");
   const inputProps = useMemo<MotionGraphicsProps>(
-    () => ({ graphics: active, theme, images, logo, look }),
+    () => ({ graphics: active, theme, images, logo, look, edges }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeKey, graphics, theme, images, logo, look],
+    [activeKey, graphics, theme, images, logo, look, edges],
   );
   if (active.length === 0) return null;
-  const durationInFrames = Math.max(frame + 1, ...active.map((g) => g.to));
+  const durationInFrames = Math.max(frame + 1, ...active.map((g) => edges[g.id].until + 12));
   return (
     <div
       className={cn(
