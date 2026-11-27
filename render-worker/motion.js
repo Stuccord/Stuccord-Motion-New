@@ -919,11 +919,20 @@ const LEAN_DRAWING = { disableSharedMemoryCapture: true, ffmpegOverride: keepPng
 let leanDrawingWorks = true;
 
 /**
- * Remotion's encoding step with the frames kept as the PNGs the browser
- * gave (`-c:v copy` in place of ProRes 4444): lossless, with their alpha,
- * and next to no memory. Only when the frames really come in as PNG
- * images (streamed in, or saved first and read back): anything else (raw
- * shared-memory frames, its copy into the final file) passes through unchanged.
+ * Remotion's encoding step with the frames saved as PNG (in place of
+ * ProRes 4444): lossless, with their alpha, and next to no memory. Only
+ * when the frames really come in as PNG images (streamed in, or saved
+ * first and read back): anything else (raw shared-memory frames, its copy
+ * into the final file) passes through unchanged.
+ *
+ * Every frame is written again as RGBA, never copied as the browser gave
+ * it: the browser saves a frame with nothing see-through in it (a
+ * full-screen card) as RGB with no alpha, so a copied file switched format
+ * mid-way. The final pass then rebuilt its whole filter graph at each
+ * switch, which restarted its frame counters: the speaker's cut-out landed
+ * on the wrong frames (a band of wall, or a whole ghost of the head, round
+ * the speaker), cards flickered or came late, and the video stopped early
+ * (exports of 2026-11-27, on ffmpeg 6.1 and 7.0 alike).
  */
 export function keepPngFrames({ args }) {
   const at = args.indexOf("prores_ks");
@@ -937,11 +946,12 @@ export function keepPngFrames({ args }) {
   if (f < 0 || !(piped || saved)) return args;
   if (args.includes("-vf") || args.includes("-filter:v") || args.includes("-filter_complex")) return args;
   const out = [...args];
-  out.splice(at, 1, "copy");
-  for (const flag of ["-profile:v", "-pix_fmt"]) {
-    const i = out.indexOf(flag);
-    if (i >= 0) out.splice(i, 2);
-  }
+  out.splice(at, 1, "png");
+  const profile = out.indexOf("-profile:v");
+  if (profile >= 0) out.splice(profile, 2);
+  const pix = out.indexOf("-pix_fmt");
+  if (pix >= 0) out.splice(pix, 2, "-pix_fmt", "rgba");
+  else out.splice(out.length - 1, 0, "-pix_fmt", "rgba");
   return out;
 }
 
