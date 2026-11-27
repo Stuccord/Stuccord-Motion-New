@@ -183,6 +183,21 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   // The saved cut-outs' videos, by link: kept loaded between stretches so
   // one is ready the moment its stretch starts.
   const cutoutVideos = useRef(new Map<string, HTMLVideoElement>());
+  // Bumped when a saved cut-out's video can show its first frame (redraws a
+  // paused picture, which may now go behind the graphics).
+  const [, setCutoutsLoaded] = useState(0);
+  // The browser's cut-out model: loaded (once) the first time a behind
+  // graphic shows, when it's wanted at all (see browserCutout).
+  const [segmenterReady, setSegmenterReady] = useState(false);
+  const [segmenterWanted, setSegmenterWanted] = useState(false);
+  useEffect(() => {
+    if (!segmenterWanted || !browserCutout) return;
+    let alive = true;
+    void loadPersonSegmenter().then((s) => alive && setSegmenterReady(!!s));
+    return () => {
+      alive = false;
+    };
+  }, [segmenterWanted, browserCutout]);
   const cutoutLinks = Object.values(cutouts ?? {})
     .flat()
     .map((c) => c.url)
@@ -205,6 +220,7 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
       el.playsInline = true;
       el.crossOrigin = "anonymous";
       el.preload = "auto";
+      el.addEventListener("loadeddata", () => setCutoutsLoaded((n) => n + 1), { once: true });
       el.src = url;
       have.set(url, el);
     }
@@ -479,7 +495,25 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
           transformOrigin: `${(pictureOrigin?.x ?? 0.5) * 100}% ${(pictureOrigin?.y ?? 0.4) * 100}%`,
         }
       : undefined;
-  const behind = behindAt?.(t) ?? 0;
+  // Graphics behind the speaker only when the speaker can be cut out now:
+  // a saved cut-out ready for a video on screen, or the browser's cut-out.
+  // Until then the picture stays as it is and the graphics show in front
+  // of it (as the export does when it can't cut the speaker out), never
+  // the speaker blurred and dark behind them.
+  const behindWanted = behindAt?.(t) ?? 0;
+  const savedCutoutReady =
+    behindWanted > 0 &&
+    layers.some((p) => {
+      if (isImage(p.clip) || t < p.start || t >= p.end) return false;
+      const ms = (p.clip.trim_in_ms ?? 0) + (t - p.start);
+      const c = cutouts?.[p.clip.storage_path]?.find((x) => ms >= x.fromMs && ms < x.toMs);
+      const el = c ? cutoutVideos.current.get(c.url) : undefined;
+      return !!el && el.readyState >= 2;
+    });
+  const behind = savedCutoutReady || (browserCutout && segmenterReady) ? behindWanted : 0;
+  useEffect(() => {
+    if (behindWanted > 0 && browserCutout && !segmenterWanted) setSegmenterWanted(true);
+  }, [behindWanted, browserCutout, segmenterWanted]);
 
   // What the box can grab: the clips showing now, top-most first.
   const targets: BoxTarget[] = [activeAt(placed.over, t), mainActive]

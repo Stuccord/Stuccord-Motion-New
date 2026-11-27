@@ -1,7 +1,7 @@
 // The editor preview's cut-outs (see cutout-preview.ts): which are saved,
 // and asking the render worker (/cutout) for the missing ones, in the
-// background, once per stretch per server every ASK_AGAIN_MS (another tab
-// or a refresh doesn't ask again while one is being made).
+// background, once per stretch per server every ASK_AGAIN_MS while it's
+// missing (another tab or a refresh doesn't ask again before then).
 
 import {
   covers,
@@ -12,7 +12,15 @@ import {
   type PreviewCutout,
 } from "@/lib/cutout-preview";
 
-const ASK_AGAIN_MS = 15 * 60 * 1000;
+// Asked again while it's still missing: a cut-out takes a minute or two, and
+// one the worker lost (a restart for a deploy, a failure) would otherwise
+// leave the editor waiting. The worker ignores a repeat while the same one
+// is being made, so a repeat never pays twice.
+const ASK_AGAIN_MS = 4 * 60 * 1000;
+/** After an ask that didn't get through (the worker asleep or restarting). */
+const RETRY_SOON_MS = 30 * 1000;
+/** An old worker or one without Pixelcut: not asked again for this long. */
+const REFUSED_MS = 60 * 60 * 1000;
 const asked = new Map<string, number>();
 /** Pieces the worker can't make (no Pixelcut, an old worker), until when. */
 const refused = new Map<string, number>();
@@ -45,7 +53,7 @@ async function requestCutout(piece: CutoutStretch): Promise<void> {
     const { workerSecret } = await import("@/lib/worker-secret");
     const secret = workerSecret();
     if (!secret || !process.env.RENDER_WORKER_URL?.trim()) {
-      refused.set(key, Date.now() + ASK_AGAIN_MS);
+      refused.set(key, Date.now() + REFUSED_MS);
       return;
     }
     const { hmacHex, workerEndpoint } = await import("@/lib/motion-plan.functions");
@@ -71,14 +79,24 @@ async function requestCutout(piece: CutoutStretch): Promise<void> {
       body,
       signal: AbortSignal.timeout(15_000),
     });
-    // An older worker (404) or one without Pixelcut (503): the preview keeps
-    // its own cut-out; asked again much later.
     if (res.status !== 202) {
-      console.warn(`[cutout-preview] The worker didn't take ${key}: HTTP ${res.status}`);
-      asked.set(key, Date.now() + ASK_AGAIN_MS * 4);
-      refused.set(key, Date.now() + ASK_AGAIN_MS * 5);
+      const text = await res.text().catch(() => "");
+      console.warn(
+        `[cutout-preview] The worker didn't take ${key}: HTTP ${res.status} ${text.slice(0, 120)}`,
+      );
+      // An older worker (404) or one without Pixelcut (its own 503): the
+      // preview uses the browser's cut-out; asked again much later. Anything
+      // else (Render's proxy while the worker restarts): asked again soon.
+      if (res.status === 404 || (res.status === 503 && /not set up/i.test(text))) {
+        asked.set(key, Date.now() + REFUSED_MS);
+        refused.set(key, Date.now() + REFUSED_MS);
+      } else {
+        asked.set(key, Date.now() - ASK_AGAIN_MS + RETRY_SOON_MS);
+      }
     }
   } catch (e) {
+    // Didn't get through: ask again soon instead of in ASK_AGAIN_MS.
+    asked.set(key, Date.now() - ASK_AGAIN_MS + RETRY_SOON_MS);
     console.warn(`[cutout-preview] Couldn't ask for ${key}:`, e);
   }
 }
