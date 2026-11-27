@@ -13,6 +13,7 @@ import {
   Volume2,
   Mic,
   Music2,
+  AudioLines,
 } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { RenderJobRow } from "./types";
 import { presetLabel } from "@/lib/presets";
+import { NOISE_MODE_HINT, NOISE_MODE_LABEL, type NoiseMode } from "@/lib/noise-removal";
 
 /* ---------- types ---------- */
 export interface EditPlan {
@@ -65,6 +67,78 @@ export interface AIMotionPanelProps {
   onMusicMade?: () => void;
   /** Scroll the music section into view (opened from Home's Music & SFX). */
   focusMusic?: boolean;
+  /** The voice's noise removal: the setting, and which sound the preview plays. */
+  noise?: {
+    mode: NoiseMode;
+    onModeChange: (mode: NoiseMode) => void;
+    hearClean: boolean;
+    onHearCleanChange: (on: boolean) => void;
+    /** Recordings still being cleaned for the preview, and ones ready. */
+    preparing: number;
+    ready: number;
+  };
+}
+
+/** The Noise removal setting, and the preview's Original / Cleaned switch. */
+function NoiseRemoval({ noise }: { noise: NonNullable<AIMotionPanelProps["noise"]> }) {
+  const { mode, preparing, ready } = noise;
+  return (
+    <div>
+      <SectionHeader label="Noise removal" icon={AudioLines} />
+      <div className="grid grid-cols-4 gap-1 mb-1.5" role="radiogroup" aria-label="Noise removal">
+        {(["auto", "light", "strong", "off"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={mode === m}
+            onClick={() => mode !== m && noise.onModeChange(m)}
+            className={cn(
+              "h-7 rounded-md border text-[11px] transition-colors",
+              mode === m
+                ? "border-violet-500/60 bg-violet-500/15 text-violet-100"
+                : "border-white/10 text-neutral-400 hover:text-neutral-200 hover:border-white/20",
+            )}
+          >
+            {NOISE_MODE_LABEL[m]}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] leading-relaxed text-neutral-500 mb-2">{NOISE_MODE_HINT[mode]}</p>
+      {mode !== "off" && (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-neutral-400">Preview plays</span>
+          <div className="flex rounded-md border border-white/10 overflow-hidden">
+            {[
+              { on: false, label: "Original" },
+              { on: true, label: "Cleaned" },
+            ].map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                aria-pressed={noise.hearClean === o.on}
+                onClick={() => noise.onHearCleanChange(o.on)}
+                className={cn(
+                  "h-6 px-2 text-[11px] transition-colors",
+                  noise.hearClean === o.on
+                    ? "bg-white/10 text-neutral-100"
+                    : "text-neutral-500 hover:text-neutral-300",
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {preparing > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-neutral-500">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              {ready > 0 ? "Cleaning the rest…" : "Cleaning…"}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Makes an AI track for this video (ElevenLabs Music) and puts it on the music track. */
@@ -87,7 +161,9 @@ function AiMusicMaker({
   const make = async () => {
     setBusy(true);
     try {
-      await makeFn({ data: { project_id: projectId, look: look ?? null, note: note.trim() || undefined } });
+      await makeFn({
+        data: { project_id: projectId, look: look ?? null, note: note.trim() || undefined },
+      });
       toast.success("AI music added to the music track");
       setNote("");
       onMade?.();
@@ -337,6 +413,7 @@ export function AIMotionPanel({
   onOpenVoiceover,
   onMusicMade,
   focusMusic,
+  noise,
 }: AIMotionPanelProps) {
   const musicRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -514,8 +591,13 @@ export function AIMotionPanel({
                   </span>
                 </div>
               )}
-              {musicEnabled && <AiMusicMaker projectId={projectId} look={look} onMade={onMusicMade} />}
+              {musicEnabled && (
+                <AiMusicMaker projectId={projectId} look={look} onMade={onMusicMade} />
+              )}
             </div>
+
+            {/* Noise removal */}
+            {noise && <NoiseRemoval noise={noise} />}
 
             {/* Voice-over */}
             <div>

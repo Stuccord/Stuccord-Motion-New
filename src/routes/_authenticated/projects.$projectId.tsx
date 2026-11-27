@@ -1,3 +1,5 @@
+import { noiseModeOf, type NoiseMode } from "@/lib/noise-removal";
+import { useCleanVoice } from "@/lib/use-clean-voice";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient, useIsMutating } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -412,10 +414,15 @@ function EditorPage() {
   const musicEnabled = data?.project.music_enabled ?? true;
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
   const musicVolume = volumeDraft ?? data?.project.music_volume ?? 60;
+  // How hard the export cleans the voice (noise-removal.ts), and which the
+  // preview plays: the cleaned voice or the recording as it is.
+  const noiseRemoval = noiseModeOf(data?.project.noise_removal);
+  const [hearClean, setHearClean] = useState(true);
   const saveExportSwitches = useMutation({
     mutationFn: (
       patch: Partial<Record<"captions_enabled" | "music_enabled", boolean>> & {
         music_volume?: number;
+        noise_removal?: NoiseMode;
       },
     ) => updateSettings({ data: { id: projectId, ...patch } }),
     // Show the change at once; put it back if saving fails.
@@ -1848,6 +1855,23 @@ function EditorPage() {
         })),
   });
 
+  // The main track's recordings with the export's noise removal, for the
+  // preview (made by the worker the first time they're asked for): the
+  // A-roll's videos, or the B-roll's when there's no A-roll, as the export.
+  const cleanVoice = useCleanVoice(
+    readOnly ? undefined : data?.project.id,
+    (() => {
+      const all = ((data?.clips ?? []) as ClipRow[]).filter(
+        (c) => !isAudioRole(c.role) && !isImageFilename(c.filename),
+      );
+      const a = all.filter((c) => c.role === "aroll" || c.role === "auto");
+      return (a.length ? a : all.filter((c) => c.role === "broll"))
+        .map((c) => c.storage_path)
+        .filter((p): p is string => !!p);
+    })(),
+    noiseRemoval,
+  );
+
   if (isLoading || !data) {
     return (
       <div className="min-h-screen bg-neutral-950 grid place-items-center text-neutral-400">
@@ -2686,6 +2710,8 @@ function EditorPage() {
               aRoll,
               bRoll,
               urls: playerUrls,
+              cleanVoice: noiseRemoval !== "off" ? cleanVoice.urls : undefined,
+              hearClean,
               lengthMs: clipVisibleMs,
               onTick: previewAudioTick,
               // Captions (when on) and the last render's AI hook, like the export.
@@ -3017,6 +3043,15 @@ function EditorPage() {
                   onCaptionsEnabledChange={(on) =>
                     saveExportSwitches.mutate({ captions_enabled: on })
                   }
+                  noise={{
+                    mode: noiseRemoval,
+                    onModeChange: (mode) => saveExportSwitches.mutate({ noise_removal: mode }),
+                    hearClean,
+                    onHearCleanChange: setHearClean,
+                    // Recordings still being cleaned for the preview.
+                    preparing: cleanVoice.waiting,
+                    ready: Object.keys(cleanVoice.urls).length,
+                  }}
                   graphics={
                     <MotionPlanSection
                       projectId={projectId}

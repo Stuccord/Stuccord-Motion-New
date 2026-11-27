@@ -1,3 +1,4 @@
+import { NOISE_MODES, noiseModeOf } from "@/lib/noise-removal";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
@@ -785,6 +786,9 @@ export const deleteProject = createServerFn({ method: "POST" })
       // And the preview's cut-outs of them.
       const { removeCutouts } = await import("@/lib/cutout-preview.server");
       await removeCutouts(unused);
+      // And their cleaned voices.
+      const { removeCleanVoices } = await import("@/lib/clean-voice.server");
+      await removeCleanVoices(unused);
     }
     const pictures = await listFolder(
       admin,
@@ -1068,6 +1072,8 @@ export const removeClip = createServerFn({ method: "POST" })
       if (rmErr) console.error("[removeClip] Failed to delete source file:", rmErr.message);
       const { removeCutouts } = await import("@/lib/cutout-preview.server");
       await removeCutouts([clip.storage_path]);
+      const { removeCleanVoices } = await import("@/lib/clean-voice.server");
+      await removeCleanVoices([clip.storage_path]);
       // Its transcript goes with it.
       const { error: tErr } = await context.supabase
         .from("transcripts")
@@ -1440,11 +1446,14 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
         captions_enabled: z.boolean().optional(),
         music_enabled: z.boolean().optional(),
         music_volume: z.number().int().min(0).max(100).optional(),
+        // The Noise removal setting (noise-removal.ts).
+        noise_removal: z.enum(NOISE_MODES).optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     const patch: Database["public"]["Tables"]["projects"]["Update"] = {};
+    if (data.noise_removal !== undefined) patch.noise_removal = data.noise_removal;
     if (data.aspect_ratio !== undefined) patch.aspect_ratio = data.aspect_ratio;
     if (data.style_preset !== undefined) patch.style_preset = data.style_preset;
     if (data.title !== undefined) patch.title = data.title;
@@ -1479,6 +1488,7 @@ export const updateProjectSettings = createServerFn({ method: "POST" })
       data.script !== undefined ||
       data.brief !== undefined ||
       data.captions_enabled !== undefined ||
+      data.noise_removal !== undefined ||
       musicAffectsRender;
     if (affectsRender && row.status === "ready") {
       await markProjectEdited(context.supabase, data.id);
@@ -1995,6 +2005,8 @@ export async function startCloudRender(
       aspect_ratio: project.aspect_ratio,
       captions: data.captions,
       music: data.music,
+      // How hard the voice is cleaned (render-worker/noise.js).
+      noise: noiseModeOf((project as { noise_removal?: string }).noise_removal),
       brand_kit: brandKit,
       // "Made with Stuccord" in a corner, for free plans (see plans.ts).
       watermark: allowance.watermark,

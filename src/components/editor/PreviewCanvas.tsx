@@ -43,6 +43,10 @@ interface PreviewCanvasProps {
     cutouts?: { projectId: string; stretches: CutoutStretch[] };
     /** What the export's grade is made from: the preview draws the picture through it. */
     grade?: PreviewGradeRequest | null;
+    /** The voice with the export's noise removal, by recording path (use-clean-voice.ts). */
+    cleanVoice?: Record<string, string>;
+    /** Play the cleaned voice (else the recording's own sound). */
+    hearClean?: boolean;
     /** A clip's download stalled: re-sign its link. True: a fresh link is on its way. */
     onStall?: (storagePath: string) => boolean;
     /** Whether the clips' own sound is lowered at a time (under a voiceover). */
@@ -498,6 +502,8 @@ export function PreviewCanvas({
               // (or isn't asked for, e.g. view-only).
               browserCutout={!timeline!.cutouts || cutoutFallback}
               onStall={timeline!.onStall}
+              cleanVoice={timeline!.cleanVoice}
+              hearClean={timeline!.hearClean}
               duckAt={timeline!.duckAt}
               selectedClipId={timeline!.selectedClipId}
               onSelectClip={timeline!.onSelectClip}

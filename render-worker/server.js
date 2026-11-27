@@ -80,7 +80,7 @@ import {
   voiceGainDb,
   voiceTrimDb,
 } from "./audio.js";
-import { analyzeVoice, voiceCleanup } from "./noise.js";
+import { analyzeVoice, NOISE_MODES, noiseMode, voiceCleanup } from "./noise.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -641,6 +641,84 @@ app.post("/preview", (req, res) => {
     void nextPreview();
   }
   res.status(202).json({ ok: true, queued: previewQueue.length });
+});
+
+// ---------- the editor preview's cleaned voice ----------
+// A recording's sound with the export's own cleanup (noise.js: measured on
+// the whole file, the user's Noise removal setting), so the editor plays
+// what the export will. Sound only (the editor plays it in step with the
+// picture). One at a time, in the background, after the app asks
+// (src/lib/clean-voice.server.ts), saved where it says.
+const voiceQueue = [];
+const voiceKeys = new Set();
+let voiceBusy = false;
+
+async function makeCleanVoice(p) {
+  const workdir = await fsp.mkdtemp(path.join(os.tmpdir(), "voice-"));
+  const started = Date.now();
+  try {
+    const src = path.join(workdir, "source");
+    await download(p.source_url, src);
+    const heard = await analyzeVoice(ffmpegPath, src);
+    const { filters, report } = voiceCleanup(heard, p.mode);
+    const out = path.join(workdir, "voice.m4a");
+    await run(ffmpegPath, [
+      "-y", "-hide_banner", "-loglevel", "error", "-i", src,
+      "-map", "0:a:0", "-vn",
+      // At the file's own rate, as the export cleans it.
+      "-af", filters,
+      "-c:a", "aac", "-b:a", "128k", "-ac", "2",
+      "-movflags", "+faststart",
+      out,
+    ]);
+    const buf = await fsp.readFile(out);
+    const up = await fetch(p.upload_url, {
+      method: "PUT",
+      headers: { "content-type": "audio/mp4", "x-upsert": "true" },
+      body: buf,
+    });
+    if (!up.ok) throw new Error(`upload failed: ${up.status} ${(await up.text()).slice(0, 200)}`);
+    console.log(
+      `[Worker] Cleaned voice of ${p.path} (${p.mode}): ${JSON.stringify(report)} in ${((Date.now() - started) / 1000).toFixed(1)} s`,
+    );
+  } catch (e) {
+    console.warn(`[Worker] Cleaned voice of ${p.path} (${p.mode}) failed:`, e?.message || e);
+  } finally {
+    await fsp.rm(workdir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function nextCleanVoice() {
+  if (voiceBusy) return;
+  const p = voiceQueue.shift();
+  if (!p) return;
+  voiceBusy = true;
+  try {
+    await makeCleanVoice(p);
+  } finally {
+    voiceKeys.delete(p.key);
+    voiceBusy = false;
+    void nextCleanVoice();
+  }
+}
+
+app.post("/clean-voice", (req, res) => {
+  if (!SECRET || !verifySignature(req)) return res.status(401).send("bad signature");
+  const p = req.body ?? {};
+  if (
+    typeof p.path !== "string" || !p.path || p.path.length > 400 ||
+    !NOISE_MODES.includes(p.mode) || p.mode === "off" ||
+    !isAbsoluteHttpUrl(p.source_url) || !isAbsoluteHttpUrl(p.upload_url)
+  ) {
+    return res.status(400).json({ ok: false, error: "Invalid clean-voice payload" });
+  }
+  const key = `${p.path}@${p.mode}`;
+  if (!voiceKeys.has(key)) {
+    voiceKeys.add(key);
+    voiceQueue.push({ ...p, key });
+    void nextCleanVoice();
+  }
+  res.status(202).json({ ok: true, queued: voiceQueue.length });
 });
 
 // ---------- the editor preview's cut-out ----------
@@ -1685,6 +1763,24 @@ async function runRender(job) {
     // What each source file holds (shape, sound), for normalizing and for
     // choosing which files to transcribe.
     const probes = [];
+    // The voice's cleanup, one per recording (noise.js): listened to once,
+    // over the whole file, and applied to every clip cut from it, so each
+    // piece of a recording sounds the same (and the editor's preview, which
+    // cleans the same file the same way, sounds like this).
+    const noise = noiseMode(job.noise);
+    const cleanups = new Map();
+    const cleanupOf = async (file) => {
+      if (!cleanups.has(file)) {
+        const heard = noise === "off"
+          ? null
+          : await analyzeVoice(ffmpegPath, file).catch((e) => {
+              console.warn(`[Worker] Listening to ${path.basename(file)} failed:`, e?.message || e);
+              return null;
+            });
+        cleanups.set(file, voiceCleanup(heard, noise));
+      }
+      return cleanups.get(file);
+    };
     for (let i = 0; i < sources.length; i++) {
       const out = path.join(workdir, `norm_${i}.mp4`);
       const probe = await probeMedia(sources[i]);
@@ -1744,7 +1840,11 @@ async function runRender(job) {
       // retake taken out, the join to the next clip) never clicks: a cut
       // mid-waveform jumps, and a jump is a click. 10 ms is too short to hear.
       const soundMs = !image && probe.hasAudio ? clipSoundMs(probe.durationMs, trimInMs, trimOutMs) : null;
-      if (soundMs) args.push("-af", cutFades(soundMs));
+      // The main track is the voice: cleaned here, per recording. B-roll
+      // keeps its own sound as it is (it's the room, on purpose).
+      const clean = !onTop && !image && probe.hasAudio ? (await cleanupOf(sources[i])).filters : null;
+      const af = [clean, soundMs ? cutFades(soundMs) : null].filter(Boolean).join(",");
+      if (af) args.push("-af", af);
       args.push(
         "-vf", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
@@ -2121,12 +2221,8 @@ async function runRender(job) {
         // cleanup: its level into the compressor, then a trim for what the
         // compressor took off. One cleanup for the whole track, so the
         // background stays the same across every cut.
-        const levelVoice = async (file) => {
-          const heard = await analyzeVoice(ffmpegPath, file).catch((e) => {
-            console.warn(`[Worker] Listening to ${path.basename(file)} failed:`, e?.message || e);
-            return null;
-          });
-          const { filters: cleanup, report } = voiceCleanup(heard);
+        const levelVoice = async (file, given = null) => {
+          const { filters: cleanup, report } = given ?? (await cleanupOf(file));
           const before = await measure(file, { filters: voiceMeasure(cleanup) });
           const gainDb = voiceGainDb(before?.i);
           const after = before
@@ -2134,7 +2230,10 @@ async function runRender(job) {
             : null;
           return { lufs: before?.i ?? null, gainDb, trimDb: voiceTrimDb(after?.i), cleanup, report };
         };
-        const voiceLevel = video.hasAudio ? await levelVoice(composedOut) : null;
+        // The main track was cleaned clip by clip (each recording its own way).
+        const voiceLevel = video.hasAudio
+          ? await levelVoice(composedOut, { filters: "anull", report: null })
+          : null;
         const musicGains = new Map();
         const musicFiles = musicPlan.mode === "sequence"
           ? musicPlan.paths
@@ -2210,8 +2309,9 @@ async function runRender(job) {
           sound: {
             voice_lufs: voiceLevel?.lufs ?? null,
             mix_lufs: mixLevel?.i ?? null,
-            // What the voice's cleanup found and did (noise.js voiceCleanup).
-            cleanup: voiceLevel?.report ?? null,
+            // What each recording's cleanup found and did (noise.js voiceCleanup).
+            noise_removal: noise,
+            cleanup: [...cleanups.values()].map((c) => c.report).filter(Boolean),
           },
         };
       } catch (e) {

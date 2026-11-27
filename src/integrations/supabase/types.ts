@@ -124,6 +124,7 @@ export type Database = {
           motion_character: Json | null
           motion_plan_previous: Json | null
           music_volume: number
+          noise_removal: string
           output_path: string | null
           script: string | null
           status: Database["public"]["Enums"]["project_status"]
@@ -151,6 +152,7 @@ export type Database = {
           motion_character?: Json | null
           motion_plan_previous?: Json | null
           music_volume?: number
+          noise_removal?: string
           output_path?: string | null
           script?: string | null
           status?: Database["public"]["Enums"]["project_status"]
@@ -178,6 +180,7 @@ export type Database = {
           motion_character?: Json | null
           motion_plan_previous?: Json | null
           music_volume?: number
+          noise_removal?: string
           output_path?: string | null
           script?: string | null
           status?: Database["public"]["Enums"]["project_status"]

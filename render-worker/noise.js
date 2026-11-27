@@ -205,13 +205,24 @@ const FLOOR_ABOVE_ROOM_DB = 10;
 /** More clicks than this a minute are worth repairing. */
 const CLICKS_PER_MIN = 10;
 
-/** How hard the noise reduction works for a voice-to-noise gap (dB): a clean room barely, a noisy one most. */
-export function reductionFor(snrDb) {
-  if (!Number.isFinite(snrDb)) return 6;
-  if (snrDb >= 45) return 6;
-  if (snrDb >= 35) return 10;
-  if (snrDb >= 25) return 15;
-  return MAX_REDUCTION_DB;
+/** The noise reduction's steps (dB): a clean room barely, a noisy one most. */
+const REDUCTION_STEPS = [6, 10, 15, MAX_REDUCTION_DB];
+/** Strong goes one step past the usual most (the user asked for it: some wear on the voice is accepted). */
+const STRONG_MAX_DB = 25;
+
+/** The user's Noise removal setting (the editor's): Auto picks the strength from the room. */
+export const NOISE_MODES = ["auto", "off", "light", "strong"];
+export const noiseMode = (m) => (NOISE_MODES.includes(m) ? m : "auto");
+
+/**
+ * How hard the noise reduction works (dB) for a voice-to-noise gap, at the
+ * user's setting: Light one step gentler than Auto, Strong one step harder.
+ */
+export function reductionFor(snrDb, mode = "auto") {
+  let step = !Number.isFinite(snrDb) ? 0 : snrDb >= 45 ? 0 : snrDb >= 35 ? 1 : snrDb >= 25 ? 2 : 3;
+  if (mode === "light") step = Math.max(0, step - 1);
+  if (mode === "strong") return step + 1 < REDUCTION_STEPS.length ? REDUCTION_STEPS[step + 1] : STRONG_MAX_DB;
+  return REDUCTION_STEPS[step];
 }
 
 /**
@@ -222,10 +233,14 @@ export function reductionFor(snrDb) {
  * steady noise reduced (after hum and clicks, which it can't treat well,
  * and before compression, which would bring the noise back up). Each step
  * only when its problem was measured. Unmeasured: the light default.
+ * `mode` is the user's setting (NOISE_MODES): Off leaves only the low-cut.
  * Returns { filters, report } (report: what was found and done, for the
  * export's notes).
  */
-export function voiceCleanup(m) {
+export function voiceCleanup(m, mode = "auto") {
+  mode = noiseMode(mode);
+  // Off: only the low-cut below the voice (rumble and handling, not noise removal).
+  if (mode === "off") return { filters: "highpass=f=80:poles=2", report: m ? { mode, ...found(m) } : { mode } };
   if (!m) {
     return {
       filters: "highpass=f=80:poles=2,afftdn=nr=6:nf=-60:tn=1",
@@ -240,22 +255,25 @@ export function voiceCleanup(m) {
   }
   const declick = m.clicksPerMin > CLICKS_PER_MIN;
   if (declick) steps.push("adeclick");
-  const nr = reductionFor(m.snrDb);
+  const nr = reductionFor(m.snrDb, mode);
   const nf = Math.round(Math.min(-20, Math.max(-80, m.noiseDb + FLOOR_ABOVE_ROOM_DB)));
   // A fixed floor from the measurement (the reducer's own tracking drifted
   // with the voice and left hiss behind).
   steps.push(`afftdn=nr=${nr}:nf=${nf}`);
   return {
     filters: steps.join(","),
-    report: {
-      noise_db: m.noiseDb,
-      voice_db: m.voiceDb,
-      snr_db: m.snrDb,
-      reduction_db: nr,
-      hum_hz: m.hum?.hz ?? null,
-      clicks_per_min: m.clicksPerMin,
-      declicked: declick,
-      clipped: !!m.clipped,
-    },
+    report: { mode, ...found(m), reduction_db: nr, declicked: declick },
+  };
+}
+
+/** What the measurement found, for the export's notes. */
+function found(m) {
+  return {
+    noise_db: m.noiseDb,
+    voice_db: m.voiceDb,
+    snr_db: m.snrDb,
+    hum_hz: m.hum?.hz ?? null,
+    clicks_per_min: m.clicksPerMin,
+    clipped: !!m.clipped,
   };
 }

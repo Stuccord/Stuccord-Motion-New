@@ -102,6 +102,14 @@ type Props = {
    * path). True: a fresh link is on its way.
    */
   onStall?: (storagePath: string) => boolean;
+  /**
+   * The main track's voice with the export's noise removal (use-clean-voice.ts),
+   * by recording path: played in step with each clip's picture in place of
+   * the clip's own sound while `hearClean` is on (kept loaded either way, so
+   * switching between the two is instant).
+   */
+  cleanVoice?: Record<string, string>;
+  hearClean?: boolean;
   /** The selected clip: gets a box with handles when it's on screen. */
   selectedClipId?: string | null;
   /** A clip was pressed in the picture. */
@@ -111,6 +119,9 @@ type Props = {
 };
 
 type Placed = { clip: ClipRow; start: number; end: number; track: "main" | "over" };
+
+/** How far (s) a cleaned voice may drift from its picture before it's put back in step. */
+const VOICE_DRIFT_S = 0.06;
 
 const isImage = (c: ClipRow) => isImageFilename(c.filename);
 
@@ -137,6 +148,8 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     cutouts,
     gradeTable = null,
     browserCutout = true,
+    cleanVoice,
+    hearClean = true,
     onStall,
     selectedClipId = null,
     onSelectClip,
@@ -189,6 +202,8 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   const endedRef = useRef(false);
   const rateRef = useRef(1);
   const videos = useRef(new Map<string, HTMLVideoElement>());
+  // The main clips' cleaned voices (cleanVoice), by clip id.
+  const voices = useRef(new Map<string, { url: string; el: HTMLAudioElement }>());
   // The saved cut-outs' videos, by link: kept loaded between stretches so
   // one is ready the moment its stretch starts.
   const cutoutVideos = useRef(new Map<string, HTMLVideoElement>());
@@ -255,8 +270,19 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
     onTime,
     onPlayingChange,
     onTick,
+    hearClean,
   });
-  latest.current = { placed, endMs, mainEndMs, muted, duckAt, onTime, onPlayingChange, onTick };
+  latest.current = {
+    placed,
+    endMs,
+    mainEndMs,
+    muted,
+    duckAt,
+    onTime,
+    onPlayingChange,
+    onTick,
+    hearClean,
+  };
 
   const activeAt = (list: Placed[], t: number) => list.find((p) => t >= p.start && t < p.end);
   const findPlaced = (id: string) =>
@@ -276,8 +302,12 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
       const trimIn = (p.clip.trim_in_ms ?? 0) / 1000;
       const target = trimIn + Math.max(0, Math.min(t, p.end - 1) - p.start) / 1000;
       el.playbackRate = rateRef.current;
+      // The cleaned voice, when it's in and wanted, stands in for the clip's own sound.
+      const voice = p.track === "main" ? voices.current.get(id)?.el : undefined;
+      const cleaned = !!voice && latest.current.hearClean && voice.readyState >= 1;
       // B-roll is silent over the main track, heard once the main track ends.
-      el.muted = (p.track === "over" && t < latest.current.mainEndMs) || latest.current.muted;
+      el.muted =
+        cleaned || (p.track === "over" && t < latest.current.mainEndMs) || latest.current.muted;
       if (el.volume !== volume) el.volume = volume;
       if (active && playingRef.current) {
         if (Math.abs(el.currentTime - target) > 0.3) el.currentTime = target;
@@ -287,6 +317,26 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
         const want = active ? target : trimIn;
         if (Math.abs(el.currentTime - want) > 0.04) el.currentTime = want;
       }
+      if (voice) {
+        voice.playbackRate = rateRef.current;
+        voice.muted = !cleaned || latest.current.muted;
+        if (voice.volume !== volume) voice.volume = volume;
+        // Follows the picture: plays while its video does, held within a
+        // frame or two of it (lips and words together).
+        const going = active && playingRef.current && !el.paused && el.readyState >= 2;
+        const at = going ? el.currentTime : active ? target : trimIn;
+        if (going) {
+          if (Math.abs(voice.currentTime - at) > VOICE_DRIFT_S) voice.currentTime = at;
+          if (voice.paused) voice.play().catch(() => {});
+        } else {
+          if (!voice.paused) voice.pause();
+          if (Math.abs(voice.currentTime - at) > 0.04) voice.currentTime = at;
+        }
+      }
+    }
+    // A clip whose picture isn't loaded (far from the playhead) is silent.
+    for (const [id, v] of voices.current) {
+      if (!videos.current.has(id) && !v.el.paused) v.el.pause();
     }
     // findPlaced reads `latest`.
   }, []);
@@ -419,13 +469,49 @@ export const TimelinePlayer = forwardRef<TimelinePlayerHandle, Props>(function T
   // Clips moved or changed: put the videos where they now belong.
   useEffect(() => sync(timeRef.current), [placed, sync]);
 
-  // Mute follows the speaker button.
-  useEffect(() => sync(timeRef.current), [muted, sync]);
+  // Mute follows the speaker button (and the Original / Cleaned switch).
+  useEffect(() => sync(timeRef.current), [muted, hearClean, sync]);
+
+  // The cleaned voices: one per main clip that has one, loaded and kept.
+  const voiceKey = placed.main
+    .map((p) => `${p.clip.id}=${(!isImage(p.clip) && cleanVoice?.[p.clip.storage_path]) || ""}`)
+    .join(",");
+  useEffect(() => {
+    const want = new Map<string, string>();
+    for (const p of latest.current.placed.main) {
+      const url = !isImage(p.clip) ? cleanVoice?.[p.clip.storage_path] : undefined;
+      if (url) want.set(p.clip.id, url);
+    }
+    for (const [id, v] of voices.current) {
+      if (want.get(id) === v.url) continue;
+      v.el.pause();
+      v.el.removeAttribute("src");
+      v.el.load();
+      voices.current.delete(id);
+    }
+    for (const [id, url] of want) {
+      if (voices.current.has(id)) continue;
+      const el = new Audio();
+      el.preload = "auto";
+      // Ready to stand in for the clip's sound: put it in step now.
+      el.addEventListener("loadedmetadata", () => sync(timeRef.current), { once: true });
+      el.src = url;
+      voices.current.set(id, { url, el });
+    }
+    sync(timeRef.current);
+    // voiceKey stands for the main clips and their links.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceKey, sync]);
 
   // Stop everything when the player goes away.
   useEffect(
     () => () => {
       for (const el of videos.current.values()) el.pause();
+      for (const v of voices.current.values()) {
+        v.el.pause();
+        v.el.removeAttribute("src");
+      }
+      voices.current.clear();
     },
     [],
   );
