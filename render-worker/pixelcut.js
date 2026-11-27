@@ -15,6 +15,7 @@ import { spawn } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { limitThreads } from "./threads.js";
+import { hdrToSdr, probeColour } from "./hdr.js";
 
 const FAL_APP = "pixelcut/video-background-removal";
 const FAL_QUEUE = `https://queue.fal.run/${FAL_APP}`;
@@ -211,12 +212,14 @@ export async function pixelcutCutout({ ffmpegPath, sourceUrl, fromMs, toMs, work
   if (!pixelcutReady()) throw new Error("no FAL_KEY (or MATTE_PROVIDER=rvm)");
   if (!(lengthMs > 0 && lengthMs <= CUTOUT_MAX_MS)) throw new Error(`bad stretch ${fromMs}-${toMs}`);
   const s = CUTOUT_SHORT;
-  // The stretch, upright (ffmpeg turns phone footage), 30 fps, shrunk only.
+  // The stretch, upright (ffmpeg turns phone footage), 30 fps, shrunk only;
+  // HDR made normal first (hdr.js), as the export shows it.
+  const hdr = hdrToSdr(await probeColour(spawn, ffmpegPath, sourceUrl));
   const clip = path.join(workdir, "cutout_in.mp4");
   await run(ffmpegPath, [
     "-y", "-v", "error", "-ss", (fromMs / 1000).toFixed(3), "-t", (lengthMs / 1000).toFixed(3),
     "-i", sourceUrl, "-an",
-    "-vf", `fps=${FPS},scale=w='if(gt(iw,ih),-2,min(${s},iw))':h='if(gt(iw,ih),min(${s},ih),-2)',format=yuv420p`,
+    "-vf", [hdr, `fps=${FPS},scale=w='if(gt(iw,ih),-2,min(${s},iw))':h='if(gt(iw,ih),min(${s},ih),-2)',format=yuv420p`].filter(Boolean).join(","),
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", clip,
   ]);
   const frames = await countFrames(ffmpegPath, clip);

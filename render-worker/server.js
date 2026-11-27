@@ -27,7 +27,7 @@
 import { reportError } from "./sentry.js";
 import express from "express";
 import crypto from "crypto";
-import { spawn, execFile } from "child_process";
+import { spawn, spawnSync, execFile } from "child_process";
 import fs from "fs";
 import fsp from "fs/promises";
 import os from "os";
@@ -65,6 +65,7 @@ import { CaptureError, capturePage } from "./capture.js";
 import { limitThreads } from "./threads.js";
 import { CUTOUT_MAX_MS, pixelcutCutout, pixelcutReady } from "./pixelcut.js";
 import { analyzeColour, correctedSkin, correctionFilter } from "./colour.js";
+import { checkHdrSupport, colourTags, hdrToSdr, probeColour } from "./hdr.js";
 import { lutFilter, packLutFilter, packSkinSafeStrength } from "./luts.js";
 import {
   buildAudioMixArgs,
@@ -91,6 +92,8 @@ const SECRET = (process.env.RENDER_WORKER_SECRET ?? "")
   .trim();
 if (!SECRET) console.warn("[Worker] RENDER_WORKER_SECRET not set — every signed route will reject all requests");
 if (!ffmpegPath) console.warn("[Worker] ffmpeg-static failed to resolve a binary path");
+// HDR footage needs zscale and tonemap (hdr.js); without them it stays as it was.
+if (ffmpegPath) checkHdrSupport(spawnSync, ffmpegPath);
 
 let currentJobId = null;
 /** How often a running render says "still working" (the app gives up after 5 minutes of quiet). */
@@ -574,11 +577,13 @@ async function makePreview(p) {
     await download(p.source_url, src);
     const out = path.join(workdir, "preview.mp4");
     const s = PREVIEW_SHORT;
+    // HDR made normal (hdr.js), as the export will show it.
+    const hdr = hdrToSdr(await probeColour(spawn, ffmpegPath, src));
     await run(ffmpegPath, [
       "-y", "-hide_banner", "-loglevel", "error", "-i", src,
       "-map", "0:v:0", "-map", "0:a:0?",
       // Shrunk only, never enlarged; the phone's rotation is applied.
-      "-vf", `scale=w='if(gt(iw,ih),-2,min(${s},iw))':h='if(gt(iw,ih),min(${s},ih),-2)'`,
+      "-vf", [hdr, `scale=w='if(gt(iw,ih),-2,min(${s},iw))':h='if(gt(iw,ih),min(${s},ih),-2)'`].filter(Boolean).join(","),
       "-fps_mode", "passthrough",
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
       "-maxrate", "2500k", "-bufsize", "5000k",
@@ -727,14 +732,15 @@ app.post("/grade-sheet", async (req, res) => {
   }
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "grade-sheet-"));
   try {
-    // The frames, as lossless stills.
+    // The frames, as lossless stills (HDR made normal first: hdr.js).
+    const hdr = hdrToSdr(await probeColour(spawn, ffmpegPath, p.url));
     const frames = [];
     for (const [i, at] of times.entries()) {
       const out = path.join(dir, `f${i}.png`);
       await run(ffmpegPath, [
         "-hide_banner", "-loglevel", "error",
         "-ss", (at / 1000).toFixed(3), "-i", p.url,
-        "-frames:v", "1", "-vf", `scale=${width}:-2`, "-y", out,
+        "-frames:v", "1", "-vf", [hdr, `scale=${width}:-2`].filter(Boolean).join(","), "-y", out,
       ]);
       frames.push(out);
     }
@@ -1292,6 +1298,8 @@ function probeMedia(file) {
         hasAudio: /Stream #\d+:\d+.*: Audio:/.test(stderr),
         width: turned ? h : w,
         height: turned ? w : h,
+        // Its colour (HDR or not: hdr.js).
+        colour: colourTags(stderr.split("\n").find((l) => /Stream #\d+:\d+.*: Video:/.test(l))),
       });
     });
   });
@@ -1636,6 +1644,12 @@ async function runRender(job) {
         vf = boxFillFilter(bw, bh, imageLengthS);
       } else {
         vf = transformedMainFilter(w, h, probe, transform, imageLengthS);
+      }
+      // HDR footage made normal first (hdr.js), before it's fitted and graded.
+      const hdr = image ? null : hdrToSdr(probe.colour);
+      if (hdr) {
+        vf = `${hdr},${vf}`;
+        console.log(`[Worker] Clip ${i + 1} is HDR (${probe.colour.transfer}): tone-mapped to normal video`);
       }
       if (image) {
         // A still: repeat it for its length on the timeline, slowly zooming.
