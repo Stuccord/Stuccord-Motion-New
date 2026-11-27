@@ -571,6 +571,17 @@ async function selfieMasks(ort, session, { ffmpegPath, input, zoom, ranges, work
 }
 
 /**
+ * A graphics piece (PNG frames, full-range RGB with alpha) in the video's
+ * own format, converted the way the export always has: BT.601 limited
+ * range with accurate rounding through 10-bit, then 4:2:0. Measured against
+ * what the browser drew: within 1.2 levels (the old ProRes route: 1.25);
+ * a plain conversion came out ~1.5 levels darker.
+ */
+export const GRAPHICS_TO_VIDEO =
+  "scale=flags=accurate_rnd:out_color_matrix=bt601:out_range=tv,format=yuva444p10le," +
+  "scale=flags=accurate_rnd,format=yuva420p";
+
+/**
  * The filters (and extra inputs) that put the behind graphics between the
  * room and the speaker. `picture` is the label of the zoomed picture,
  * `firstInput` the index of the first extra input. Returns the graph lines,
@@ -734,7 +745,7 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   // The behind graphics.
   pieces.forEach((_, i) => {
     // In the video's own format first (see composeArgs in motion.js): faster.
-    graph.push(`[${firstInput + i}:v]format=yuva420p[bp${i}]`);
+    graph.push(`[${firstInput + i}:v]${GRAPHICS_TO_VIDEO}[bp${i}]`);
     graph.push(`[${last}][bp${i}]overlay=0:0:eof_action=pass:format=yuv420[bg${i}]`);
     last = `bg${i}`;
   });

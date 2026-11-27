@@ -13,7 +13,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { behindFilters } from "./cutout.js";
+import { behindFilters, GRAPHICS_TO_VIDEO } from "./cutout.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const GRAPHICS_BUNDLE = path.join(here, "graphics-bundle");
@@ -865,6 +865,11 @@ export async function renderGraphics({
       // with nproc, which sees a container's CPU limit; os.cpus() sees the
       // whole host, so a number from it can be more than Remotion allows.
       concurrency: null,
+      // The browser's PNG frames kept as they come (PNG in the .mov), not
+      // re-encoded to ProRes: the encoder held ~270 MB more at its peak (on
+      // top of the browser's ~750 MB with animated story clips), which put a
+      // 2 GB worker over its limit (2026-11-27), and drawing is faster.
+      ffmpegOverride: keepPngFrames,
       logLevel: "warn",
       cancelSignal,
       // A story clip's frame may take a while to load on a slow worker.
@@ -883,6 +888,24 @@ export async function renderGraphics({
     clearTimeout(timer);
   }
   return pieces;
+}
+
+/**
+ * Remotion's encoding step with the frames kept as the PNGs the browser
+ * gave (`-c:v copy` in place of ProRes 4444): lossless, with their alpha,
+ * and next to no memory. Its other step (a copy into the final file) and
+ * anything unexpected pass through unchanged.
+ */
+export function keepPngFrames({ args }) {
+  const at = args.indexOf("prores_ks");
+  if (at < 0 || args[at - 1] !== "-c:v") return args;
+  const out = [...args];
+  out.splice(at, 1, "copy");
+  for (const flag of ["-profile:v", "-pix_fmt"]) {
+    const i = out.indexOf(flag);
+    if (i >= 0) out.splice(i, 2);
+  }
+  return out;
 }
 
 /**
@@ -933,7 +956,7 @@ export function composeArgs({ input, pieces, zoom, textFilters, output, behind =
   // yuv420p anyway), so the overlay blends without converting every frame
   // of the video: about 40% faster, the same picture.
   pieces.forEach((_, i) => {
-    graph.push(`[${i + 1}:v]format=yuva420p[pc${i}]`);
+    graph.push(`[${i + 1}:v]${GRAPHICS_TO_VIDEO}[pc${i}]`);
     graph.push(`[${last}][pc${i}]overlay=0:0:eof_action=pass:format=yuv420[g${i}]`);
     last = `g${i}`;
   });
