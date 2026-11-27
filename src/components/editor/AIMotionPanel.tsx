@@ -76,8 +76,14 @@ export interface AIMotionPanelProps {
     /** Recordings still being cleaned for the preview, and ones ready. */
     preparing: number;
     ready: number;
+    /** Studio voice: minutes used this month and the allowance (null: no limit), and recordings left out. */
+    studio?: { usedSeconds: number; limitSeconds: number | null; over: number };
   };
 }
+
+/** Seconds as whole minutes for the allowance line ("3", "under 1"). */
+const minutes = (seconds: number) =>
+  seconds > 0 && seconds < 60 ? "under 1" : String(Math.round(seconds / 60));
 
 /** The Noise removal setting, and the preview's Original / Cleaned switch. */
 function NoiseRemoval({ noise }: { noise: NonNullable<AIMotionPanelProps["noise"]> }) {
@@ -85,8 +91,8 @@ function NoiseRemoval({ noise }: { noise: NonNullable<AIMotionPanelProps["noise"
   return (
     <div>
       <SectionHeader label="Noise removal" icon={AudioLines} />
-      <div className="grid grid-cols-4 gap-1 mb-1.5" role="radiogroup" aria-label="Noise removal">
-        {(["auto", "light", "strong", "off"] as const).map((m) => (
+      <div className="grid grid-cols-5 gap-1 mb-1.5" role="radiogroup" aria-label="Noise removal">
+        {(["auto", "light", "strong", "studio", "off"] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -105,6 +111,19 @@ function NoiseRemoval({ noise }: { noise: NonNullable<AIMotionPanelProps["noise"
         ))}
       </div>
       <p className="text-[10px] leading-relaxed text-neutral-500 mb-2">{NOISE_MODE_HINT[mode]}</p>
+      {mode === "studio" && noise.studio && (
+        <p className="text-[10px] leading-relaxed text-neutral-400 mb-2">
+          {noise.studio.limitSeconds == null
+            ? "Studio minutes: unlimited"
+            : `${minutes(noise.studio.usedSeconds)} of ${minutes(noise.studio.limitSeconds)} Studio minutes used this month (each recording counts once)`}
+          {noise.studio.over > 0 && (
+            <span className="block text-amber-300/90">
+              The minutes are used up: {noise.studio.over} recording
+              {noise.studio.over === 1 ? "" : "s"} will be cleaned with Auto. They reset on the 1st.
+            </span>
+          )}
+        </p>
+      )}
       {mode !== "off" && (
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-neutral-400">Preview plays</span>

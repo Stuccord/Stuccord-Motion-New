@@ -21,6 +21,8 @@ export type CleanVoiceState = {
   urls: Record<string, string>;
   /** Recordings still being cleaned. */
   waiting: number;
+  /** Studio voice: recordings left out because the month's minutes ran out. */
+  overAllowance: number;
 };
 
 export function useCleanVoice(
@@ -28,14 +30,18 @@ export function useCleanVoice(
   paths: string[],
   mode: NoiseMode,
 ): CleanVoiceState {
-  const [state, setState] = useState<CleanVoiceState>({ urls: {}, waiting: 0 });
+  const [state, setState] = useState<CleanVoiceState>({
+    urls: {},
+    waiting: 0,
+    overAllowance: 0,
+  });
   const wanted = [...new Set(paths)].sort();
   const key = projectId && mode !== "off" && wanted.length ? `${mode}|${wanted.join("|")}` : "";
   const latest = useRef(wanted);
   latest.current = wanted;
   useEffect(() => {
     // A different setting: the other setting's sound isn't this one's.
-    setState({ urls: {}, waiting: 0 });
+    setState({ urls: {}, waiting: 0, overAllowance: 0 });
     if (!key || !projectId || mode === "off") return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -61,8 +67,16 @@ export function useCleanVoice(
               Object.entries(res.urls).map(([p, u]) => [p, (!fresh && old.urls[p]) || u]),
             ),
             waiting,
+            overAllowance: res.overAllowance ?? 0,
           }));
-        } else setState((old) => (old.waiting === waiting ? old : { ...old, waiting }));
+        } else {
+          const over = res.overAllowance ?? 0;
+          setState((old) =>
+            old.waiting === waiting && old.overAllowance === over
+              ? old
+              : { ...old, waiting, overAllowance: over },
+          );
+        }
       } catch (e) {
         console.warn("[preview] Couldn't get the cleaned voice:", e);
         waiting = 1;

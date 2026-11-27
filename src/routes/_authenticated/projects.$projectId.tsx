@@ -1,5 +1,6 @@
 import { noiseModeOf, type NoiseMode } from "@/lib/noise-removal";
 import { useCleanVoice } from "@/lib/use-clean-voice";
+import { getStudioVoiceUsage } from "@/lib/clean-voice.functions";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient, useIsMutating } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -1872,6 +1873,14 @@ function EditorPage() {
     noiseRemoval,
   );
 
+  // Studio voice minutes this month (looked at again as recordings are isolated).
+  const studioUsage = useQuery({
+    queryKey: ["studio-voice-usage"],
+    queryFn: () => getStudioVoiceUsage(),
+    enabled: noiseRemoval === "studio" && !readOnly,
+    refetchInterval: noiseRemoval === "studio" && cleanVoice.waiting > 0 ? 20_000 : false,
+  });
+
   if (isLoading || !data) {
     return (
       <div className="min-h-screen bg-neutral-950 grid place-items-center text-neutral-400">
@@ -3051,6 +3060,16 @@ function EditorPage() {
                     // Recordings still being cleaned for the preview.
                     preparing: cleanVoice.waiting,
                     ready: Object.keys(cleanVoice.urls).length,
+                    studio:
+                      noiseRemoval === "studio" &&
+                      studioUsage.data &&
+                      !("unknown" in studioUsage.data)
+                        ? {
+                            usedSeconds: studioUsage.data.usedSeconds,
+                            limitSeconds: studioUsage.data.limitSeconds,
+                            over: cleanVoice.overAllowance,
+                          }
+                        : undefined,
                   }}
                   graphics={
                     <MotionPlanSection

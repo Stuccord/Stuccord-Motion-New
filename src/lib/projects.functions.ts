@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { parseTransform } from "@/lib/clip-transform";
 import { parseBrandKit } from "@/lib/brand-kit";
-import { isAudioRole } from "@/lib/media-kind";
+import { isAudioRole, isImageFilename } from "@/lib/media-kind";
 import { PERSONAL, inFolder, projectFolder, type ProjectAccess } from "@/lib/workspace";
 import { planFor, type TeamRole } from "@/lib/plans";
 import { SCENE_BUCKET, parseMotionPlan, sceneImageFolder } from "@/lib/motion-plan";
@@ -1934,6 +1934,42 @@ export async function startCloudRender(
       }),
     );
 
+    // Studio voice (noise-removal.ts): each main recording's isolated voice,
+    // made once and reused: a link to it when it's been made, else where
+    // the worker saves it, within the month's allowance (counted now).
+    // Past it, that recording is cleaned the usual way (Auto) instead.
+    const noise = noiseModeOf((project as { noise_removal?: string }).noise_removal);
+    if (noise === "studio") {
+      const studio = await import("@/lib/studio-voice.server");
+      const videos = clips.filter((c) => !isAudioRole(c.role) && !isImageFilename(c.filename));
+      const main = videos.filter((c) => c.role !== "broll");
+      const recordings = new Map<string, number>();
+      for (const c of main.length ? main : videos) {
+        recordings.set(
+          c.storage_path,
+          Math.max(recordings.get(c.storage_path) ?? 0, (c.duration_ms ?? 60_000) / 1000),
+        );
+      }
+      const extra = new Map<string, Record<string, string>>();
+      const needed: { path: string; seconds: number }[] = [];
+      for (const [path, seconds] of recordings) {
+        const url = await studio.isolatedVoiceLink(path, 60 * 60 * 6);
+        if (url) extra.set(path, { isolated_url: url });
+        else needed.push({ path, seconds });
+      }
+      const { allowed } = await studio.claimIsolation(userId, project.id, needed);
+      for (const { path } of needed) {
+        const upload = allowed.has(path) ? await studio.isolatedVoiceUpload(path) : null;
+        extra.set(
+          path,
+          upload
+            ? { isolate_upload_url: upload }
+            : { studio_note: "Studio voice minutes used up this month: cleaned with Auto" },
+        );
+      }
+      for (const c of clipUrls) Object.assign(c, extra.get(c.storage_path) ?? {});
+    }
+
     // Presign an upload URL for the final render output.
     const outputPath = `${folder}/${project.id}/${job.id}.mp4`;
     const { data: uploadSigned, error: uploadErr } = await db.storage
@@ -2006,7 +2042,7 @@ export async function startCloudRender(
       captions: data.captions,
       music: data.music,
       // How hard the voice is cleaned (render-worker/noise.js).
-      noise: noiseModeOf((project as { noise_removal?: string }).noise_removal),
+      noise,
       brand_kit: brandKit,
       // "Made with Stuccord" in a corner, for free plans (see plans.ts).
       watermark: allowance.watermark,

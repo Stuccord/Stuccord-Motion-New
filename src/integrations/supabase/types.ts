@@ -552,6 +552,33 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_isolation_usage: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string | null
+          seconds: number
+          storage_path: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          seconds: number
+          storage_path: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          seconds?: number
+          storage_path?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       music_usage: {
         Row: {
           created_at: string

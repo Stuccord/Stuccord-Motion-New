@@ -202,6 +202,13 @@ const MAX_REDUCTION_DB = 20;
  * settings took more noise off but started to wear at the voice.
  */
 const FLOOR_ABOVE_ROOM_DB = 10;
+/**
+ * The noise reducer gives its sound back 25 ms late (measured at 44.1 and
+ * 48 kHz; the other repairs add none), which would put the words behind
+ * the lips: taken back off, and the end padded so the length stays the same.
+ */
+const REDUCER_ALIGN = "atrim=start=0.025,asetpts=PTS-STARTPTS,apad=pad_dur=0.025";
+
 /** More clicks than this a minute are worth repairing. */
 const CLICKS_PER_MIN = 10;
 
@@ -211,7 +218,7 @@ const REDUCTION_STEPS = [6, 10, 15, MAX_REDUCTION_DB];
 const STRONG_MAX_DB = 25;
 
 /** The user's Noise removal setting (the editor's): Auto picks the strength from the room. */
-export const NOISE_MODES = ["auto", "off", "light", "strong"];
+export const NOISE_MODES = ["auto", "off", "light", "strong", "studio"];
 export const noiseMode = (m) => (NOISE_MODES.includes(m) ? m : "auto");
 
 /**
@@ -239,11 +246,17 @@ export function reductionFor(snrDb, mode = "auto") {
  */
 export function voiceCleanup(m, mode = "auto") {
   mode = noiseMode(mode);
+  // Studio voice: `m` is the isolated voice (isolate.js), already clean: only
+  // a light polish (the low-cut, any clicks or hum it left), reported as Studio.
+  if (mode === "studio") {
+    const polish = voiceCleanup(m, "light");
+    return { filters: polish.filters, report: polish.report && { ...polish.report, mode } };
+  }
   // Off: only the low-cut below the voice (rumble and handling, not noise removal).
   if (mode === "off") return { filters: "highpass=f=80:poles=2", report: m ? { mode, ...found(m) } : { mode } };
   if (!m) {
     return {
-      filters: "highpass=f=80:poles=2,afftdn=nr=6:nf=-60:tn=1",
+      filters: `highpass=f=80:poles=2,afftdn=nr=6:nf=-60:tn=1,${REDUCER_ALIGN}`,
       report: null,
     };
   }
@@ -259,7 +272,7 @@ export function voiceCleanup(m, mode = "auto") {
   const nf = Math.round(Math.min(-20, Math.max(-80, m.noiseDb + FLOOR_ABOVE_ROOM_DB)));
   // A fixed floor from the measurement (the reducer's own tracking drifted
   // with the voice and left hiss behind).
-  steps.push(`afftdn=nr=${nr}:nf=${nf}`);
+  steps.push(`afftdn=nr=${nr}:nf=${nf}`, REDUCER_ALIGN);
   return {
     filters: steps.join(","),
     report: { mode, ...found(m), reduction_db: nr, declicked: declick },

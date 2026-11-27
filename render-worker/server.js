@@ -81,6 +81,7 @@ import {
   voiceTrimDb,
 } from "./audio.js";
 import { analyzeVoice, NOISE_MODES, noiseMode, voiceCleanup } from "./noise.js";
+import { isolatedVoiceFor, isolationReady } from "./isolate.js";
 
 const app = express();
 app.use(express.json({ limit: "4mb", verify: (req, _res, buf) => (req.rawBody = buf) }));
@@ -657,8 +658,15 @@ async function makeCleanVoice(p) {
   const workdir = await fsp.mkdtemp(path.join(os.tmpdir(), "voice-"));
   const started = Date.now();
   try {
-    const src = path.join(workdir, "source");
+    let src = path.join(workdir, "source");
     await download(p.source_url, src);
+    // Studio voice: the isolated voice (made now, or the one made before) is cleaned instead.
+    if (p.mode === "studio") {
+      src = await isolatedVoiceFor({
+        ffmpegPath, file: src, url: p.isolated_url, uploadUrl: p.isolate_upload_url, workdir, download,
+      });
+      if (!src) throw new Error("no isolated voice and nowhere to save one");
+    }
     const heard = await analyzeVoice(ffmpegPath, src);
     const { filters, report } = voiceCleanup(heard, p.mode);
     const out = path.join(workdir, "voice.m4a");
@@ -708,9 +716,14 @@ app.post("/clean-voice", (req, res) => {
   if (
     typeof p.path !== "string" || !p.path || p.path.length > 400 ||
     !NOISE_MODES.includes(p.mode) || p.mode === "off" ||
-    !isAbsoluteHttpUrl(p.source_url) || !isAbsoluteHttpUrl(p.upload_url)
+    !isAbsoluteHttpUrl(p.source_url) || !isAbsoluteHttpUrl(p.upload_url) ||
+    (p.mode === "studio" && !isAbsoluteHttpUrl(p.isolated_url) && !isAbsoluteHttpUrl(p.isolate_upload_url))
   ) {
     return res.status(400).json({ ok: false, error: "Invalid clean-voice payload" });
+  }
+  // Studio voice needs the isolator's key (unless the voice was isolated before).
+  if (p.mode === "studio" && !p.isolated_url && !isolationReady()) {
+    return res.status(503).json({ ok: false, error: "Voice isolation not set up" });
   }
   const key = `${p.path}@${p.mode}`;
   if (!voiceKeys.has(key)) {
@@ -1769,17 +1782,40 @@ async function runRender(job) {
     // cleans the same file the same way, sounds like this).
     const noise = noiseMode(job.noise);
     const cleanups = new Map();
-    const cleanupOf = async (file) => {
-      if (!cleanups.has(file)) {
-        const heard = noise === "off"
+    // Studio voice: each recording's isolated voice (isolate.js), by source
+    // file; null where there's none (the month's minutes ran out, or it
+    // failed): that recording is cleaned the usual way (Auto) instead.
+    const isolated = new Map();
+    const studioNotes = [];
+    const isolatedOf = async (file, clip) => {
+      if (noise !== "studio") return null;
+      if (!isolated.has(file)) {
+        let got = null;
+        try {
+          got = await isolatedVoiceFor({
+            ffmpegPath, file, url: clip.isolated_url, uploadUrl: clip.isolate_upload_url, workdir, download,
+          });
+          if (!got) studioNotes.push(clip.studio_note ?? "no isolated voice");
+        } catch (e) {
+          console.warn(`[Worker] Isolating ${path.basename(file)} failed:`, e?.message || e);
+          studioNotes.push(String(e?.message ?? e).slice(0, 200));
+        }
+        isolated.set(file, got);
+      }
+      return isolated.get(file);
+    };
+    const cleanupOf = async (file, mode = noise) => {
+      const key = `${file}|${mode}`;
+      if (!cleanups.has(key)) {
+        const heard = mode === "off"
           ? null
           : await analyzeVoice(ffmpegPath, file).catch((e) => {
               console.warn(`[Worker] Listening to ${path.basename(file)} failed:`, e?.message || e);
               return null;
             });
-        cleanups.set(file, voiceCleanup(heard, noise));
+        cleanups.set(key, voiceCleanup(heard, mode));
       }
-      return cleanups.get(file);
+      return cleanups.get(key);
     };
     for (let i = 0; i < sources.length; i++) {
       const out = path.join(workdir, `norm_${i}.mp4`);
@@ -1842,7 +1878,21 @@ async function runRender(job) {
       const soundMs = !image && probe.hasAudio ? clipSoundMs(probe.durationMs, trimInMs, trimOutMs) : null;
       // The main track is the voice: cleaned here, per recording. B-roll
       // keeps its own sound as it is (it's the room, on purpose).
-      const clean = !onTop && !image && probe.hasAudio ? (await cleanupOf(sources[i])).filters : null;
+      const voice = !onTop && !image && probe.hasAudio;
+      // Studio voice: the sound comes from the isolated voice, cut the same way.
+      const isolatedFile = voice ? await isolatedOf(sources[i], clips[i]) : null;
+      if (isolatedFile) {
+        if (trimInMs > 0) args.push("-ss", (trimInMs / 1000).toFixed(3));
+        if (trimOutMs != null && Number(trimOutMs) > 0) {
+          args.push("-to", (Number(trimOutMs) / 1000).toFixed(3));
+        }
+        args.push("-i", isolatedFile, "-map", "0:v:0", "-map", "1:a:0");
+      }
+      const clean = voice
+        ? isolatedFile
+          ? (await cleanupOf(isolatedFile, "studio")).filters
+          : (await cleanupOf(sources[i], noise === "studio" ? "auto" : noise)).filters
+        : null;
       const af = [clean, soundMs ? cutFades(soundMs) : null].filter(Boolean).join(",");
       if (af) args.push("-af", af);
       args.push(
@@ -2222,7 +2272,9 @@ async function runRender(job) {
         // compressor took off. One cleanup for the whole track, so the
         // background stays the same across every cut.
         const levelVoice = async (file, given = null) => {
-          const { filters: cleanup, report } = given ?? (await cleanupOf(file));
+          // Voiceovers: cleaned their own way (Studio's isolation is for recordings).
+          const { filters: cleanup, report } =
+            given ?? (await cleanupOf(file, noise === "studio" ? "light" : noise));
           const before = await measure(file, { filters: voiceMeasure(cleanup) });
           const gainDb = voiceGainDb(before?.i);
           const after = before
@@ -2312,6 +2364,8 @@ async function runRender(job) {
             // What each recording's cleanup found and did (noise.js voiceCleanup).
             noise_removal: noise,
             cleanup: [...cleanups.values()].map((c) => c.report).filter(Boolean),
+            // Studio voice that couldn't be used (cleaned with Auto instead), and why.
+            ...(studioNotes.length ? { studio_fallback: studioNotes } : {}),
           },
         };
       } catch (e) {
