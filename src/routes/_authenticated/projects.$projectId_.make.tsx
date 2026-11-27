@@ -247,13 +247,29 @@ function MakePage() {
   useEffect(() => {
     let stop = false;
     void (async () => {
+      let failures = 0;
       for (;;) {
         if (stop) return;
         if (!fixing.current) {
           try {
             if ((await readOnce()) === "over") return;
-          } catch {
-            // A dropped connection: read it again next time.
+            failures = 0;
+          } catch (e) {
+            // A dropped connection: read it again next time. A video that
+            // isn't there (deleted, or another account's), or one that keeps
+            // failing, says so instead of waiting for ever.
+            failures++;
+            const text = e instanceof Error ? e.message : "";
+            if (/not found/i.test(text)) {
+              setError("This video isn't in your account any more. Go back to your library.");
+              return;
+            }
+            if (failures >= 6) {
+              setError(
+                "Couldn't reach the server to check on your video. Check your connection, then try again.",
+              );
+              return;
+            }
           }
         }
         await sleep(POLL_MS);

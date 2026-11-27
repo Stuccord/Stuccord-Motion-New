@@ -2452,6 +2452,43 @@ async function runRender(job) {
     });
     if (!up.ok) throw new Error(`upload failed: ${up.status} ${await up.text().catch(() => "")}`);
 
+    // 7. A small copy for playing it in the app (src/lib/render-preview.ts):
+    //    the export is ~8 Mbit/s, more than a slow connection can play
+    //    without stopping. Best-effort: without it the app plays the export.
+    if (isAbsoluteHttpUrl(job.output.preview_upload_url)) {
+      await callback(job.callback_url, {
+        job_id: job.job_id, status: "rendering", progress: 96,
+        stage_message: "Making a quick-play copy",
+      });
+      try {
+        const started = Date.now();
+        const copy = path.join(workdir, "play.mp4");
+        await run(ffmpegPath, [
+          "-y", "-hide_banner", "-loglevel", "error", "-i", finalOut,
+          "-map", "0:v:0", "-map", "0:a:0?",
+          "-vf", `scale=w='if(gt(iw,ih),-2,min(${PREVIEW_SHORT},iw))':h='if(gt(iw,ih),min(${PREVIEW_SHORT},ih),-2)'`,
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+          "-maxrate", "1800k", "-bufsize", "3600k",
+          "-pix_fmt", "yuv420p", "-g", "30",
+          "-c:a", "aac", "-b:a", "96k", "-ac", "2",
+          "-movflags", "+faststart",
+          copy,
+        ]);
+        const small = await fsp.readFile(copy);
+        const upCopy = await fetch(job.output.preview_upload_url, {
+          method: "PUT",
+          headers: { "content-type": "video/mp4", "x-upsert": "true" },
+          body: small,
+        });
+        if (!upCopy.ok) throw new Error(`upload ${upCopy.status}`);
+        console.log(
+          `[Worker] Play copy for job=${job.job_id}: ${(buf.length / 1e6).toFixed(1)} MB -> ${(small.length / 1e6).toFixed(1)} MB in ${((Date.now() - started) / 1000).toFixed(1)} s`,
+        );
+      } catch (e) {
+        console.warn(`[Worker] Play copy failed for job=${job.job_id}:`, e?.message || e);
+      }
+    }
+
     await callback(job.callback_url, {
       job_id: job.job_id, status: "completed", progress: 100,
       stage_message: "Done",

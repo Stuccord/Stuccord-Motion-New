@@ -14,6 +14,7 @@ import { motionAccent, themeFromAccent } from "@/motion/theme";
 import { WORKER_SECRET_MISMATCH, workerSecret } from "@/lib/worker-secret";
 import { footagePreviewPath, wantsFootagePreview } from "@/lib/footage-preview";
 import { isCutoutPath } from "@/lib/cutout-preview";
+import { renderPreviewPath } from "@/lib/render-preview";
 // A finished render no longer matches the timeline once clips or
 // render-affecting settings change. Drop a "ready" project back to "draft"
 // so the next Render produces a fresh video instead of re-serving the old one.
@@ -1627,7 +1628,8 @@ export const getSignedClipUploadUrl = createServerFn({ method: "POST" })
   });
 
 /**
- * Links to an export: `url` to play it, and `downloadUrl`, which saves it
+ * Links to an export: `url` to play it (its small play copy when there is
+ * one, render-preview.ts, else the export), and `downloadUrl`, which saves it
  * as `download` (a file name) instead of opening it. The storage server
  * sends that one as an attachment: browsers ignore a link's own `download`
  * for a file on another site and open the video in a new page.
@@ -1639,7 +1641,10 @@ export const getRenderSignedUrl = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const storage = context.supabase.storage.from("renders");
-    const { data: signed, error } = await storage.createSignedUrl(data.path, 3600);
+    const [{ data: signed, error }, { data: copy }] = await Promise.all([
+      storage.createSignedUrl(data.path, 3600),
+      storage.createSignedUrl(renderPreviewPath(data.path), 3600),
+    ]);
     if (error) throw new Error(error.message);
     const name = (data.download ?? data.path.split("/").pop() ?? "stuccord-export.mp4")
       .replace(/[^\w.-]+/g, "_")
@@ -1648,7 +1653,7 @@ export const getRenderSignedUrl = createServerFn({ method: "POST" })
       download: name,
     });
     if (dErr) throw new Error(dErr.message);
-    return { url: signed.signedUrl, downloadUrl: saved.signedUrl };
+    return { url: copy?.signedUrl ?? signed.signedUrl, downloadUrl: saved.signedUrl };
   });
 
 function resolveWorkerJobsEndpoint(rawUrl: string | undefined): URL {
@@ -1925,6 +1930,11 @@ export async function startCloudRender(
       .from("renders")
       .createSignedUploadUrl(outputPath);
     if (uploadErr) throw new Error(uploadErr.message);
+    // And one for its small play copy (render-preview.ts); without it the
+    // app just plays the export.
+    const { data: previewSigned } = await db.storage
+      .from("renders")
+      .createSignedUploadUrl(renderPreviewPath(outputPath), { upsert: true });
 
     // The brand kit: the team's for a team project, else the account's
     // (read fresh: the sign-in token may be older than the last save), with a
@@ -2016,6 +2026,7 @@ export async function startCloudRender(
         path: outputPath,
         upload_url: uploadSigned.signedUrl,
         token: uploadSigned.token,
+        preview_upload_url: previewSigned?.signedUrl ?? null,
       },
       callback_url: callbackWebhookUrl.toString(),
     };

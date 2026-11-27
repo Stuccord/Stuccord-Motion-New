@@ -76,13 +76,6 @@ const CORE_SOFT_PX = 1;
 const EDGE_ALLOW = 4;
 /** How far in the speaker's own edge colour is read from (px at 1920 high). */
 const INNER_REACH_PX = 8;
-/**
- * How much the speaker's edge is darkened with the room. 0: not at all, as
- * its colour is already their own (edge extend below). Measured on a test
- * clip (2026-11-26): light ring 4.0% of the outline -> 0.2%, dark line 0.4%
- * -> 0.2%; darkening it as well (0.45) left a dark line on 3.6%.
- */
-const EDGE_DARKEN = 0;
 
 export const EDGE = {
   radius: 0.004,
@@ -624,6 +617,13 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   // enough that none of the speaker is in it.
   const reach = Math.max(0.5, qh * edge.reach).toFixed(2);
   // The edge work (see below), in pixels of a 1920-high frame.
+  // Every stream that meets a matte is timed by its frame number, exactly
+  // (1/FPS each). The mattes are saved with times rounded to the
+  // millisecond, so every third frame's time was rounded up past the
+  // picture's, and it was paired with the frame before: the speaker's
+  // outline a frame behind them on every third frame, a light strip of
+  // wall round whatever moved (seen in an export, 2026-11-26).
+  const frameClock = `setpts=PTS-STARTPTS,settb=1/${FPS},setpts=N,`;
   const px = (n) => Math.max(1, Math.round((n * h) / 1920));
   const num = (v) => Math.max(0.3, v).toFixed(2);
   // The matte's edge made smooth and crisp: its wobble (from the video's
@@ -646,13 +646,13 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
       // fixes below for a coarse mask would only blur or shrink it.
       // Pulled in by about a pixel (CHOKE): its outermost pixels are mostly
       // wall, which showed as a thin light line round the speaker.
-      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=3[pb${i}][pr0${i}][pi${i}]`);
+      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},${frameClock}split=3[pb${i}][pr0${i}][pi${i}]`);
       graph.push(
-        `[${input}:v]format=gray,scale=${w}:${h}:flags=bicubic,${choke}split=4[ad${i}][an${i}][am${i}][ac${i}]`,
+        `[${input}:v]${frameClock}format=gray,scale=${w}:${h}:flags=bicubic,${choke}split=4[ad${i}][an${i}][am${i}][ac${i}]`,
       );
     } else {
-      graph.push(`[${input}:v]format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`);
-      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,split=4[pg${i}][pb${i}][pr0${i}][pi${i}]`);
+      graph.push(`[${input}:v]${frameClock}format=gray,tmix=frames=3:weights='1 2 1',scale=${w}:${h}:flags=bicubic[mu${i}]`);
+      graph.push(`[bpc${i}]trim=start_frame=${m.from}:end_frame=${m.to},${frameClock}split=4[pg${i}][pb${i}][pr0${i}][pi${i}]`);
       graph.push(`[pg${i}]format=gray[gd${i}]`);
       graph.push(
         `[gd${i}][mu${i}]guided=radius=${radius}:eps=${edge.eps}:mode=fast:sub=${edge.sub}:guidance=on,` +
@@ -698,32 +698,19 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
     graph.push(`[num${i}][den${i}]unpremultiply=inplace=0[bn${i}]`);
     // A pocket of room with little room round it (between hands and a desk,
     // say) has nothing to read the clean room from: it takes the plain blur.
+    // The clean room is trusted only where there's a fair share of room
+    // round it (an eighth): with less, next to a fast-moving hand, it came
+    // out a touch too bright.
     graph.push(`[pf${i}]gblur=sigma=${blur}[bf${i}]`);
-    graph.push(`[dw${i}]lut=c0='min(255,val*16)':c1='min(255,val*16)':c2='min(255,val*16)'[dm${i}]`);
+    graph.push(`[dw${i}]lut=c0='min(255,val*8)':c1='min(255,val*8)':c2='min(255,val*8)'[dm${i}]`);
     graph.push(`[bf${i}][bn${i}][dm${i}]maskedmerge,scale=${w}:${h}:flags=bicubic[bc${i}]`);
     // 1 - matte (how much of what's behind shows through).
     graph.push(`[an${i}]negate[nag${i}]`);
     rgb(`nag${i}`, `naF${i}`);
-    // The speaker's edge darkened as much as the room is, in proportion to
-    // how much room is in each edge pixel: an edge pixel is part speaker,
-    // part room (hair strands, a soft edge, or a pixel of wall the matte took
-    // in), and only the room part should take the room's darkening; the
-    // speaker's own pixels (matte full) keep their colour exactly. This is
-    // what removes the ring of the old, brighter room round them. (Taking
-    // the room colour out exactly, (I - (1-a)B)/a, turned edge pixels black
-    // wherever the matte was a little short, so this robust form is used.)
-    const edgeDark = EDGE_DARKEN;
-    if (edgeDark > 0) {
-      graph.push(`[am${i}]split=2[am1${i}][am2${i}]`);
-      graph.push(`[am1${i}]lut=y='255-(255-val)*${edgeDark}'[ef${i}g]`);
-      rgb(`ef${i}g`, `ef${i}`);
-      rgb(`am2${i}`, `ma${i}`);
-      graph.push(`[pd${i}]format=gbrp[pdg${i}]`);
-      graph.push(`[pdg${i}][ef${i}]premultiply=inplace=0[pe${i}]`);
-    } else {
-      rgb(`am${i}`, `ma${i}`);
-      graph.push(`[pd${i}]format=gbrp[pe${i}]`);
-    }
+    // The speaker in front: their colour (edge already in their own colour,
+    // above) times the matte.
+    rgb(`am${i}`, `ma${i}`);
+    graph.push(`[pd${i}]format=gbrp[pe${i}]`);
     graph.push(`[pe${i}][ma${i}]premultiply=inplace=0[fp${i}]`);
     // The room behind the graphics: the clean room, darkened like the
     // preview's CSS brightness(), fading in and out.
@@ -760,7 +747,7 @@ export function behindFilters({ picture, pieces, masks, w, h, firstInput, edge =
   last = "bgm";
   masks.forEach((m, i) => {
     const start = (m.from / FPS).toFixed(4);
-    graph.push(`[gs${i}]trim=start_frame=${m.from}:end_frame=${m.to},setpts=PTS-STARTPTS,format=gbrp[gt${i}]`);
+    graph.push(`[gs${i}]trim=start_frame=${m.from}:end_frame=${m.to},${frameClock}format=gbrp[gt${i}]`);
     graph.push(`[gt${i}][naF${i}]premultiply=inplace=0[gw${i}]`);
     graph.push(`[fp${i}][gw${i}]blend=all_mode=addition,format=yuv420p,setpts=PTS+${start}/TB[po${i}]`);
     graph.push(`[${last}][po${i}]overlay=0:0:eof_action=pass:format=yuv420[sp${i}]`);
